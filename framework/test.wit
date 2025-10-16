@@ -1,0 +1,44 @@
+package example:game-interface;
+
+world game-core {
+  enum serialization-format {
+    json,
+    message-pack,
+  }
+
+  type buffer = list<u8>;
+
+  variant game-core-error {
+    deserialize(string),
+    serialize(string),
+    game-core(buffer),
+  }
+
+  type player = buffer;
+  type player-action = tuple<player, buffer>;
+
+  record player-state {
+    player: player,
+    state: buffer,
+  }
+
+  record new-player-state {
+    player: player,
+    state: buffer,
+    events: list<buffer>,
+  }
+
+  record game {
+    state: buffer,
+    player-states: list<player-state>,
+  }
+
+  record take-action-result {
+    new-game-state: buffer,
+    events: list<buffer>,
+    player-states: list<new-player-state>,
+  }
+
+  export init: func(format: serialization-format, config: buffer) -> result<game, game-core-error>;
+  export take-action: func(format: serialization-format, game: game, player-action: player-action) -> result<take-action-result, game-core-error>;
+}

@@ -1,18 +1,58 @@
 use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, rt, web};
 use actix_ws::AggregatedMessage;
-use common::{Game, ProcessingTransaction, SerializationFormat, SerializedBuffer};
+// use common::{Game, ProcessingTransaction, SerializationFormat, SerializedBuffer};
 use futures_util::StreamExt as _;
+use rmp_serde::{Deserializer as RmpDeserializer, Serializer as RmpSerializer};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, RwLock, mpsc},
 };
 use uuid::Uuid;
-use wasmtime::*;
-use wasmtime_wasi::{p2::WasiCtxBuilder, preview1::WasiP1Ctx};
+use wasmtime::{component::{bindgen, Component}, Config, Engine, Linker, Module, Store};
+use wasmtime_wasi::{p1::WasiP1Ctx, WasiCtxBuilder};
 
-use crate::wasm::Wasm;
+use crate::{game_core::{Buffer, Game, GameCore, Player}, wasm::Wasm};
 
 mod wasm;
+
+mod game_core {
+    use wasmtime::component::bindgen;
+
+    bindgen!({
+        path: "../test.wit",
+        world: "game-core",
+        imports: { default: async | trappable },
+        exports: { default: async }
+    });
+}
+
+struct GameRequestParams {
+    game_id: Uuid,
+    player: Vec<u8>,
+}
+
+impl GameRequestParams {
+    fn parse(query: &str) -> Result<Self, actix_web::Error> {
+        let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
+
+        let game_id = params
+            .get("game-id")
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'game-id' parameter"))?;
+        let game_id = Uuid::parse_str(game_id)
+            .map_err(|_| actix_web::error::ErrorBadRequest("Invalid 'game-id' format"))?;
+
+        let player = params
+            .get("player")
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'player' parameter"))?
+            .as_bytes()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        Ok(Self { game_id, player })
+    }
+}
 
 async fn game(
     request: HttpRequest,
@@ -26,19 +66,7 @@ async fn game(
         .query()
         .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing query parameters"))?;
 
-    let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
-    let game_id = params
-        .get("game-id")
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'game-id' parameter"))?;
-    let game_id = Uuid::parse_str(game_id)
-        .map_err(|_| actix_web::error::ErrorBadRequest("Invalid 'game-id' format"))?;
-    let player = params
-        .get("player")
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'player' parameter"))?
-        .as_bytes()
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
+    let params = GameRequestParams::parse(query)?;
 
     let (response, mut session, stream) = actix_ws::handle(&request, stream)?;
 
@@ -46,7 +74,7 @@ async fn game(
         .aggregate_continuations()
         .max_continuation_size(2_usize.pow(20));
 
-    let (sender, mut receiver) = mpsc::channel::<SerializedBuffer>();
+    let (sender, mut receiver) = mpsc::channel::<Buffer>();
 
     // {
     //     let games = game_db.get_mut().expect("Failed to lock game database");
@@ -67,7 +95,7 @@ async fn game(
     });
 
     rt::spawn(async move {
-        // let mut store = wasm.create_store();
+        let mut store = wasm.create_store();
         // let instance = wasm
         //     .instantiate_module(&mut store, &module)
         //     .await
@@ -144,18 +172,26 @@ async fn create_game(
         println!("Parsed params: {:?}", params);
     }
 
-    let mut store = wasm.create_store();
-    let instance = wasm
-        .instantiate_module(&mut store, &module)
-        .await
-        .expect("Failed to instantiate module");
+    let config = Config::default().async_support(true);
+    let engine = Engine::new(&config).unwrap();
 
-    let game_instance = GameWasmInstance::new(&mut store, instance).unwrap();
+    let mut linker = Linker::new(&engine);
 
-    let game = Game {
-        state: SerializedBuffer::default(),
-        player_states: SerializedBuffer::default(),
-    };
+    let wasm_bytes = std::fs::read("../target/wasm32-wasip1/release/wasm_game.wasm")
+        .expect("Wasm module not found, build wasm_game first");
+
+    let component = Component::new(&engine, &wasm_bytes).unwrap();
+
+    // linker.instantiate_pre(module);
+    let store = Store::new(&engine, WasiCtxBuilder::new().build_p1());
+    let game_core = GameCore::instantiate(store, component, linker).unwrap();
+
+    // let game_instance = GameWasmInstance::new(&mut wasm, &module).unwrap();
+
+    // let game = Game {
+    //     state: SerializedBuffer::default(),
+    //     player_states: SerializedBuffer::default(),
+    // };
 
     let game_id = Uuid::new_v4();
     let game_db_clone = game_db.clone();
@@ -185,139 +221,66 @@ async fn get_games(
         .body(serde_json::to_string(&games).unwrap()))
 }
 
-struct GameWasmInstance {
-    alloc: TypedFunc<u32, u32>,
-    dealloc: TypedFunc<(u32, u32), ()>,
-    process: TypedFunc<(u32, u32, u32), i32>,
-    memory: Memory,
-}
+// struct GameWasmInstance {
+//     alloc: TypedFunc<u32, u32>,
+//     dealloc: TypedFunc<(u32, u32), ()>,
+//     process: TypedFunc<(u32, u32, u32), i32>,
+//     // memory: Memory,
+//     store: Store<WasiP1Ctx>,
+// }
 
-impl GameWasmInstance {
-    fn new(store: &mut Store<WasiP1Ctx>, instance: Instance) -> Result<Self, String> {
-        let alloc = instance
-            .get_typed_func::<u32, u32>(&mut *store, "alloc")
-            .map_err(|e| format!("Failed to get alloc function: {}", e))?;
+// impl GameWasmInstance {
+//     async fn new(wasm: &mut Wasm, module: &Module) -> Result<Self, String> {
+//         // let mut store = wasm.create_store();
 
-        let dealloc = instance
-            .get_typed_func::<(u32, u32), ()>(&mut *store, "dealloc")
-            .map_err(|e| format!("Failed to get dealloc function: {}", e))?;
+//         let state = ComponentRunStates::new();
+//         let mut store = Store::new(&engine, state);
 
-        let process = instance
-            .get_typed_func::<(u32, u32, u32), i32>(&mut *store, "process")
-            .map_err(|e| format!("Failed to get process function: {}", e))?;
+//         let mut store = wasm.create_store();
+//         let instance = wasm
+//             .instantiate_module(&mut store, &module)
+//             .await
+//             .expect("Failed to instantiate module");
 
-        let memory = instance
-            .get_memory(&mut *store, "memory")
-            .ok_or_else(|| "Failed to get memory from instance".to_string())?;
+//         // let alloc = instance
+//         //     .get_typed_func::<u32, u32>(&mut store, "alloc")
+//         //     .map_err(|e| format!("Failed to get alloc function: {}", e))?;
 
-        Ok(Self {
-            alloc,
-            dealloc,
-            process,
-            memory,
-        })
-    }
+//         // let dealloc = instance
+//         //     .get_typed_func::<(u32, u32), ()>(&mut store, "dealloc")
+//         //     .map_err(|e| format!("Failed to get dealloc function: {}", e))?;
 
-    // async fn try_init(
-    //     &self,
-    //     mut store: &mut Store<WasiP1Ctx>,
-    //     input_buffer: &[u8],
-    //     serialization_format: SerializationFormat,
-    // ) -> Result<Vec<u8>, String> {
-    //     self.wasm_buffers_io(
-    //         &self.try_init,
-    //         &mut store,
-    //         input_buffer,
-    //         serialization_format,
-    //     )
-    //     .await
-    // }
+//         // let process = instance
+//         //     .get_typed_func::<(u32, u32, u32), i32>(&mut store, "process")
+//         //     .map_err(|e| format!("Failed to get process function: {}", e))?;
 
-    async fn process<T: ProcessingTransaction>(
-        &self,
-        input: T::Input,
-        serialization_format: SerializationFormat,
-    ) -> T::Output {
-        todo!("Implement process method")
-    }
+//         // let memory = instance
+//         //     .get_memory(&mut store, "memory")
+//         //     .ok_or_else(|| "Failed to get memory from instance".to_string())?;
 
-    async fn wasm_buffers_io(
-        &self,
-        function: &TypedFunc<(u32, u32, u32), i32>,
-        mut store: &mut Store<WasiP1Ctx>,
-        input_buffer: &[u8],
-        serialization_format: SerializationFormat,
-    ) -> Result<Vec<u8>, String> {
-        todo!("Implement wasm_buffers_io");
+//         Ok(Self {
+//             alloc,
+//             dealloc,
+//             process,
+//             store,
+//         })
+//     }
 
-        // let input_buffer_length = input_buffer.len() as u32;
+//     async fn process<T: ProcessingTransaction>(
+//         &mut self,
+//         input: T::Input,
+//         serialization_format: SerializationFormat,
+//     ) -> Result<T::Output, String> {
+//         let mut serializer = RmpSerializer::new(Vec::<u8>::new());
+//         input
+//             .serialize(&mut serializer)
+//             .map_err(|e| format!("Serialization to MessagePack failed: {}", e))?;
 
-        // let input_buffer_pointer = self
-        //     .alloc
-        //     .call_async(&mut store, input_buffer_length)
-        //     .await
-        //     .unwrap();
-        // self.memory
-        //     .write(&mut store, input_buffer_pointer as usize, &input_buffer)
-        //     .unwrap();
+//         let buffer = serializer.into_inner();
 
-        // let output_struct_size = 4u32;
-        // let output_buffer_pointer = self
-        //     .alloc
-        //     .call_async(&mut store, output_struct_size)
-        //     .await
-        //     .unwrap();
-
-        // let output_buffer_length = function
-        //     .call_async(
-        //         &mut store,
-        //         (
-        //             input_buffer_pointer,
-        //             input_buffer_length,
-        //             output_buffer_pointer,
-        //             serialization_format.into(),
-        //         ),
-        //     )
-        //     .await
-        //     .unwrap() as u32;
-
-        // let mut output_struct = [0u8; 4];
-        // self.memory
-        //     .read(
-        //         &mut store,
-        //         output_buffer_pointer as usize,
-        //         &mut output_struct,
-        //     )
-        //     .unwrap();
-        // let output_buffer_pointer = u32::from_le_bytes(output_struct);
-
-        // let output_buffer = {
-        //     self.memory
-        //         .data(&store)
-        //         .get(
-        //             output_buffer_pointer as usize
-        //                 ..(output_buffer_pointer + output_buffer_length) as usize,
-        //         )
-        //         .map(|data| data.to_vec())
-        // };
-
-        // self.dealloc
-        //     .call_async(&mut store, (input_buffer_pointer, input_buffer_length))
-        //     .await
-        //     .unwrap();
-        // self.dealloc
-        //     .call_async(&mut store, (output_buffer_pointer, output_buffer_length))
-        //     .await
-        //     .unwrap();
-
-        // output_buffer.ok_or_else(|| {
-        //     format!(
-        //         "Output buffer out of bounds: pointer = {}, length = {}",
-        //         output_buffer_pointer, output_buffer_length
-        //     )
-        // })
-    }
-}
+//         todo!()
+//     }
+// }
 
 type ClientId = u64;
 type GameDb = Arc<
@@ -327,7 +290,8 @@ type GameDb = Arc<
             Arc<
                 Mutex<(
                     Game,
-                    Vec<(mpsc::Sender<SerializedBuffer>, SerializedBuffer)>,
+                    Module,
+                    Vec<(Player, mpsc::Sender<Buffer>)>,
                 )>,
             >,
         >,

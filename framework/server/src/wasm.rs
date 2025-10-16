@@ -1,5 +1,5 @@
 use wasmtime::*;
-use wasmtime_wasi::{p2::WasiCtxBuilder, preview1::WasiP1Ctx};
+use wasmtime_wasi::{p1::{add_to_linker_async, WasiP1Ctx}, WasiCtxBuilder};
 
 #[derive(Clone)]
 pub struct Wasm {
@@ -39,7 +39,7 @@ impl Wasm {
     pub fn new() -> Self {
         let engine = Engine::new(&Config::default().async_support(true)).unwrap();
         let mut linker = Linker::new(&engine);
-        wasmtime_wasi::preview1::add_to_linker_async(&mut linker, |ctx| ctx).unwrap();
+        add_to_linker_async(&mut linker, |ctx| ctx).unwrap();
 
         Wasm { engine, linker }
     }

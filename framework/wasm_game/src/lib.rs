@@ -1,29 +1,28 @@
 mod serialization;
-use common::{
-    Game, ProcessingError, ProcessingInput, ProcessingOutput, ProcessingTransaction,
-    SerializedBuffer, TryInit, TryTakeAction, TryTakeActionOutput,
-};
-use game::{Config, FullState, GameCore, PlayerAction, PlayerState};
+use game::{Config, FullState, GameCore};
 use serialization::*;
 use std::vec;
 use tic_tac_toe::*;
 
-#[unsafe(no_mangle)]
-pub extern "C" fn alloc(size: usize) -> *mut u8 {
-    let mut buffer = Vec::with_capacity(size);
-    let pointer = buffer.as_mut_ptr();
+wit_bindgen::generate!({
+    path: "../test.wit",
+    world: "game-core",
+});
 
-    std::mem::forget(buffer);
+struct MyHost;
+impl Guest for MyHost {
+    #[allow(async_fn_in_trait)]
+    fn init(format:SerializationFormat,config:Buffer,) -> Result<Game,GameCoreError> {
+        todo!()
+    }
 
-    pointer
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn dealloc(ptr: *mut u8, size: usize) {
-    unsafe {
-        let _ = Vec::from_raw_parts(ptr, 0, size);
+    #[allow(async_fn_in_trait)]
+    fn take_action(format:SerializationFormat,game:Game,player_action:PlayerAction,) -> Result<TakeActionResult,GameCoreError> {
+        todo!()
     }
 }
+
+export!(MyHost);
 
 fn process<T: ProcessingTransaction + serde::Serialize>(
     input_pointer: *mut u8,
