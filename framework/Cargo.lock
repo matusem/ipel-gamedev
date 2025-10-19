@@ -496,13 +496,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "cookie"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2021,7 +2014,7 @@ dependencies = [
  "actix-web",
  "actix-ws",
  "anyhow",
- "common",
+ "base64",
  "futures-util",
  "rmp-serde",
  "serde",
@@ -2448,6 +2441,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasm"
+version = "0.1.0"
+dependencies = [
+ "game",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "tic_tac_toe",
+ "wit-bindgen",
+ "wit-bindgen-rt",
+]
+
+[[package]]
 name = "wasm-bindgen"
 version = "0.2.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2542,7 +2548,6 @@ dependencies = [
 name = "wasm_game"
 version = "0.1.0"
 dependencies = [
- "common",
  "game",
  "rmp-serde",
  "serde",
@@ -3287,6 +3292,15 @@ dependencies = [
  "anyhow",
  "heck",
  "wit-parser",
+]
+
+[[package]]
+name = "wit-bindgen-rt"
+version = "0.44.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "653c85dd7aee6fe6f4bded0d242406deadae9819029ce6f7d258c920c384358a"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]

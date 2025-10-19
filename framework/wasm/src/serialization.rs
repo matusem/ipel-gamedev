@@ -1,4 +1,4 @@
-use crate::SerializationFormat;
+use crate::bindings::SerializationFormat;
 use rmp_serde::{Deserializer as RmpDeserializer, Serializer as RmpSerializer};
 
 pub fn rmp_serialize<T: serde::Serialize>(data: &T) -> Result<Vec<u8>, String> {

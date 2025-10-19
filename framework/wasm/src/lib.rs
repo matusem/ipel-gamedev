@@ -1,11 +1,11 @@
+#[allow(warnings)]
+mod bindings;
+
+use bindings::*;
+
 mod serialization;
 use game::GameCore;
 use serialization::{get_deserialize as de, get_serialize as se};
-
-wit_bindgen::generate!({
-    path: "../test.wit",
-    world: "game-core",
-});
 
 struct MyHost<GameCoreT: GameCore> {
     _marker: std::marker::PhantomData<GameCoreT>,

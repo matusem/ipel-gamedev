@@ -90,7 +90,10 @@ pub trait PlayerState<GameT: GameCore>:
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(bound(deserialize = "GameT: GameCore"))]
-pub struct FullState<GameT: GameCore> {
+pub struct FullState<GameT: GameCore>
+where
+    GameT: Debug,
+{
     pub config: GameT::Config,
     pub state: GameT::State,
     pub actions_made: Vec<PlayerAction<GameT>>,
@@ -105,7 +108,7 @@ pub trait Action<GameT: GameCore>:
 }
 
 /// Game core trait that defines the essential components and behaviors of a game.
-pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> {
+pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
     /// The configuration of the game. Should contain all necessary parameters to initialize the game.s
     type Config: Config<Self>;
     /// The authoritative state of the game. Should contain all necessary information to represent the game state.
