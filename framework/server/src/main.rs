@@ -1,27 +1,17 @@
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, rt, web};
-use actix_ws::AggregatedMessage;
-use base64::engine::general_purpose::PAD;
+use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, ResponseError, rt, web};
 use futures_util::StreamExt as _;
-use rmp_serde::{Deserializer as RmpDeserializer, Serializer as RmpSerializer};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    f32::consts::E,
     sync::{Arc, Mutex, RwLock, mpsc},
+    time::Instant,
 };
 use uuid::Uuid;
-use wasmtime::{
-    Config, Engine, Linker, Module, Store,
-    component::{Component, bindgen},
-};
+use wasmtime::{Config, Engine, Store, component::Component};
 use wasmtime_wasi::{WasiCtxBuilder, p1::WasiP1Ctx};
 
-use crate::{
-    game_core::{Buffer, Game, GameCore, Player},
-    wasm::Wasm,
-};
+use crate::game_core::{Buffer, Game, GameCore, Player, TakeActionResult};
 
-mod wasm;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 mod game_core {
     use wasmtime::component::bindgen;
@@ -59,9 +49,6 @@ impl GameRequestParams {
             .get("player")
             .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'player' parameter"))?;
 
-        use base64::Engine;
-        use base64::engine::general_purpose::STANDARD;
-
         let player: Vec<u8> = STANDARD
             .decode(player)
             .map_err(|_| actix_web::error::ErrorBadRequest("Invalid base64 string"))?;
@@ -77,7 +64,9 @@ async fn game(
 ) -> Result<HttpResponse, Error> {
     let params = GameRequestParams::parse(&request)?;
 
-    let (response, mut session, mut stream) = actix_ws::handle(&request, body)?;
+    let (response, mut session, mut message_stream) = actix_ws::handle(&request, body)?;
+
+    let GameRequestParams { game_id, player } = params;
 
     // let mut stream = stream
     //     .aggregate_continuations()
@@ -85,30 +74,8 @@ async fn game(
 
     let (sender, mut receiver) = mpsc::channel::<Buffer>();
 
-    let player = params.player.clone();
-
-    {
-        let mut games = game_db.write().expect("Failed to lock game database");
-        games
-            .get_mut(&params.game_id)
-            .ok_or_else(|| actix_web::error::ErrorNotFound("Game not found"))?
-            .lock()
-            .unwrap()
-            .register_player(player.clone(), sender);
-    };
-
-    // {
-    //     let mut games = game_db.write().expect("Failed to lock game database");
-    //     games
-    //         .get_mut(&params.game_id)
-    //         .ok_or_else(|| actix_web::error::ErrorNotFound("Game not found"))?
-    //         .lock()
-    //         .unwrap()
-    //         .game
-    //         .player_states
-    //         .iter()
-    //         .for_each(|a| println!("{:?}", str::from_utf8(&a.player).unwrap()));
-    // };
+    let mut game_instance = game_db.get_game(game_id)?;
+    let player_state = game_instance.register_player(player.clone(), sender)?;
 
     // let mut send_session = session.clone();
     // rt::spawn(async move {
@@ -123,32 +90,33 @@ async fn game(
 
     // let mut send_session = session.clone();
     rt::spawn(async move {
-        {
-            let games = game_db.read().expect("Failed to lock game database");
-            let game_instance = games
-                .get(&params.game_id)
-                .ok_or_else(|| actix_web::error::ErrorNotFound("Game not found"))
-                .unwrap()
-                .lock()
-                .unwrap();
+        let game_instance = game_instance.clone();
+        let _ = session.text(str::from_utf8(&player_state).unwrap()).await;
 
-            let player_state = game_instance
-                .game
-                .player_states
-                .iter()
-                .find(|player_state| player_state.player == player.clone())
-                .unwrap();
-
-            let _ = session
-                .text(str::from_utf8(&player_state.state).unwrap())
-                .await;
-        }
-
-        while let Some(msg) = stream.next().await {
+        while let Some(msg) = message_stream.next().await {
             match msg {
                 Ok(actix_ws::Message::Text(text)) => {
                     session.text("echo: ".to_string() + &text).await.unwrap();
                     println!("Received text message: {}", text);
+
+                    let json = STANDARD.decode(text);
+
+                    game_instance
+                        .inner()
+                        .unwrap()
+                        .game_core
+                        .call_take_action(
+                            &mut game_instance.inner().unwrap().store,
+                            game::SerializationFormat::Json,
+                            &json.unwrap(),
+                            &player,
+                        )
+                        .await
+                        .unwrap()
+                        .map_err(|e| {
+                            println!("Error applying action: {}", e);
+                        })
+                        .ok();
                 }
                 _ => {}
             }
@@ -203,12 +171,9 @@ impl CreateGameParams {
 async fn create_game(
     request: HttpRequest,
     game_db: web::Data<GameDb>,
+    engine: web::Data<Engine>,
 ) -> Result<HttpResponse, Error> {
     let params = CreateGameParams::parse(&request)?;
-
-    let mut config = Config::default();
-    config.async_support(true);
-    let engine = Engine::new(&config).unwrap();
 
     let wasm_bytes = std::fs::read("./target/wasm32-wasip1/release/wasm.wasm")
         .expect("Wasm module not found, build wasm_game first");
@@ -233,14 +198,7 @@ async fn create_game(
         .map_err(|error| actix_web::error::ErrorNotAcceptable(error))?;
 
     let game_id = Uuid::new_v4();
-    let game_db_clone = game_db.clone();
-    {
-        let mut db = game_db_clone.write().unwrap();
-        db.insert(
-            game_id.clone(),
-            Arc::new(Mutex::new(GameInstance::new(game, store, game_core))),
-        );
-    }
+    game_db.new_game(game_id, GameInstanceInner::new(game, store, game_core));
 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
@@ -265,38 +223,246 @@ async fn get_games(
 
 type ClientId = u64;
 
-struct GameInstance {
+struct GameInstanceInner {
     game: Game,
-    store: Store<WasiP1Ctx>,
     game_core: GameCore,
     players: Vec<(Player, mpsc::Sender<Buffer>)>,
 }
 
-impl GameInstance {
-    fn new(game: Game, store: Store<WasiP1Ctx>, game_core: GameCore) -> Self {
+impl GameInstanceInner {
+    fn new(game: Game, game_core: GameCore) -> Self {
         Self {
             game,
-            store,
             game_core,
             players: vec![],
         }
     }
+}
 
-    fn register_player(&mut self, player: Player, sender: mpsc::Sender<Buffer>) {
-        self.players.push((player, sender));
+// #[derive(Clone)]
+// struct GameInstance {
+//     store: Store<WasiP1Ctx>,
+//     // inner: Arc<Mutex<GameInstanceInner>>,
+//     game: Game,
+//     game_core: GameCore,
+//     actors: Vec<
+//     players: Vec<(Player, mpsc::Sender<Buffer>)>,
+// }
+
+#[derive(Clone)]
+struct GameDb(Arc<RwLock<HashMap<Uuid, GameInstance>>>);
+
+#[derive(Debug)]
+enum GameInstanceError {
+    LockFailed,
+    GameNotFound,
+    PlayerNotInGame,
+    GameCore(game_core::GameCoreError),
+    Wasm(wasmtime::Error),
+}
+impl std::fmt::Display for GameInstanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use GameInstanceError::*;
+        match self {
+            LockFailed => write!(f, "Failed to acquire lock on game instance"),
+            GameNotFound => write!(f, "Game not found"),
+            PlayerNotInGame => write!(f, "Player not in game"),
+            GameCore(e) => write!(f, "Game core error: {}", e),
+            Wasm(e) => write!(f, "Wasm error: {}", e),
+        }
+    }
+}
+impl ResponseError for GameInstanceError {
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        use GameInstanceError::*;
+        match self {
+            LockFailed | Wasm(_) => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            PlayerNotInGame | GameCore(_) => actix_web::http::StatusCode::BAD_REQUEST,
+            GameNotFound => actix_web::http::StatusCode::NOT_FOUND,
+        }
     }
 }
 
-type GameDb = Arc<RwLock<HashMap<Uuid, Arc<Mutex<GameInstance>>>>>;
+struct PlayerChannel {
+    player: Player,
+    sender: mpsc::Sender<Buffer>,
+    receiver: mpsc::Receiver<Buffer>,
+}
+
+pub struct GameInstance {
+    players: Arc<RwLock<HashMap<Uuid, PlayerChannel>>>,
+    store: Store<WasiP1Ctx>,
+    game: Arc<RwLock<Game>>,
+    game_core: GameCore,
+}
+
+impl GameInstance {
+    fn new(engine: &Engine, game: Game, game_core: GameCore) -> Self {
+        let store = Store::new(&engine, WasiCtxBuilder::new().build_p1());
+
+        Self {
+            players: Arc::new(RwLock::new(HashMap::new())),
+            store,
+            game: Arc::new(RwLock::new(game)),
+            game_core,
+        }
+    }
+
+    fn get_player_ids(&self) -> Vec<Uuid> {
+        self.players
+            .read()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    async fn run(&mut self) {
+        loop {
+            let player_ids = self.get_player_ids();
+
+            for player_id in player_ids {
+                let players = self.players.write().unwrap();
+                let mut player_channel = players.get(&player_id).unwrap();
+
+                while let Ok(action) = player_channel.receiver.try_recv() {
+                    let result = self
+                        .game_core
+                        .call_take_action(
+                            &mut self.store,
+                            game_core::SerializationFormat::Json,
+                            &self.game.read().unwrap(),
+                            &(player_channel.player.clone(), action),
+                        )
+                        .await
+                        .map(|result| {
+                            result.map_err(|game_core_error| {
+                                GameInstanceError::GameCore(game_core_error)
+                            })
+                        })
+                        .map_err(|wasm_error| GameInstanceError::Wasm(wasm_error))
+                        .flatten();
+
+                    match result {
+                        Ok(take_action_result) => {
+                            let mut game = self.game.write().unwrap();
+
+                            let new_game_full_state = take_action_result.new_game_full_state;
+
+                            game.full_state.clear();
+
+                            // Send updated player states
+                            for (other_player_id, other_player_channel) in
+                                self.players.read().unwrap().iter()
+                            {
+                                let player_state = game
+                                    .player_states
+                                    .iter()
+                                    .find(|ps| ps.player == other_player_channel.player)
+                                    .map(|ps| ps.state.clone())
+                                    .unwrap_or_default();
+
+                                let _ = other_player_channel.sender.send(player_state);
+                            }
+                        }
+                        Err(e) => {
+                            println!("Error applying action for player {}: {}", player_id, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn register_player(&mut self, player: Vec<u8>) -> Result<(Buffer, P), GameInstanceError> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| GameInstanceError::LockFailed)?;
+
+        let player_states = &inner.game.player_states;
+
+        let player_state = player_states
+            .iter()
+            .find(|player_state| *player_state.player == player)
+            .cloned();
+
+        match player_state {
+            Some(player_state) => {
+                inner.players.push((player_state.player, sender));
+                Ok(player_state.state)
+            }
+            None => Err(GameInstanceError::PlayerNotInGame),
+        }
+    }
+
+    async fn try_apply_action(
+        &mut self,
+        player: Player,
+        action: Buffer,
+    ) -> Result<TakeActionResult, GameInstanceError> {
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| GameInstanceError::LockFailed)?;
+
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| GameInstanceError::LockFailed)?;
+
+        let action = inner.game_core.call_take_action(
+            store.data_mut(),
+            game_core::SerializationFormat::Json,
+            &inner.game,
+            &(player, action),
+        );
+
+        let result = action
+            .await
+            .map(|result| {
+                result.map_err(|game_core_error| GameInstanceError::GameCore(game_core_error))
+            })
+            .map_err(|wasm_error| GameInstanceError::Wasm(wasm_error))
+            .flatten();
+
+        result
+    }
+}
+
+impl GameDb {
+    fn new() -> Self {
+        Self(Arc::new(RwLock::new(HashMap::new())))
+    }
+
+    fn new_game(&self, game_id: Uuid, game_instance: GameInstance) {
+        let mut db = self.0.write().unwrap();
+        db.insert(game_id, game_instance);
+    }
+
+    fn get_game(&self, game_id: Uuid) -> Result<GameInstance, GetGameError> {
+        let db = self.0.read().unwrap();
+        db.get(&game_id)
+            .cloned()
+            .ok_or(GetGameError::NotFound(game_id))
+    }
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let game_db: GameDb = Arc::new(RwLock::new(HashMap::new()));
+    let game_db = GameDb::new();
     let game_db = web::Data::new(game_db.clone());
+
+    let engine = {
+        let mut config = Config::default();
+        config.async_support(true);
+        Engine::new(&config).unwrap()
+    };
 
     HttpServer::new(move || {
         App::new()
             .app_data(game_db.clone())
+            .app_data(engine.clone())
             .route("/create_game", web::post().to(create_game))
             .route("/game", web::get().to(game))
             .route("/games", web::get().to(get_games))
