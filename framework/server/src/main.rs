@@ -1,168 +1,204 @@
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, rt, web};
-use actix_ws::AggregatedMessage;
-use common::{Game, ProcessingTransaction, SerializationFormat, SerializedBuffer};
+use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, ResponseError, rt, web};
 use futures_util::StreamExt as _;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, RwLock, mpsc},
+    time::Instant,
 };
 use uuid::Uuid;
-use wasmtime::*;
-use wasmtime_wasi::{p2::WasiCtxBuilder, preview1::WasiP1Ctx};
+use wasmtime::{Config, Engine, Store, component::Component};
+use wasmtime_wasi::{WasiCtxBuilder, p1::WasiP1Ctx};
 
-use crate::wasm::Wasm;
+use crate::game_core::{Buffer, Game, GameCore, Player, TakeActionResult};
 
-mod wasm;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+mod game_core {
+    use wasmtime::component::bindgen;
+
+    bindgen!({
+        path: "../test.wit",
+        world: "game-core",
+        imports: { default: async | trappable },
+        exports: { default: async }
+    });
+}
+
+struct GameRequestParams {
+    game_id: Uuid,
+    player: Vec<u8>,
+}
+
+impl GameRequestParams {
+    fn parse(request: &HttpRequest) -> Result<Self, actix_web::Error> {
+        let query = request
+            .uri()
+            .query()
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing query parameters"))?;
+
+        let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
+
+        let game_id = params
+            .get("game-id")
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'game-id' parameter"))?;
+
+        let game_id = Uuid::parse_str(game_id)
+            .map_err(|_| actix_web::error::ErrorBadRequest("Invalid 'game-id' format"))?;
+
+        let player = params
+            .get("player")
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'player' parameter"))?;
+
+        let player: Vec<u8> = STANDARD
+            .decode(player)
+            .map_err(|_| actix_web::error::ErrorBadRequest("Invalid base64 string"))?;
+
+        Ok(Self { game_id, player })
+    }
+}
 
 async fn game(
     request: HttpRequest,
-    stream: web::Payload,
-    module: web::Data<Module>,
-    wasm: web::Data<Wasm>,
+    body: web::Payload,
     game_db: web::Data<GameDb>,
 ) -> Result<HttpResponse, Error> {
-    let query = request
-        .uri()
-        .query()
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing query parameters"))?;
+    let params = GameRequestParams::parse(&request)?;
 
-    let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
-    let game_id = params
-        .get("game-id")
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'game-id' parameter"))?;
-    let game_id = Uuid::parse_str(game_id)
-        .map_err(|_| actix_web::error::ErrorBadRequest("Invalid 'game-id' format"))?;
-    let player = params
-        .get("player")
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'player' parameter"))?
-        .as_bytes()
-        .iter()
-        .cloned()
-        .collect::<Vec<_>>();
+    let (response, mut session, mut message_stream) = actix_ws::handle(&request, body)?;
 
-    let (response, mut session, stream) = actix_ws::handle(&request, stream)?;
+    let GameRequestParams { game_id, player } = params;
 
-    let mut stream = stream
-        .aggregate_continuations()
-        .max_continuation_size(2_usize.pow(20));
+    // let mut stream = stream
+    //     .aggregate_continuations()
+    //     .max_continuation_size(2_usize.pow(20));
 
-    let (sender, mut receiver) = mpsc::channel::<SerializedBuffer>();
+    let (sender, mut receiver) = mpsc::channel::<Buffer>();
 
-    // {
-    //     let games = game_db.get_mut().expect("Failed to lock game database");
-    //     games
-    //         .get_mut(&game_id)
-    //         .ok_or_else(|| actix_web::error::ErrorNotFound("Game not found"))?
-    //         .1
-    //         .push((sender, SerializedBuffer::default()));
-    // }
+    let mut game_instance = game_db.get_game(game_id)?;
+    let player_state = game_instance.register_player(player.clone(), sender)?;
 
-    let mut send_session = session.clone();
+    // let mut send_session = session.clone();
+    // rt::spawn(async move {
+    //     let _ = send_session.text("sup").await;
+
+    //     while let Ok(msg) = receiver.recv() {
+    //         // if send_session.text(msg).await.is_err() {
+    //         //     break; // Exit if sending fails
+    //         // }
+    //     }
+    // });
+
+    // let mut send_session = session.clone();
     rt::spawn(async move {
-        while let Ok(msg) = receiver.recv() {
-            // if send_session.text(msg).await.is_err() {
-            //     break; // Exit if sending fails
-            // }
+        let game_instance = game_instance.clone();
+        let _ = session.text(str::from_utf8(&player_state).unwrap()).await;
+
+        while let Some(msg) = message_stream.next().await {
+            match msg {
+                Ok(actix_ws::Message::Text(text)) => {
+                    session.text("echo: ".to_string() + &text).await.unwrap();
+                    println!("Received text message: {}", text);
+
+                    let json = STANDARD.decode(text);
+
+                    game_instance
+                        .inner()
+                        .unwrap()
+                        .game_core
+                        .call_take_action(
+                            &mut game_instance.inner().unwrap().store,
+                            game::SerializationFormat::Json,
+                            &json.unwrap(),
+                            &player,
+                        )
+                        .await
+                        .unwrap()
+                        .map_err(|e| {
+                            println!("Error applying action: {}", e);
+                        })
+                        .ok();
+                }
+                _ => {}
+            }
         }
-    });
 
-    rt::spawn(async move {
-        // let mut store = wasm.create_store();
-        // let instance = wasm
-        //     .instantiate_module(&mut store, &module)
-        //     .await
-        //     .expect("Failed to instantiate module");
-
-        // let game_instance = GameWasmInstance::new(&mut store, instance).unwrap();
-
-        // while let Some(msg) = stream.next().await {
-        //     match msg {
-        //         Ok(AggregatedMessage::Text(text)) => {
-        //             println!("Received text message: {}", text);
-
-        //             if let Some((command, payload)) = text.split_once(':') {
-        //                 let output = match command {
-        //                     "init" => {
-        //                         println!("Received init command with payload: {}", payload);
-        //                         game_instance
-        //                             .try_init(
-        //                                 &mut store,
-        //                                 payload.as_bytes(),
-        //                                 SerializationFormat::Json,
-        //                             )
-        //                             .await
-        //                     }
-        //                     "action" => {
-        //                         game_instance
-        //                             .try_take_action(
-        //                                 &mut store,
-        //                                 payload.as_bytes(),
-        //                                 SerializationFormat::Json,
-        //                             )
-        //                             .await
-        //                     }
-        //                     _ => {
-        //                         println!("Unknown command: {}", command);
-        //                         Err(format!("Unknown command: {}", command))
-        //                     }
-        //                 };
-
-        //                 let json = output.and_then(|output| {
-        //                     String::from_utf8(output.clone())
-        //                         .map_err(|e| format!("Error converting output to UTF-8: {}", e))
-        //                 });
-
-        //                 match json {
-        //                     Ok(json) => {
-        //                         println!("Received init command with payload: {}", json);
-        //                         session.text(json).await.unwrap();
-        //                     }
-        //                     Err(e) => {
-        //                         println!("Error during init: {}", e);
-        //                         session.text(format!("Error: {}", e)).await.unwrap();
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //         _ => {}
-        //     }
-        // }
+        let _ = session.close(None).await;
     });
 
     Ok(response)
 }
 
+struct CreateGameParams {
+    game: String,
+    config: Vec<u8>,
+}
+
+impl CreateGameParams {
+    fn parse(request: &HttpRequest) -> Result<Self, actix_web::Error> {
+        let query = request
+            .uri()
+            .query()
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing query parameters"))?;
+
+        let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
+
+        let game = params
+            .get("game")
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'game' parameter"))?
+            .to_string();
+
+        let config_base64 = params
+            .get("config_base64")
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'config_base64' parameter"))?
+            .to_string();
+
+        use base64::Engine;
+        use base64::engine::general_purpose::STANDARD;
+
+        let config_base64: Vec<u8> = STANDARD
+            .decode(config_base64)
+            .map_err(|_| actix_web::error::ErrorBadRequest("Invalid base64 string"))?;
+
+        println!("Config: {:?}", config_base64);
+
+        Ok(Self {
+            game,
+            config: config_base64,
+        })
+    }
+}
+
 async fn create_game(
     request: HttpRequest,
-    wasm: web::Data<Wasm>,
-    module: web::Data<Module>,
     game_db: web::Data<GameDb>,
+    engine: web::Data<Engine>,
 ) -> Result<HttpResponse, Error> {
-    if let Some(query) = request.uri().query() {
-        println!("Query params: {}", query);
-        let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
-        println!("Parsed params: {:?}", params);
-    }
+    let params = CreateGameParams::parse(&request)?;
 
-    let mut store = wasm.create_store();
-    let instance = wasm
-        .instantiate_module(&mut store, &module)
+    let wasm_bytes = std::fs::read("./target/wasm32-wasip1/release/wasm.wasm")
+        .expect("Wasm module not found, build wasm_game first");
+    let component = Component::new(&engine, &wasm_bytes).unwrap();
+
+    let mut linker = wasmtime::component::Linker::new(&engine);
+    wasmtime_wasi::p2::add_to_linker_async(&mut linker).unwrap();
+
+    let mut store = Store::new(&engine, WasiCtxBuilder::new().build_p1());
+    let game_core = GameCore::instantiate_async(&mut store, &component, &linker)
         .await
-        .expect("Failed to instantiate module");
+        .unwrap();
 
-    let game_instance = GameWasmInstance::new(&mut store, instance).unwrap();
-
-    let game = Game {
-        state: SerializedBuffer::default(),
-        player_states: SerializedBuffer::default(),
-    };
+    let game = game_core
+        .call_init(
+            &mut store,
+            game_core::SerializationFormat::Json,
+            &params.config,
+        )
+        .await
+        .map_err(|error| actix_web::error::ErrorNotAcceptable(error))?
+        .map_err(|error| actix_web::error::ErrorNotAcceptable(error))?;
 
     let game_id = Uuid::new_v4();
-    let game_db_clone = game_db.clone();
-    {
-        let mut db = game_db_clone.write().unwrap();
-        db.insert(game_id.clone(), Arc::new(Mutex::new((game, vec![]))));
-    }
+    game_db.new_game(game_id, GameInstanceInner::new(game, store, game_core));
 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
@@ -185,177 +221,248 @@ async fn get_games(
         .body(serde_json::to_string(&games).unwrap()))
 }
 
-struct GameWasmInstance {
-    alloc: TypedFunc<u32, u32>,
-    dealloc: TypedFunc<(u32, u32), ()>,
-    process: TypedFunc<(u32, u32, u32), i32>,
-    memory: Memory,
-}
-
-impl GameWasmInstance {
-    fn new(store: &mut Store<WasiP1Ctx>, instance: Instance) -> Result<Self, String> {
-        let alloc = instance
-            .get_typed_func::<u32, u32>(&mut *store, "alloc")
-            .map_err(|e| format!("Failed to get alloc function: {}", e))?;
-
-        let dealloc = instance
-            .get_typed_func::<(u32, u32), ()>(&mut *store, "dealloc")
-            .map_err(|e| format!("Failed to get dealloc function: {}", e))?;
-
-        let process = instance
-            .get_typed_func::<(u32, u32, u32), i32>(&mut *store, "process")
-            .map_err(|e| format!("Failed to get process function: {}", e))?;
-
-        let memory = instance
-            .get_memory(&mut *store, "memory")
-            .ok_or_else(|| "Failed to get memory from instance".to_string())?;
-
-        Ok(Self {
-            alloc,
-            dealloc,
-            process,
-            memory,
-        })
-    }
-
-    // async fn try_init(
-    //     &self,
-    //     mut store: &mut Store<WasiP1Ctx>,
-    //     input_buffer: &[u8],
-    //     serialization_format: SerializationFormat,
-    // ) -> Result<Vec<u8>, String> {
-    //     self.wasm_buffers_io(
-    //         &self.try_init,
-    //         &mut store,
-    //         input_buffer,
-    //         serialization_format,
-    //     )
-    //     .await
-    // }
-
-    async fn process<T: ProcessingTransaction>(
-        &self,
-        input: T::Input,
-        serialization_format: SerializationFormat,
-    ) -> T::Output {
-        todo!("Implement process method")
-    }
-
-    async fn wasm_buffers_io(
-        &self,
-        function: &TypedFunc<(u32, u32, u32), i32>,
-        mut store: &mut Store<WasiP1Ctx>,
-        input_buffer: &[u8],
-        serialization_format: SerializationFormat,
-    ) -> Result<Vec<u8>, String> {
-        todo!("Implement wasm_buffers_io");
-
-        // let input_buffer_length = input_buffer.len() as u32;
-
-        // let input_buffer_pointer = self
-        //     .alloc
-        //     .call_async(&mut store, input_buffer_length)
-        //     .await
-        //     .unwrap();
-        // self.memory
-        //     .write(&mut store, input_buffer_pointer as usize, &input_buffer)
-        //     .unwrap();
-
-        // let output_struct_size = 4u32;
-        // let output_buffer_pointer = self
-        //     .alloc
-        //     .call_async(&mut store, output_struct_size)
-        //     .await
-        //     .unwrap();
-
-        // let output_buffer_length = function
-        //     .call_async(
-        //         &mut store,
-        //         (
-        //             input_buffer_pointer,
-        //             input_buffer_length,
-        //             output_buffer_pointer,
-        //             serialization_format.into(),
-        //         ),
-        //     )
-        //     .await
-        //     .unwrap() as u32;
-
-        // let mut output_struct = [0u8; 4];
-        // self.memory
-        //     .read(
-        //         &mut store,
-        //         output_buffer_pointer as usize,
-        //         &mut output_struct,
-        //     )
-        //     .unwrap();
-        // let output_buffer_pointer = u32::from_le_bytes(output_struct);
-
-        // let output_buffer = {
-        //     self.memory
-        //         .data(&store)
-        //         .get(
-        //             output_buffer_pointer as usize
-        //                 ..(output_buffer_pointer + output_buffer_length) as usize,
-        //         )
-        //         .map(|data| data.to_vec())
-        // };
-
-        // self.dealloc
-        //     .call_async(&mut store, (input_buffer_pointer, input_buffer_length))
-        //     .await
-        //     .unwrap();
-        // self.dealloc
-        //     .call_async(&mut store, (output_buffer_pointer, output_buffer_length))
-        //     .await
-        //     .unwrap();
-
-        // output_buffer.ok_or_else(|| {
-        //     format!(
-        //         "Output buffer out of bounds: pointer = {}, length = {}",
-        //         output_buffer_pointer, output_buffer_length
-        //     )
-        // })
-    }
-}
-
 type ClientId = u64;
-type GameDb = Arc<
-    RwLock<
-        HashMap<
-            Uuid,
-            Arc<
-                Mutex<(
-                    Game,
-                    Vec<(mpsc::Sender<SerializedBuffer>, SerializedBuffer)>,
-                )>,
-            >,
-        >,
-    >,
->;
+
+struct GameInstanceInner {
+    game: Game,
+    game_core: GameCore,
+    players: Vec<(Player, mpsc::Sender<Buffer>)>,
+}
+
+impl GameInstanceInner {
+    fn new(game: Game, game_core: GameCore) -> Self {
+        Self {
+            game,
+            game_core,
+            players: vec![],
+        }
+    }
+}
+
+// #[derive(Clone)]
+// struct GameInstance {
+//     store: Store<WasiP1Ctx>,
+//     // inner: Arc<Mutex<GameInstanceInner>>,
+//     game: Game,
+//     game_core: GameCore,
+//     actors: Vec<
+//     players: Vec<(Player, mpsc::Sender<Buffer>)>,
+// }
+
+#[derive(Clone)]
+struct GameDb(Arc<RwLock<HashMap<Uuid, GameInstance>>>);
+
+#[derive(Debug)]
+enum GameInstanceError {
+    LockFailed,
+    GameNotFound,
+    PlayerNotInGame,
+    GameCore(game_core::GameCoreError),
+    Wasm(wasmtime::Error),
+}
+impl std::fmt::Display for GameInstanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use GameInstanceError::*;
+        match self {
+            LockFailed => write!(f, "Failed to acquire lock on game instance"),
+            GameNotFound => write!(f, "Game not found"),
+            PlayerNotInGame => write!(f, "Player not in game"),
+            GameCore(e) => write!(f, "Game core error: {}", e),
+            Wasm(e) => write!(f, "Wasm error: {}", e),
+        }
+    }
+}
+impl ResponseError for GameInstanceError {
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        use GameInstanceError::*;
+        match self {
+            LockFailed | Wasm(_) => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            PlayerNotInGame | GameCore(_) => actix_web::http::StatusCode::BAD_REQUEST,
+            GameNotFound => actix_web::http::StatusCode::NOT_FOUND,
+        }
+    }
+}
+
+struct PlayerChannel {
+    player: Player,
+    sender: mpsc::Sender<Buffer>,
+    receiver: mpsc::Receiver<Buffer>,
+}
+
+pub struct GameInstance {
+    players: Arc<RwLock<HashMap<Uuid, PlayerChannel>>>,
+    store: Store<WasiP1Ctx>,
+    game: Arc<RwLock<Game>>,
+    game_core: GameCore,
+}
+
+impl GameInstance {
+    fn new(engine: &Engine, game: Game, game_core: GameCore) -> Self {
+        let store = Store::new(&engine, WasiCtxBuilder::new().build_p1());
+
+        Self {
+            players: Arc::new(RwLock::new(HashMap::new())),
+            store,
+            game: Arc::new(RwLock::new(game)),
+            game_core,
+        }
+    }
+
+    fn get_player_ids(&self) -> Vec<Uuid> {
+        self.players
+            .read()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    async fn run(&mut self) {
+        loop {
+            let player_ids = self.get_player_ids();
+
+            for player_id in player_ids {
+                let players = self.players.write().unwrap();
+                let mut player_channel = players.get(&player_id).unwrap();
+
+                while let Ok(action) = player_channel.receiver.try_recv() {
+                    let result = self
+                        .game_core
+                        .call_take_action(
+                            &mut self.store,
+                            game_core::SerializationFormat::Json,
+                            &self.game.read().unwrap(),
+                            &(player_channel.player.clone(), action),
+                        )
+                        .await
+                        .map(|result| {
+                            result.map_err(|game_core_error| {
+                                GameInstanceError::GameCore(game_core_error)
+                            })
+                        })
+                        .map_err(|wasm_error| GameInstanceError::Wasm(wasm_error))
+                        .flatten();
+
+                    match result {
+                        Ok(take_action_result) => {
+                            let mut game = self.game.write().unwrap();
+
+                            let new_game_full_state = take_action_result.new_game_full_state;
+
+                            game.full_state.clear();
+
+                            // Send updated player states
+                            for (other_player_id, other_player_channel) in
+                                self.players.read().unwrap().iter()
+                            {
+                                let player_state = game
+                                    .player_states
+                                    .iter()
+                                    .find(|ps| ps.player == other_player_channel.player)
+                                    .map(|ps| ps.state.clone())
+                                    .unwrap_or_default();
+
+                                let _ = other_player_channel.sender.send(player_state);
+                            }
+                        }
+                        Err(e) => {
+                            println!("Error applying action for player {}: {}", player_id, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn register_player(&mut self, player: Vec<u8>) -> Result<(Buffer, P), GameInstanceError> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| GameInstanceError::LockFailed)?;
+
+        let player_states = &inner.game.player_states;
+
+        let player_state = player_states
+            .iter()
+            .find(|player_state| *player_state.player == player)
+            .cloned();
+
+        match player_state {
+            Some(player_state) => {
+                inner.players.push((player_state.player, sender));
+                Ok(player_state.state)
+            }
+            None => Err(GameInstanceError::PlayerNotInGame),
+        }
+    }
+
+    async fn try_apply_action(
+        &mut self,
+        player: Player,
+        action: Buffer,
+    ) -> Result<TakeActionResult, GameInstanceError> {
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|_| GameInstanceError::LockFailed)?;
+
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| GameInstanceError::LockFailed)?;
+
+        let action = inner.game_core.call_take_action(
+            store.data_mut(),
+            game_core::SerializationFormat::Json,
+            &inner.game,
+            &(player, action),
+        );
+
+        let result = action
+            .await
+            .map(|result| {
+                result.map_err(|game_core_error| GameInstanceError::GameCore(game_core_error))
+            })
+            .map_err(|wasm_error| GameInstanceError::Wasm(wasm_error))
+            .flatten();
+
+        result
+    }
+}
+
+impl GameDb {
+    fn new() -> Self {
+        Self(Arc::new(RwLock::new(HashMap::new())))
+    }
+
+    fn new_game(&self, game_id: Uuid, game_instance: GameInstance) {
+        let mut db = self.0.write().unwrap();
+        db.insert(game_id, game_instance);
+    }
+
+    fn get_game(&self, game_id: Uuid) -> Result<GameInstance, GetGameError> {
+        let db = self.0.read().unwrap();
+        db.get(&game_id)
+            .cloned()
+            .ok_or(GetGameError::NotFound(game_id))
+    }
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let wasm_bytes = std::fs::read("../target/wasm32-wasip1/release/wasm_game.wasm")
-        .expect("Wasm module not found, build wasm_game first");
-
-    let wasm = Wasm::new();
-
-    let module = wasm
-        .create_module(&wasm_bytes)
-        .expect("Failed to create module");
-
-    let wasm = web::Data::new(wasm);
-    let module = web::Data::new(module);
-
-    let game_db: GameDb = Arc::new(RwLock::new(HashMap::new()));
+    let game_db = GameDb::new();
     let game_db = web::Data::new(game_db.clone());
+
+    let engine = {
+        let mut config = Config::default();
+        config.async_support(true);
+        Engine::new(&config).unwrap()
+    };
 
     HttpServer::new(move || {
         App::new()
-            .app_data(wasm.clone())
-            .app_data(module.clone())
             .app_data(game_db.clone())
+            .app_data(engine.clone())
             .route("/create_game", web::post().to(create_game))
             .route("/game", web::get().to(game))
             .route("/games", web::get().to(get_games))
