@@ -1948,6 +1948,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "seeded-random"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "237b344c25622ede58b1196b3c9d5387cad2743b2b86c450f886100d8751f256"
+dependencies = [
+ "parking_lot",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+]
+
+[[package]]
 name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3320,6 +3331,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "zolik"
+version = "0.1.0"
+dependencies = [
+ "game",
+ "itertools",
+ "seeded-random",
+ "serde",
 ]
 
 [[package]]
