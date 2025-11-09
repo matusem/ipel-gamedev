@@ -5,7 +5,7 @@ cargo install --locked wasm-tools
 ```
 
 ```
-cargo install --locked wasm-tools
+cargo install --locked cargo component
 ```
 
 ```
