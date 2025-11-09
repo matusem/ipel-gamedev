@@ -153,7 +153,11 @@ struct SetupPlayerState {
 struct PlayingPlayerState {
     state_owner: Player,
     player_turn: Player,
+    players: Vec<Player>,
+    turn_part: TurnPart,
+    round_number: usize,
     hand: Vec<Card>,
+    other_players_hands_sizes: HashMap<Player, usize>,
     player_sets: HashMap<Player, Vec<CardSet>>,
     cards_left_in_deck: usize,
     discard_pile_top: Option<Card>,
@@ -188,70 +192,187 @@ impl game::PlayerState<Zolik> for PlayerState {
             Action::CutTheDeck(position) => match self {
                 PlayerState::Setup(state) => {
                     if state.player_turn != state.state_owner {
-                        return Err(ActionError::NotYourTurn);
+                        return Err(ActionError::NotYourTurn(
+                            "It's not your turn to cut the deck.".to_string(),
+                        ));
                     }
                     if *position < 3 || *position > state.deck_size - 3 {
-                        return Err(ActionError::InvalidCutPosition);
+                        return Err(ActionError::InvalidCutPosition(format!(
+                            "Cut position must be between 3 and {}.",
+                            state.deck_size - 3
+                        )));
                     }
                     Ok(())
                 }
-                _ => return Err(ActionError::CannotCutAgain),
+                PlayerState::Playing(_) => {
+                    return Err(ActionError::CannotCutAgain(format!(
+                        "Cannot cut the deck again, game already in playing state."
+                    )));
+                }
             },
+            Action::DrawFromDeck => match self {
+                PlayerState::Setup(_) => Err(ActionError::SetupIncomplete(
+                    "Setup incomplete, wait until setup completes.".to_string(),
+                )),
+                PlayerState::Playing(state) => {
+                    if state.player_turn != state.state_owner {
+                        return Err(ActionError::NotYourTurn("It's not your turn".to_string()));
+                    }
+                    if state.turn_part != TurnPart::Draw {
+                        return Err(ActionError::CannotDrawAgain);
+                    }
+                    Ok(())
+                }
+            },
+            Action::DrawFromDiscard => match self {
+                PlayerState::Setup(_) => Err(ActionError::SetupIncomplete(
+                    "Setup incomplete, wait until setup completes.".to_string(),
+                )),
+                PlayerState::Playing(state) => {
+                    if state.player_turn != state.state_owner {
+                        return Err(ActionError::NotYourTurn("It's not your turn".to_string()));
+                    }
+                    if state.turn_part != TurnPart::Draw {
+                        return Err(ActionError::CannotDrawAgain);
+                    }
+                    if state.round_number < 4 {
+                        return Err(ActionError::CannotDrawFromDiscard(
+                            "Cannot draw from discard pile in the first two rounds.".to_string(),
+                        ));
+                    }
+                    Err(ActionError::CannotDrawFromDiscard(
+                        "Cannot draw from discard pile, because YOU have a skill issue. Definitely it's not because I do not want to check the rules."
+                            .to_string(),
+                    ))
+                }
+            },
+            Action::Discard(card_position) => match self {
+                PlayerState::Setup(_) => Err(ActionError::SetupIncomplete(
+                    "Setup incomplete, wait until setup completes.".to_string(),
+                )),
+                PlayerState::Playing(state) => {
+                    if state.player_turn != state.state_owner {
+                        return Err(ActionError::NotYourTurn("It's not your turn".to_string()));
+                    }
+                    if state.turn_part != TurnPart::TheRestOfTheFuckingOwl {
+                        return Err(ActionError::MustDrawFirst);
+                    }
+                    if *card_position >= state.hand.len() {
+                        return Err(ActionError::InvalidCardPosition(
+                            "Invalid card position, cannot discard this.".to_string(),
+                        ));
+                    }
+                    Ok(())
+                }
+            },
+
             _ => {
                 todo!()
             }
         }
     }
 
-    fn apply_event(&mut self, event: &<Zolik as GameCore>::PlayerEvent) {
+    fn apply_event(&mut self, event: &<Zolik as GameCore>::Event) {
         match event {
-            PlayerEvent::Event(player_event) => match player_event {
-                Event::SetupComplete(data) => match self {
-                    PlayerState::Setup(state) => {
-                        *self = PlayerState::Playing(PlayingPlayerState {
-                            state_owner: state.state_owner,
-                            player_turn: state.players[1],
-                            hand: data.player_hands.get(&state.state_owner).unwrap().to_vec(),
-                            player_sets: state
-                                .players
-                                .iter()
-                                .map(|player| {
-                                    (
-                                        *player,
-                                        vec![], // no sets at the start
-                                    )
-                                })
-                                .collect(),
-                            cards_left_in_deck: data.updated_deck.len(),
-                            discard_pile_top: None,
-                            specialna_karta_co_je_na_spodku_decku: data.bottom_card,
-                        });
-                    }
-                    _ => unreachable!(),
-                },
-                Event::CardDrawn(data) => match self {
-                    PlayerState::Playing(state) => {
-                        if state.state_owner == data.player {
-                            state.hand = data.hand.clone();
-                            state.cards_left_in_deck = data.cards_left_in_deck;
-                        }
-                    }
-                    _ => unreachable!(),
-                },
-                Event::CardDiscarded(data) => match self {
-                    PlayerState::Playing(state) => {
-                        if state.state_owner == data.player {
-                            state.hand = data.hand.clone();
-                        }
-                        state.discard_pile_top = Some(data.card);
-                    }
-                    _ => unreachable!(),
-                },
+            Event::SetupComplete(data) => match self {
+                PlayerState::Setup(state) => {
+                    *self = PlayerState::Playing(PlayingPlayerState {
+                        state_owner: state.state_owner,
+                        player_turn: state.players[1],
+                        players: state.players.clone(),
+                        turn_part: TurnPart::Draw,
+                        round_number: 1,
+                        hand: data.player_hands.get(&state.state_owner).unwrap().to_vec(),
+                        other_players_hands_sizes: state
+                            .players
+                            .iter()
+                            .filter(|p| **p != state.state_owner)
+                            .map(|player| (*player, data.player_hands.get(player).unwrap().len()))
+                            .collect(),
+                        player_sets: state
+                            .players
+                            .iter()
+                            .map(|player| {
+                                (
+                                    *player,
+                                    vec![], // no sets at the start
+                                )
+                            })
+                            .collect(),
+                        cards_left_in_deck: data.updated_deck.len(),
+                        discard_pile_top: None,
+                        specialna_karta_co_je_na_spodku_decku: data.bottom_card,
+                    });
+                }
                 _ => unreachable!(),
             },
-            PlayerEvent::Action(_) => {
-                // Actions do not modify player state directly
-            }
+            Event::DeckChanged(data) => match self {
+                PlayerState::Playing(state) => {
+                    state.cards_left_in_deck = data.updated_deck.len();
+                }
+                _ => unreachable!(),
+            },
+            Event::DiscardChanged(data) => match self {
+                PlayerState::Playing(state) => {
+                    if let Some(top_card) = data.discard.last() {
+                        state.discard_pile_top = Some(*top_card);
+                    } else {
+                        state.discard_pile_top = None;
+                    }
+                }
+                _ => unreachable!(),
+            },
+            Event::PlayerHandCardAdded(data) => match self {
+                PlayerState::Playing(state) => {
+                    if state.state_owner == data.player {
+                        state.hand.insert(data.position, data.added_card);
+                    } else {
+                        *state
+                            .other_players_hands_sizes
+                            .get_mut(&data.player)
+                            .unwrap() += 1;
+                    }
+                }
+                _ => unreachable!(),
+            },
+            Event::PlayerHandCardRemoved(data) => match self {
+                PlayerState::Playing(state) => {
+                    if state.state_owner == data.player {
+                        state.hand.remove(data.position);
+                    } else {
+                        *state
+                            .other_players_hands_sizes
+                            .get_mut(&data.player)
+                            .unwrap() -= 1;
+                    }
+                }
+                _ => unreachable!(),
+            },
+            Event::PlayerHandCardMoved(data) => match self {
+                PlayerState::Playing(state) => {
+                    if state.state_owner == data.player {
+                        state.hand.remove(data.original_position);
+                        state.hand.insert(data.new_position, data.card);
+                    }
+                }
+                _ => unreachable!(),
+            },
+            Event::TurnPartChanged(turn_part) => match self {
+                PlayerState::Playing(state) => {
+                    state.turn_part = turn_part.clone();
+                }
+                _ => unreachable!(),
+            },
+            Event::PlayerTurnChanged(player) => match self {
+                PlayerState::Playing(state) => {
+                    state.player_turn = *player;
+                    if state.player_turn == state.players[0] {
+                        state.round_number += 1;
+                    }
+                }
+                _ => unreachable!(),
+            },
+            //_ => unreachable!(),
         }
     }
 }
@@ -269,15 +390,16 @@ enum Action {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum ActionError {
+    NotYourTurn(String),
     //Setup
-    CannotCutAgain,
-    InvalidCutPosition,
+    CannotCutAgain(String),
+    InvalidCutPosition(String),
     //Playing
-    NotYourTurn,
+    SetupIncomplete(String),
     MustDrawFirst,
     CannotDrawAgain,
-    CannotDrawFromDiscard,
-    // TODO
+    CannotDrawFromDiscard(String),
+    InvalidCardPosition(String), // TODO
 }
 impl game::Action<Zolik> for Action {
     type Error = ActionError;
@@ -307,22 +429,70 @@ struct CardDrawnData {
     cards_left_in_deck: usize,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct CardDiscardedData {
+struct DeckData {
+    updated_deck: Vec<Card>,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct DiscardData {
+    discard: Vec<Card>,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct PlayerHandCardAddedData {
+    player: Player,
+    added_card: Card,
+    position: usize,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct PlayerHandCardRemovedData {
+    player: Player,
+    removed_card: Card,
+    position: usize,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct PlayerHandCardMovedData {
     player: Player,
     card: Card,
-    hand: Vec<Card>,
+    original_position: usize,
+    new_position: usize,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Event {
     SetupComplete(SetupCompleteData),
-    CardDrawn(CardDrawnData),
-    CardDiscarded(CardDiscardedData),
+    DeckChanged(DeckData),
+    DiscardChanged(DiscardData),
+    PlayerHandCardAdded(PlayerHandCardAddedData),
+    PlayerHandCardRemoved(PlayerHandCardRemovedData),
+    PlayerHandCardMoved(PlayerHandCardMovedData),
+    TurnPartChanged(TurnPart),
+    PlayerTurnChanged(Player),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-enum PlayerEvent {
-    Event(Event),
-    Action(Action),
+impl Zolik {
+    fn draw_top_card(cards: &mut Vec<Card>) -> Card {
+        if cards.is_empty() {
+            panic!("Cannot draw from empty stack");
+        }
+        cards.pop().unwrap()
+    }
+    fn shuffle_discard_into_deck(playing_state: &mut PlayingState) -> () {
+        let discard_top_card = Self::draw_top_card(&mut playing_state.discard_pile);
+        let mut new_deck = playing_state.discard_pile.clone();
+        playing_state.discard_pile = vec![discard_top_card];
+        // shuffle
+        new_deck = new_deck
+            .into_iter()
+            .map(|card| (playing_state.rng.get(), card))
+            .sorted_by(|a, b| Ord::cmp(&a.0, &b.0))
+            .map(|(_, card)| card)
+            .collect();
+        playing_state.deck.extend(new_deck);
+    }
+    fn draw_from_deck_safe(playing_state: &mut PlayingState) -> Card {
+        if playing_state.deck.is_empty() {
+            Self::shuffle_discard_into_deck(playing_state);
+        }
+        return Self::draw_top_card(&mut playing_state.deck);
+    }
 }
 
 impl GameCore for Zolik {
@@ -338,7 +508,7 @@ impl GameCore for Zolik {
 
     type Event = Event;
 
-    type PlayerEvent = PlayerEvent;
+    type PlayerEvent = Event;
 
     type Result = GameResult;
 
@@ -435,22 +605,39 @@ impl GameCore for Zolik {
             State::Playing(state) => match player_action.action {
                 Action::DrawFromDeck => {
                     state.turn_part = TurnPart::TheRestOfTheFuckingOwl;
-                    let drawn_card = state.deck.pop().unwrap();
-                    state
-                        .player_hands
-                        .get_mut(&player_action.player)
-                        .unwrap()
-                        .push(drawn_card);
-                    return vec![Event::CardDrawn(CardDrawnData {
-                        player: player_action.player,
-                        card: drawn_card,
-                        hand: state
-                            .player_hands
-                            .get(&player_action.player)
-                            .unwrap()
-                            .to_vec(),
-                        cards_left_in_deck: state.deck.len(),
-                    })];
+                    let drawn_card = Self::draw_from_deck_safe(state);
+                    let player_hand = state.player_hands.get_mut(&player_action.player).unwrap();
+                    let card_position = player_hand.len();
+                    player_hand.insert(card_position, drawn_card);
+                    return vec![
+                        Event::DeckChanged(DeckData {
+                            updated_deck: state.deck.clone(),
+                        }),
+                        Event::PlayerHandCardAdded(PlayerHandCardAddedData {
+                            player: player_action.player,
+                            added_card: drawn_card,
+                            position: card_position,
+                        }),
+                        Event::TurnPartChanged(state.turn_part.clone()),
+                    ];
+                }
+                Action::DrawFromDiscard => {
+                    state.turn_part = TurnPart::TheRestOfTheFuckingOwl;
+                    let drawn_card = Self::draw_top_card(&mut state.discard_pile);
+                    let player_hand = state.player_hands.get_mut(&player_action.player).unwrap();
+                    let card_position = player_hand.len();
+                    player_hand.insert(card_position, drawn_card);
+                    return vec![
+                        Event::DiscardChanged(DiscardData {
+                            discard: state.discard_pile.clone(),
+                        }),
+                        Event::PlayerHandCardAdded(PlayerHandCardAddedData {
+                            player: player_action.player,
+                            added_card: drawn_card,
+                            position: card_position,
+                        }),
+                        Event::TurnPartChanged(state.turn_part.clone()),
+                    ];
                 }
                 Action::Discard(card_index) => {
                     let player_hand = state.player_hands.get_mut(&player_action.player).unwrap();
@@ -465,12 +652,20 @@ impl GameCore for Zolik {
                     let next_player_index = (current_player_index + 1) % state.players.len();
                     state.player_turn = state.players[next_player_index];
                     state.turn_part = TurnPart::Draw;
-                    return vec![Event::CardDiscarded(CardDiscardedData {
-                        player: player_action.player,
-                        card: discarded_card,
-                        hand: player_hand.to_vec(),
-                    })];
+                    return vec![
+                        Event::DiscardChanged(DiscardData {
+                            discard: state.discard_pile.clone(),
+                        }),
+                        Event::PlayerHandCardRemoved(PlayerHandCardRemovedData {
+                            player: player_action.player,
+                            removed_card: discarded_card,
+                            position: card_index,
+                        }),
+                        Event::TurnPartChanged(state.turn_part.clone()),
+                        Event::PlayerTurnChanged(state.player_turn.clone()),
+                    ];
                 }
+
                 _ => {
                     todo!()
                 }
@@ -515,10 +710,8 @@ impl GameCore for Zolik {
         event: &game::InGameEvent<Self>,
     ) -> Option<Self::PlayerEvent> {
         match event {
-            game::InGameEvent::PlayerAction(action) => {
-                return Some(PlayerEvent::Action(action.action.clone()));
-            }
-            game::InGameEvent::Event(event) => return Some(PlayerEvent::Event(event.clone())),
+            game::InGameEvent::Event(event) => Some(event.clone()),
+            game::InGameEvent::PlayerAction(_) => None,
         }
     }
 
@@ -671,15 +864,18 @@ mod tests {
             action: Action::DrawFromDeck,
         };
         let events = Zolik::take_action(&mut state, player_action);
-        match events[0] {
-            Event::CardDrawn(ref data) => {
-                assert_eq!(data.player, Player(0));
-                assert_eq!(data.card, *top_card);
-                assert_eq!(data.hand.len(), 5); // player had 4 cards before
-                assert!(data.hand.iter().any(|c| *c == *top_card));
-                assert_eq!(data.cards_left_in_deck, ordered_deck.len() - 1);
+        for event in events {
+            match event {
+                Event::DeckChanged(ref data) => {
+                    assert_eq!(data.updated_deck.len(), ordered_deck.len() - 1);
+                }
+                Event::PlayerHandCardAdded(ref data) => {
+                    assert_eq!(data.player, Player(0));
+                    assert_eq!(data.added_card, *top_card);
+                    assert_eq!(data.position, 4); // player had 4 cards before
+                }
+                _ => {}
             }
-            _ => panic!("Expected CardDrawn event"),
         }
     }
     #[test]
@@ -699,14 +895,20 @@ mod tests {
             action: Action::Discard(4), // discard the card we just drew
         };
         let events = Zolik::take_action(&mut state, player_action);
-        match events[0] {
-            Event::CardDiscarded(ref data) => {
-                assert_eq!(data.player, Player(0));
-                assert_eq!(data.hand.len(), 4); // player had 5 cards before
-                assert_eq!(data.card, *top_card);
-                assert!(data.hand.iter().all(|c| *c != *top_card));
+
+        for event in events {
+            match event {
+                Event::DiscardChanged(ref data) => {
+                    assert_eq!(data.discard.len(), 2); // one card was already there
+                    assert_eq!(data.discard[1], *top_card);
+                }
+                Event::PlayerHandCardRemoved(ref data) => {
+                    assert_eq!(data.player, Player(0));
+                    assert_eq!(data.removed_card, *top_card);
+                    assert_eq!(data.position, 4); // player had 4 cards before
+                }
+                _ => {}
             }
-            _ => panic!("Expected CardDiscarded event"),
         }
     }
 }
