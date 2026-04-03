@@ -1,8 +1,6 @@
 use crate::game_core::{Buffer, Game, GameCore, Player, TakeActionResult};
 use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, ResponseError, rt, web};
-use actix_web_actors::ws;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use futures_util::StreamExt as _;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -156,8 +154,10 @@ async fn create_game(
     println!("Creating new game...");
     let params = CreateGameParams::parse(&request)?;
 
-    let wasm_bytes = std::fs::read("./target/wasm32-wasip1/release/wasm.wasm")
-        .expect("Wasm module not found, build wasm_game first");
+    let wasm_path = std::env::var("WASM_PATH")
+        .unwrap_or_else(|_| "./wasm.wasm".into());
+    let wasm_bytes = std::fs::read(&wasm_path)
+        .unwrap_or_else(|_| panic!("Wasm module not found at '{}', build wasm first", wasm_path));
     let component = Component::new(&engine, &wasm_bytes).unwrap();
 
     let mut linker = wasmtime::component::Linker::new(&engine);
@@ -467,6 +467,12 @@ impl GameDb {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8080);
+
     let game_db = GameDb::new();
     let game_db = web::Data::new(game_db.clone());
 
@@ -476,6 +482,8 @@ async fn main() -> std::io::Result<()> {
         web::Data::new(Engine::new(&config).unwrap())
     };
 
+    println!("Starting server on {}:{}", host, port);
+
     HttpServer::new(move || {
         App::new()
             .app_data(game_db.clone())
@@ -484,7 +492,7 @@ async fn main() -> std::io::Result<()> {
             .route("/game", web::get().to(game))
             .route("/games", web::get().to(get_games))
     })
-    .bind(("127.0.0.1", 80))?
+    .bind((host.as_str(), port))?
     .run()
     .await
 }
