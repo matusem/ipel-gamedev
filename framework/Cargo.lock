@@ -2643,18 +2643,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasm_game"
-version = "0.1.0"
-dependencies = [
- "game",
- "rmp-serde",
- "serde",
- "serde_json",
- "tic_tac_toe",
- "wit-bindgen",
-]
-
-[[package]]
 name = "wasmparser"
 version = "0.239.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
