@@ -229,8 +229,10 @@ async fn main() -> std::io::Result<()> {
 
     let game_db = web::Data::new(GameDb::new());
 
-    let wasm_bytes = std::fs::read("./target/wasm32-wasip1/release/wasm.wasm")
-        .expect("Wasm module not found, build wasm_game first");
+    let wasm_path = std::env::var("WASM_PATH")
+        .unwrap_or_else(|_| "./wasm.wasm".into());
+    let wasm_bytes = std::fs::read(&wasm_path)
+        .unwrap_or_else(|_| panic!("Wasm module not found at '{}', build wasm first", wasm_path));
     let component_db = ComponentDb::new();
     let _ = component_db.insert_components_as_wasm_bytes("tic_tac_toe", &wasm_bytes);
     let component_db = web::Data::new(component_db.clone());
