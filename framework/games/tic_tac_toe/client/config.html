@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tic Tac Toe — New game</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 1rem;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: #030712;
+      color: #e5e7eb;
+      font-size: 14px;
+    }
+    p { margin: 0 0 0.75rem; line-height: 1.4; color: #9ca3af; }
+    label { display: block; margin-bottom: 0.35rem; color: #d1d5db; font-weight: 500; }
+    input[type="number"] {
+      width: 100%;
+      max-width: 12rem;
+      padding: 0.4rem 0.5rem;
+      border-radius: 0.375rem;
+      border: 1px solid #374151;
+      background: #111827;
+      color: #f9fafb;
+      margin-bottom: 0.75rem;
+    }
+    .err { color: #f87171; font-size: 13px; margin-bottom: 0.75rem; min-height: 1.2em; }
+    button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 0.375rem;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #3b82f6; }
+  </style>
+</head>
+<body>
+  <p>Choose board size and how many marks in a row win (2–20 cells per side; win length cannot exceed the side).</p>
+  <label for="side">Side length (N×N)</label>
+  <input type="number" id="side" min="2" max="20" value="3" />
+  <label for="win">Win length</label>
+  <input type="number" id="win" min="2" max="20" value="3" />
+  <div id="err" class="err" aria-live="polite"></div>
+  <button type="button" id="apply">Use this config</button>
+  <script>
+    (function () {
+      var game = "tic_tac_toe";
+      var sideEl = document.getElementById("side");
+      var winEl = document.getElementById("win");
+      var errEl = document.getElementById("err");
+      /** @type {object|null} JSON Schema root pushed by the lobby (ipel-game-config-schema). */
+      var receivedSchema = null;
+
+      /**
+       * Minimal Draft-07 subset: oneOf, type null|object|integer, required, properties, additionalProperties, min/max.
+       * Matches manifest config_schema for this game.
+       */
+      function validateInstance(inst, sch, path) {
+        var p = path || "(root)";
+        if (sch && Array.isArray(sch.oneOf)) {
+          var branchErrs = [];
+          for (var i = 0; i < sch.oneOf.length; i++) {
+            var err = validateInstance(inst, sch.oneOf[i], path);
+            if (err === null) return null;
+            branchErrs.push(err);
+          }
+          return p + ": " + branchErrs.join(" | ");
+        }
+        var want = sch && sch.type;
+        if (want === "null") {
+          return inst === null ? null : p + ": expected null";
+        }
+        if (want === "object") {
+          if (inst === null || typeof inst !== "object" || Array.isArray(inst)) {
+            return p + ": expected object";
+          }
+          var req = sch.required || [];
+          for (var r = 0; r < req.length; r++) {
+            if (!Object.prototype.hasOwnProperty.call(inst, req[r])) {
+              return p + ': missing required "' + req[r] + '"';
+            }
+          }
+          var props = sch.properties || {};
+          if (sch.additionalProperties === false) {
+            for (var k in inst) {
+              if (Object.prototype.hasOwnProperty.call(inst, k) && !Object.prototype.hasOwnProperty.call(props, k)) {
+                return p + ': additional property "' + k + '" not allowed';
+              }
+            }
+          }
+          for (var key in props) {
+            if (!Object.prototype.hasOwnProperty.call(inst, key)) continue;
+            var err = validateInstance(inst[key], props[key], p + "/" + key);
+            if (err) return err;
+          }
+          return null;
+        }
+        if (want === "integer") {
+          if (typeof inst !== "number" || !Number.isFinite(inst) || !Number.isInteger(inst)) {
+            return p + ": expected integer";
+          }
+          if (sch.minimum !== undefined && inst < sch.minimum) return p + ": below minimum";
+          if (sch.maximum !== undefined && inst > sch.maximum) return p + ": above maximum";
+          return null;
+        }
+        return p + ": unsupported schema fragment (type " + want + ")";
+      }
+
+      function validateJsonAgainstReceivedSchema(jsonStr) {
+        if (!receivedSchema) return true;
+        var data;
+        try {
+          data = JSON.parse(jsonStr);
+        } catch (e) {
+          errEl.textContent = "Invalid JSON: " + e.message;
+          return false;
+        }
+        var msg = validateInstance(data, receivedSchema, "");
+        if (msg) {
+          errEl.textContent = msg;
+          return false;
+        }
+        return true;
+      }
+
+      window.addEventListener("message", function (ev) {
+        if (ev.origin !== window.location.origin) return;
+        var d = ev.data;
+        if (!d || typeof d !== "object") return;
+        if (d.source === "ipel-game-config-schema" && d.game === game && d.schema) {
+          receivedSchema = d.schema;
+          errEl.textContent = "";
+          return;
+        }
+        if (d.source === "ipel-game-config-result" && d.game === game) {
+          if (d.ok) errEl.textContent = "";
+          else errEl.textContent = (d.errors && d.errors.length ? d.errors.join("; ") : "Config rejected.");
+          return;
+        }
+      });
+
+      function clampWinMax() {
+        var s = parseInt(sideEl.value, 10);
+        if (!Number.isFinite(s)) return;
+        winEl.max = String(Math.min(20, Math.max(2, s)));
+        var w = parseInt(winEl.value, 10);
+        if (Number.isFinite(w) && w > s) winEl.value = String(s);
+      }
+
+      sideEl.addEventListener("input", clampWinMax);
+      sideEl.addEventListener("change", clampWinMax);
+
+      function send(configJson) {
+        window.parent.postMessage(
+          {
+            source: "ipel-game-config",
+            game: game,
+            config: configJson,
+          },
+          window.location.origin
+        );
+      }
+
+      function validate() {
+        errEl.textContent = "";
+        var side = parseInt(sideEl.value, 10);
+        var win = parseInt(winEl.value, 10);
+        if (!Number.isFinite(side) || side < 2 || side > 20) {
+          errEl.textContent = "Side length must be between 2 and 20.";
+          return null;
+        }
+        if (!Number.isFinite(win) || win < 2) {
+          errEl.textContent = "Win length must be at least 2.";
+          return null;
+        }
+        if (win > side) {
+          errEl.textContent = "Win length cannot be larger than the side.";
+          return null;
+        }
+        return JSON.stringify({ side_length: side, win_length: win });
+      }
+
+      document.getElementById("apply").addEventListener("click", function () {
+        var json = validate();
+        if (!json) return;
+        if (!validateJsonAgainstReceivedSchema(json)) return;
+        send(json);
+      });
+
+      clampWinMax();
+      send("null");
+    })();
+  </script>
+</body>
+</html>

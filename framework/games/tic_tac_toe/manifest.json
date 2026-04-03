@@ -1,0 +1,23 @@
+{
+  "name": "tic_tac_toe",
+  "display_name": "Tic Tac Toe",
+  "version": "1.0.0",
+  "min_players": 2,
+  "max_players": 2,
+  "description": "N×N grid; configurable win length (k in a row)",
+  "config_schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "oneOf": [
+      { "type": "null" },
+      {
+        "type": "object",
+        "required": ["side_length", "win_length"],
+        "properties": {
+          "side_length": { "type": "integer", "minimum": 2, "maximum": 20 },
+          "win_length": { "type": "integer", "minimum": 2, "maximum": 20 }
+        },
+        "additionalProperties": false
+      }
+    ]
+  }
+}

@@ -1,5 +1,7 @@
 use game::{Action, Config as GameConfig, GameCore, PlayerState as GamePlayerState};
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TicTacToe;
@@ -10,47 +12,60 @@ pub enum Player {
     O,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Position(u8, u8);
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct Position(pub u8, pub u8);
+
 impl Position {
-    pub fn new(row: u8, column: u8) -> Option<Position> {
-        if row < 3 && column < 3 {
-            Some(Position(row, column))
+    pub fn new(row: u8, col: u8, side: u8) -> Option<Position> {
+        if row < side && col < side {
+            Some(Position(row, col))
         } else {
             None
         }
     }
 
-    pub fn to_index(&self) -> usize {
-        (self.0 * 3 + self.1) as usize
+    pub fn to_index(self, side: u8) -> usize {
+        (self.0 as usize) * (side as usize) + (self.1 as usize)
     }
 }
+
 impl Action<TicTacToe> for Position {
     type Error = String;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Board([Option<Player>; 9]);
+#[serde(transparent)]
+pub struct Board(pub Vec<Option<Player>>);
+
 impl Board {
-    pub fn set(&mut self, position: Position, player: Player) {
-        self.0[position.to_index()] = Some(player);
+    pub fn empty(size: usize) -> Self {
+        Self(vec![None; size])
     }
 
-    pub fn get(&self, position: Position) -> Option<Player> {
-        self.0[position.to_index()]
+    pub fn get(&self, pos: Position, side: u8) -> Option<Option<Player>> {
+        let i = pos.to_index(side);
+        self.0.get(i).copied()
+    }
+
+    pub fn set(&mut self, pos: Position, side: u8, player: Player) {
+        let i = pos.to_index(side);
+        if i < self.0.len() {
+            self.0[i] = Some(player);
+        }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
-    current_player: Player,
-    board: Board,
+    pub config: Config,
+    pub current_player: Player,
+    pub board: Board,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerState {
-    player: Player,
-    state: State,
+    pub player: Player,
+    pub state: State,
 }
 
 impl GamePlayerState<TicTacToe> for PlayerState {
@@ -72,11 +87,15 @@ impl GamePlayerState<TicTacToe> for PlayerState {
         &self,
         action: &<TicTacToe as game::GameCore>::Action,
     ) -> Result<(), <<TicTacToe as game::GameCore>::Action as game::Action<TicTacToe>>::Error> {
+        let side = self.state.config.side_length;
+        if Position::new(action.0, action.1, side).is_none() {
+            return Err("Position out of bounds".into());
+        }
         if self.state.current_player != self.player {
             return Err("It's not your turn".into());
         }
 
-        if self.state.board.get(*action).is_some() {
+        if self.state.board.get(*action, side).flatten().is_some() {
             return Err("Position already taken".into());
         }
 
@@ -85,7 +104,8 @@ impl GamePlayerState<TicTacToe> for PlayerState {
 
     fn apply_event(&mut self, event: &<TicTacToe as game::GameCore>::PlayerEvent) {
         let PlayerEvent { player, action } = event;
-        self.state.board.set(*action, *player);
+        let side = self.state.config.side_length;
+        self.state.board.set(*action, side, *player);
         self.state.current_player = match self.state.current_player {
             Player::X => Player::O,
             Player::O => Player::X,
@@ -99,12 +119,113 @@ pub struct PlayerEvent {
     pub action: Position,
 }
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct Config;
+fn default_side() -> u8 {
+    3
+}
+
+fn default_win() -> u8 {
+    3
+}
+
+/// Grid is `side_length × side_length`. A player wins with `win_length` marks in a row (horizontal, vertical, or diagonal).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Config {
+    #[serde(default = "default_side")]
+    pub side_length: u8,
+    #[serde(default = "default_win")]
+    pub win_length: u8,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            side_length: default_side(),
+            win_length: default_win(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ConfigVisitor;
+
+        impl<'de> Visitor<'de> for ConfigVisitor {
+            type Value = Config;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("null or tic-tac-toe config object")
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Config::default())
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Config::default())
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut side_length: Option<u8> = None;
+                let mut win_length: Option<u8> = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "side_length" => {
+                            if side_length.is_some() {
+                                return Err(de::Error::duplicate_field("side_length"));
+                            }
+                            side_length = Some(map.next_value()?);
+                        }
+                        "win_length" => {
+                            if win_length.is_some() {
+                                return Err(de::Error::duplicate_field("win_length"));
+                            }
+                            win_length = Some(map.next_value()?);
+                        }
+                        _ => {
+                            let _: de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+                Ok(Config {
+                    side_length: side_length.unwrap_or_else(default_side),
+                    win_length: win_length.unwrap_or_else(default_win),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(ConfigVisitor)
+    }
+}
+
 impl GameConfig<TicTacToe> for Config {
-    type ValidationError = ();
+    type ValidationError = String;
 
     fn validate(&self) -> Result<(), Self::ValidationError> {
+        const MAX_SIDE: u8 = 20;
+        if self.side_length < 2 {
+            return Err("side_length must be at least 2".into());
+        }
+        if self.side_length > MAX_SIDE {
+            return Err(format!("side_length must be at most {MAX_SIDE}"));
+        }
+        if self.win_length < 2 {
+            return Err("win_length must be at least 2".into());
+        }
+        if self.win_length > self.side_length {
+            return Err("win_length cannot exceed side_length".into());
+        }
         Ok(())
     }
 
@@ -113,16 +234,70 @@ impl GameConfig<TicTacToe> for Config {
     }
 }
 
-const GAME_OVER_POSITIONS: [[Position; 3]; 8] = [
-    [Position(0, 0), Position(0, 1), Position(0, 2)],
-    [Position(1, 0), Position(1, 1), Position(1, 2)],
-    [Position(2, 0), Position(2, 1), Position(2, 2)],
-    [Position(0, 0), Position(1, 0), Position(2, 0)],
-    [Position(0, 1), Position(1, 1), Position(2, 1)],
-    [Position(0, 2), Position(1, 2), Position(2, 2)],
-    [Position(0, 0), Position(1, 1), Position(2, 2)],
-    [Position(0, 2), Position(1, 1), Position(2, 0)],
-];
+fn try_win_segment(
+    board: &Board,
+    side: u8,
+    win: u8,
+    r0: u8,
+    c0: u8,
+    dr: i8,
+    dc: i8,
+) -> Option<Player> {
+    let first = board.get(Position(r0, c0), side)??;
+    for k in 1..win {
+        let r = i16::from(r0) + i16::from(dr) * i16::from(k);
+        let c = i16::from(c0) + i16::from(dc) * i16::from(k);
+        if r < 0 || c < 0 {
+            return None;
+        }
+        let r = r as u8;
+        let c = c as u8;
+        if r >= side || c >= side {
+            return None;
+        }
+        let cell = board.get(Position(r, c), side)??;
+        if cell != first {
+            return None;
+        }
+    }
+    Some(first)
+}
+
+fn check_game_over_state(state: &State) -> Option<Player> {
+    let side = state.config.side_length;
+    let win = state.config.win_length;
+    let last = side.saturating_sub(win);
+
+    for r in 0..side {
+        for c in 0..=last {
+            if let Some(w) = try_win_segment(&state.board, side, win, r, c, 0, 1) {
+                return Some(w);
+            }
+        }
+    }
+    for r in 0..=last {
+        for c in 0..side {
+            if let Some(w) = try_win_segment(&state.board, side, win, r, c, 1, 0) {
+                return Some(w);
+            }
+        }
+    }
+    for r in 0..=last {
+        for c in 0..=last {
+            if let Some(w) = try_win_segment(&state.board, side, win, r, c, 1, 1) {
+                return Some(w);
+            }
+        }
+    }
+    for r in 0..=last {
+        for c in (win - 1)..side {
+            if let Some(w) = try_win_segment(&state.board, side, win, r, c, 1, -1) {
+                return Some(w);
+            }
+        }
+    }
+    None
+}
 
 impl GameCore for TicTacToe {
     type Config = Config;
@@ -140,10 +315,12 @@ impl GameCore for TicTacToe {
     type Result = Self::Player;
     type PlayerResult = Self::Result;
 
-    fn init(_config: &Self::Config) -> Self::State {
+    fn init(config: &Self::Config) -> Self::State {
+        let n = (config.side_length as usize).saturating_pow(2);
         State {
+            config: config.clone(),
             current_player: Player::X,
-            board: Board([None; 9]),
+            board: Board::empty(n),
         }
     }
 
@@ -152,8 +329,8 @@ impl GameCore for TicTacToe {
         player_action: game::PlayerAction<Self>,
     ) -> Vec<Self::Event> {
         let game::PlayerAction { player, action } = player_action;
-
-        state.board.set(action, player);
+        let side = state.config.side_length;
+        state.board.set(action, side, player);
         state.current_player = match state.current_player {
             Player::X => Player::O,
             Player::O => Player::X,
@@ -163,17 +340,7 @@ impl GameCore for TicTacToe {
     }
 
     fn check_game_over(state: &Self::State) -> Option<Self::Result> {
-        GAME_OVER_POSITIONS.iter().find_map(|positions| {
-            let first = state.board.get(positions[0])?;
-            if positions
-                .iter()
-                .all(|pos| state.board.get(*pos) == Some(first))
-            {
-                Some(first)
-            } else {
-                None
-            }
-        })
+        check_game_over_state(state)
     }
 
     fn derive_player_event(
@@ -204,7 +371,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test() {
-        assert_eq!(4, 4);
+    fn default_config_deserializes_from_null() {
+        let c: Config = serde_json::from_str("null").unwrap();
+        assert_eq!(c.side_length, 3);
+        assert_eq!(c.win_length, 3);
+    }
+
+    #[test]
+    fn win_on_5x5_length_4() {
+        let cfg = Config {
+            side_length: 5,
+            win_length: 4,
+        };
+        cfg.validate().unwrap();
+        let mut state = TicTacToe::init(&cfg);
+        // X wins on top row 0..4
+        for c in 0..4u8 {
+            state.board.set(Position(0, c), 5, Player::X);
+        }
+        assert_eq!(check_game_over_state(&state), Some(Player::X));
     }
 }

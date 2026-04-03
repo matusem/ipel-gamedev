@@ -1,5 +1,6 @@
 use crate::game_core::{self, Buffer, Game, GameCore, Player, TakeActionResult};
 use actix_web::ResponseError;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -77,6 +78,7 @@ impl PlayerChannel {
 
 #[derive(Clone)]
 pub struct GameInstance {
+    game_type: String,
     players: Arc<RwLock<HashMap<Uuid, PlayerChannel>>>,
     game: Arc<RwLock<Game>>,
     game_core: Arc<RwLock<GameCore>>,
@@ -85,16 +87,41 @@ pub struct GameInstance {
 }
 
 impl GameInstance {
-    pub fn new(game: Game, game_core: GameCore) -> Self {
+    pub fn new(game: Game, game_core: GameCore, game_type: String) -> Self {
         let (action_sender, action_receiver) = async_channel::unbounded();
 
         Self {
+            game_type,
             players: Arc::new(RwLock::new(HashMap::new())),
             game: Arc::new(RwLock::new(game)),
             game_core: Arc::new(RwLock::new(game_core)),
             action_sender,
             action_receiver,
         }
+    }
+
+    pub fn game_type(&self) -> &str {
+        &self.game_type
+    }
+
+    pub fn player_identities(&self) -> Vec<String> {
+        self.game
+            .read()
+            .map(|game| {
+                game.player_states
+                    .iter()
+                    .map(|ps| {
+                        let raw = String::from_utf8_lossy(&ps.player);
+                        serde_json::from_str::<String>(&raw)
+                            .unwrap_or_else(|_| raw.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn connected_player_count(&self) -> usize {
+        self.players.read().map(|p| p.len()).unwrap_or(0)
     }
 
     pub fn get_player_ids(&self) -> Vec<Uuid> {
@@ -275,4 +302,24 @@ impl GameDb {
         let db = self.0.read().unwrap();
         db.keys().cloned().collect()
     }
+
+    pub fn list_games(&self) -> Vec<GameListEntry> {
+        let db = self.0.read().unwrap();
+        db.iter()
+            .map(|(id, instance)| GameListEntry {
+                game_id: id.to_string(),
+                game_type: instance.game_type().to_string(),
+                player_identities: instance.player_identities(),
+                connected_players: instance.connected_player_count(),
+            })
+            .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GameListEntry {
+    pub game_id: String,
+    pub game_type: String,
+    pub player_identities: Vec<String>,
+    pub connected_players: usize,
 }

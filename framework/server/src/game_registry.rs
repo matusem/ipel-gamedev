@@ -1,0 +1,119 @@
+use crate::component_db::ComponentDb;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameManifest {
+    pub name: String,
+    pub display_name: String,
+    pub version: String,
+    pub min_players: u32,
+    pub max_players: u32,
+    #[serde(default)]
+    pub description: String,
+    /// Relative path under `client/` for the create-config iframe (default checks `config.html`).
+    #[serde(default)]
+    pub config_entry: Option<String>,
+    /// JSON Schema for the `config` string posted by the lobby config UI (JSON instance).
+    #[serde(default)]
+    pub config_schema: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GameType {
+    pub manifest: GameManifest,
+    pub client_dir: PathBuf,
+    /// Relative path under `client/` served at `/games/{name}/{path}` when present.
+    pub config_ui_path: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct GameRegistry {
+    game_types: Vec<GameType>,
+}
+
+impl GameRegistry {
+    pub fn load(games_dir: &Path, component_db: &ComponentDb) -> Self {
+        let mut game_types = Vec::new();
+
+        let entries = match std::fs::read_dir(games_dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                println!("Warning: could not read GAMES_DIR '{}': {}", games_dir.display(), e);
+                return Self { game_types };
+            }
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let manifest_path = path.join("manifest.json");
+            let logic_path = path.join("logic.wasm");
+            let client_dir = path.join("client");
+
+            let manifest: GameManifest = match std::fs::read_to_string(&manifest_path) {
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        println!("Warning: invalid manifest at '{}': {}", manifest_path.display(), e);
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    println!("Warning: no manifest.json in '{}': {}", path.display(), e);
+                    continue;
+                }
+            };
+
+            match std::fs::read(&logic_path) {
+                Ok(wasm_bytes) => {
+                    match component_db.insert_components_as_wasm_bytes(&manifest.name, &wasm_bytes) {
+                        Ok(_) => println!("Loaded game '{}' ({})", manifest.display_name, manifest.name),
+                        Err(e) => {
+                            println!("Warning: failed to load WASM for '{}': {}", manifest.name, e);
+                            continue;
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("Warning: no logic.wasm in '{}': {}", path.display(), e);
+                    continue;
+                }
+            }
+
+            let config_candidate = manifest
+                .config_entry
+                .clone()
+                .unwrap_or_else(|| "config.html".to_string());
+            let config_ui_path = if client_dir.join(&config_candidate).is_file() {
+                Some(config_candidate)
+            } else {
+                None
+            };
+
+            game_types.push(GameType {
+                manifest,
+                client_dir,
+                config_ui_path,
+            });
+        }
+
+        println!("Loaded {} game type(s)", game_types.len());
+        Self { game_types }
+    }
+
+    pub fn game_types(&self) -> &[GameType] {
+        &self.game_types
+    }
+
+    pub fn get_client_dir(&self, name: &str) -> Option<&Path> {
+        self.game_types
+            .iter()
+            .find(|gt| gt.manifest.name == name)
+            .map(|gt| gt.client_dir.as_path())
+    }
+}
