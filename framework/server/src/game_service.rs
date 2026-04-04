@@ -8,6 +8,38 @@ use crate::db::GameInstanceStore;
 use crate::game_core;
 use crate::game_db::{encode_game_snapshot, GameDb, GameInstance, GameRunPersistence};
 
+pub fn player_identities_from_game(game: &game_core::Game) -> Vec<String> {
+    game.player_states
+        .iter()
+        .map(|ps| {
+            let raw = String::from_utf8_lossy(&ps.player);
+            serde_json::from_str::<String>(&raw).unwrap_or_else(|_| raw.to_string())
+        })
+        .collect()
+}
+
+/// Run WASM `init` once to discover seat identities (pregame lobby) without persisting a game row.
+pub async fn preview_init_identities(
+    component_db: &ComponentDb,
+    game_type: String,
+    config: Vec<u8>,
+) -> Result<Vec<String>, String> {
+    let (game_core, mut store) = component_db
+        .create_game_core(&game_type)
+        .await
+        .map_err(|e| e.to_string())?;
+    let game = game_core
+        .call_init(
+            &mut store,
+            game_core::SerializationFormat::Json,
+            &config,
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("game init: {:?}", e))?;
+    Ok(player_identities_from_game(&game))
+}
+
 pub async fn create_and_spawn_game(
     component_db: &ComponentDb,
     game_db: &GameDb,

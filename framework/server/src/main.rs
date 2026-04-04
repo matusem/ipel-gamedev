@@ -1,14 +1,15 @@
 use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
-use crate::graphql_api::AppSchema;
+use crate::graphql_api::{AppSchema, RequestUser};
+use crate::lobby_db::LobbyListNotify;
 use crate::{component_db::ComponentDb, game_core::Buffer};
 use actix_files::Files;
 use actix_web::guard;
+use actix_web::http::header;
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Result as ActixResult, rt};
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use async_graphql::Data as GqlData;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
-use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,6 +23,8 @@ mod game_db;
 mod game_registry;
 mod game_service;
 mod graphql_api;
+mod auth_password;
+mod lobby_db;
 
 mod game_core {
     use wasmtime::component::bindgen;
@@ -156,109 +159,37 @@ async fn game(
     Ok(response)
 }
 
-struct CreateGameParams {
-    game: String,
-    config: Buffer,
+fn extract_request_user(req: &HttpRequest) -> RequestUser {
+    let Some(h) = req.headers().get(header::AUTHORIZATION) else {
+        return RequestUser(None);
+    };
+    let Ok(s) = h.to_str() else {
+        return RequestUser(None);
+    };
+    let rest = s
+        .strip_prefix("Bearer ")
+        .or_else(|| s.strip_prefix("bearer "))
+        .unwrap_or(s);
+    RequestUser(Uuid::parse_str(rest.trim()).ok())
 }
 
-impl CreateGameParams {
-    fn parse(request: &HttpRequest) -> Result<Self, actix_web::Error> {
-        let query = request
-            .uri()
-            .query()
-            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing query parameters"))?;
-
-        let params: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
-
-        let game = params
-            .get("game")
-            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'game' parameter"))?
-            .to_string();
-
-        let config = params
-            .get("config")
-            .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'config' parameter"))?
-            .to_string();
-
-        let config = config.as_bytes().to_vec();
-
-        Ok(Self { game, config })
+/// Browser WebSockets cannot set `Authorization`; allow `?token=<uuid>` on `/graphql` WS.
+fn extract_request_user_for_ws(req: &HttpRequest) -> RequestUser {
+    if let RequestUser(Some(u)) = extract_request_user(req) {
+        return RequestUser(Some(u));
     }
-}
-
-async fn create_game(
-    request: HttpRequest,
-    game_db: web::Data<GameDb>,
-    component_db: web::Data<ComponentDb>,
-    game_store: web::Data<Arc<db::GameInstanceStore>>,
-) -> Result<HttpResponse, Error> {
-    println!("Creating new game...");
-    let params = CreateGameParams::parse(&request)?;
-
-    let game_id = game_service::create_and_spawn_game(
-        component_db.get_ref(),
-        game_db.get_ref(),
-        game_store.get_ref().clone(),
-        params.game,
-        params.config,
-    )
-    .await
-    .map_err(|e| actix_web::error::ErrorNotAcceptable(e))?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("application/json")
-        .body(game_id.to_string()))
-}
-
-#[derive(Serialize, Deserialize)]
-struct GameTypeInfo {
-    name: String,
-    display_name: String,
-    version: String,
-    min_players: u32,
-    max_players: u32,
-    description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    config_ui_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    config_schema: Option<serde_json::Value>,
-}
-
-async fn get_game_types(registry: web::Data<GameRegistry>) -> Result<HttpResponse, Error> {
-    let types: Vec<GameTypeInfo> = registry
-        .game_types()
-        .iter()
-        .map(|gt| GameTypeInfo {
-            name: gt.manifest.name.clone(),
-            display_name: gt.manifest.display_name.clone(),
-            version: gt.manifest.version.clone(),
-            min_players: gt.manifest.min_players,
-            max_players: gt.manifest.max_players,
-            description: gt.manifest.description.clone(),
-            config_ui_path: gt.config_ui_path.clone(),
-            config_schema: gt.manifest.config_schema.clone(),
-        })
-        .collect();
-
-    Ok(HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string(&types).unwrap()))
-}
-
-#[derive(Serialize, Deserialize)]
-struct GameInfo {
-    game_id: String,
-    game_type: String,
-    player_identities: Vec<String>,
-    connected_players: usize,
-}
-
-async fn get_games(game_db: web::Data<GameDb>) -> Result<HttpResponse, Error> {
-    let game_infos = game_db.list_games();
-
-    Ok(HttpResponse::Ok()
-        .content_type("application/json")
-        .body(serde_json::to_string(&game_infos).unwrap()))
+    let Some(qs) = req.uri().query() else {
+        return RequestUser(None);
+    };
+    for part in qs.split('&') {
+        let Some(v) = part.strip_prefix("token=") else {
+            continue;
+        };
+        if let Ok(u) = Uuid::parse_str(v) {
+            return RequestUser(Some(u));
+        }
+    }
+    RequestUser(None)
 }
 
 async fn graphql_playground() -> ActixResult<HttpResponse> {
@@ -269,21 +200,26 @@ async fn graphql_playground() -> ActixResult<HttpResponse> {
 }
 
 async fn graphql_post(
+    http: HttpRequest,
     schema: web::Data<AppSchema>,
     pool: web::Data<SqlitePool>,
     game_db: web::Data<GameDb>,
     registry: web::Data<Arc<GameRegistry>>,
     component_db: web::Data<ComponentDb>,
     game_store: web::Data<Arc<db::GameInstanceStore>>,
+    lobby_notify: web::Data<LobbyListNotify>,
     req: GraphQLRequest,
 ) -> GraphQLResponse {
+    let auth = extract_request_user(&http);
     let req = req
         .into_inner()
         .data(pool.get_ref().clone())
         .data(game_db.get_ref().clone())
         .data(registry.get_ref().clone())
         .data(component_db.get_ref().clone())
-        .data(game_store.get_ref().clone());
+        .data(game_store.get_ref().clone())
+        .data(lobby_notify.get_ref().clone())
+        .data(auth);
     schema.execute(req).await.into()
 }
 
@@ -294,6 +230,7 @@ async fn graphql_ws(
     registry: web::Data<Arc<GameRegistry>>,
     component_db: web::Data<ComponentDb>,
     game_store: web::Data<Arc<db::GameInstanceStore>>,
+    lobby_notify: web::Data<LobbyListNotify>,
     req: HttpRequest,
     payload: web::Payload,
 ) -> Result<HttpResponse, Error> {
@@ -303,6 +240,8 @@ async fn graphql_ws(
     data.insert(registry.get_ref().clone());
     data.insert(component_db.get_ref().clone());
     data.insert(game_store.get_ref().clone());
+    data.insert(lobby_notify.get_ref().clone());
+    data.insert(extract_request_user_for_ws(&req));
 
     GraphQLSubscription::new(schema.get_ref().clone())
         .with_data(data)
@@ -359,6 +298,8 @@ async fn main() -> std::io::Result<()> {
 
     let (list_tx, _list_rx) = broadcast::channel::<()>(256);
     let game_db = web::Data::new(GameDb::new(Some(list_tx)));
+    let (lobby_tx, _lobby_rx) = broadcast::channel::<()>(256);
+    let lobby_notify = web::Data::new(LobbyListNotify { tx: lobby_tx });
     let game_store = web::Data::new(Arc::new(db::GameInstanceStore::new(pool.clone())));
 
     let component_db = ComponentDb::new();
@@ -378,10 +319,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(registry.clone())
             .app_data(pool_data.clone())
             .app_data(game_store.clone())
+            .app_data(lobby_notify.clone())
             .app_data(schema.clone())
-            .route("/api/create_game", web::post().to(create_game))
-            .route("/api/game_types", web::get().to(get_game_types))
-            .route("/api/games", web::get().to(get_games))
             .route("/game", web::get().to(game))
             .service(
                 web::resource("/graphql")
