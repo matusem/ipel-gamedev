@@ -12,18 +12,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY game/ game/
+COPY game-wasm-host/ game-wasm-host/
 COPY server/ server/
-COPY tic_tac_toe/ tic_tac_toe/
-COPY wasm/ wasm/
+COPY games/tic_tac_toe/rust/ games/tic_tac_toe/rust/
 COPY test.wit ./
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
-    cargo component build -p wasm --release \
+    cargo component build -p tic_tac_toe_component --release \
     && cargo build -p server --release \
     && cp target/release/server /app/server-bin \
-    && cp target/wasm32-wasip1/release/wasm.wasm /app/wasm-bin.wasm
+    && cp target/wasm32-wasip1/release/tic_tac_toe_component.wasm /app/wasm-bin.wasm
 
 COPY lobby/ lobby/
 WORKDIR /app/lobby

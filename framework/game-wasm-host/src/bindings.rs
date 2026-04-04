@@ -658,6 +658,7 @@ pub trait Guest {
         player_action: PlayerAction,
     ) -> Result<TakeActionResult, GameCoreError>;
 }
+#[macro_export]
 #[doc(hidden)]
 macro_rules! __export_world_game_core_cabi {
     ($ty:ident with_types_in $($path_to_types:tt)*) => {
@@ -676,8 +677,6 @@ macro_rules! __export_world_game_core_cabi {
         } } };
     };
 }
-#[doc(hidden)]
-pub(crate) use __export_world_game_core_cabi;
 #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
 #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
 struct _RetArea([::core::mem::MaybeUninit<u8>; 5 * ::core::mem::size_of::<*const u8>()]);
@@ -719,19 +718,17 @@ mod _rt {
 ///
 /// export!(MyType);
 /// ```
+#[macro_export]
 #[allow(unused_macros)]
 #[doc(hidden)]
 macro_rules! __export_game_core_impl {
     ($ty:ident) => {
-        self::export!($ty with_types_in self);
+        $crate::__export_game_core_impl!($ty with_types_in $crate::bindings);
     };
     ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
-        $($path_to_types_root)*:: __export_world_game_core_cabi!($ty with_types_in
-        $($path_to_types_root)*);
+        $crate::__export_world_game_core_cabi!($ty with_types_in $($path_to_types_root)*);
     };
 }
-#[doc(inline)]
-pub(crate) use __export_game_core_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
     link_section = "component-type:wit-bindgen:0.41.0:example:game-interface:game-core:encoded world"

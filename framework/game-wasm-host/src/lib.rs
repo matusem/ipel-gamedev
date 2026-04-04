@@ -1,14 +1,27 @@
-#[allow(warnings)]
-mod bindings;
+//! Shared WebAssembly host for `GameCore` implementations (wit `game-core` world).
+//! Per-game `cdylib` crates depend on this crate and call [`export_game_core!`] with a type alias
+//! for `MyHost<TheirGame>`.
 
-use bindings::*;
+#![allow(warnings)]
+
+pub mod bindings;
+
+pub use bindings::{
+    Buffer, Game, GameCoreError, NewPlayerState, PlayerAction, PlayerState, SerializationFormat,
+    TakeActionResult,
+};
+
+use bindings::Guest;
+use game::GameCore;
+use std::marker::PhantomData;
 
 mod serialization;
-use game::GameCore;
 use serialization::{get_deserialize as de, get_serialize as se};
 
-struct MyHost<GameCoreT: GameCore> {
-    _marker: std::marker::PhantomData<GameCoreT>,
+/// Type tag for the wit-bindgen `Guest` implementation; use `export!(YourAlias)` where
+/// `type YourAlias = MyHost<YourGameCore>;`.
+pub struct MyHost<GameCoreT: GameCore> {
+    pub _marker: PhantomData<GameCoreT>,
 }
 
 impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
@@ -207,5 +220,15 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
     }
 }
 
-type TicTacToeHost = MyHost<tic_tac_toe::TicTacToe>;
-export!(TicTacToeHost);
+/// Registers the component exports (`init`, `take-action`). Use a single ident (type alias).
+///
+/// ```ignore
+/// type TicTacToeWorld = MyHost<TicTacToe>;
+/// game_wasm_host::export_game_core!(TicTacToeWorld);
+/// ```
+#[macro_export]
+macro_rules! export_game_core {
+    ($ty:ident) => {
+        $crate::__export_game_core_impl!($ty with_types_in $crate::bindings);
+    };
+}

@@ -15,5 +15,5 @@ curl https://wasmtime.dev/install.sh -sSf | bash
 ## build wasm game
 
 ```
-cargo component build -p wasm --release
+cargo component build -p tic_tac_toe_component --release
 ```
