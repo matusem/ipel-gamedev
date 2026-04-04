@@ -14,8 +14,6 @@ use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
-const LOBBY_STYLES: &str = include_str!("../assets/lobby.css");
-
 const CONFIG_MSG_SOURCE: &str = "ipel-game-config";
 const CONFIG_RESULT_SOURCE: &str = "ipel-game-config-result";
 const CONFIG_SCHEMA_SOURCE: &str = "ipel-game-config-schema";
@@ -683,8 +681,8 @@ fn App() -> Element {
     });
 
     rsx! {
-        document::Style {
-            "{LOBBY_STYLES}"
+        document::Stylesheet {
+            href: asset!("/assets/tailwind.css"),
         }
         div { class: "min-h-screen bg-gray-900 text-white",
             if !session_checked() {

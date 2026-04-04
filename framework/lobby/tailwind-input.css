@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .config-iframe {
+    @apply w-full min-h-[12rem] rounded-lg border border-gray-700 bg-gray-950;
+  }
+
+  .config-preview-json {
+    @apply font-mono text-xs;
+  }
+
+  .lobby-room-grid {
+    @apply grid items-start gap-5;
+    grid-template-columns: 1fr 2fr 1fr;
+  }
+
+  @media (max-width: 900px) {
+    .lobby-room-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .lobby-col {
+    @apply min-w-0;
+  }
+
+  .lobby-type-list {
+    @apply flex flex-col gap-2;
+  }
+
+  .lobby-type-btn {
+    @apply block w-full cursor-pointer rounded-md border border-gray-700 bg-gray-800 py-2 px-3 text-left text-sm text-gray-200;
+  }
+
+  .lobby-type-btn:hover:not(:disabled) {
+    @apply bg-gray-700;
+  }
+
+  .lobby-type-btn.active {
+    @apply border-indigo-500 bg-indigo-950;
+  }
+
+  .lobby-type-btn:disabled {
+    @apply cursor-not-allowed opacity-45;
+  }
+
+  .lobby-chat-messages {
+    @apply max-h-40 overflow-y-auto rounded-md border border-gray-700 bg-gray-950 p-2;
+  }
+}

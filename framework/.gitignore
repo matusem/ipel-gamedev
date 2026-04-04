@@ -1,3 +1,4 @@
 target
 lobby/target
 lobby/dist
+lobby/node_modules

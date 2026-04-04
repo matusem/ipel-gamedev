@@ -1,5 +1,8 @@
 FROM rust:bookworm AS builder
 
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     rustup target add wasm32-wasip1 wasm32-unknown-unknown \
@@ -24,6 +27,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 COPY lobby/ lobby/
 WORKDIR /app/lobby
+RUN npm ci && npm run build:css
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/lobby/target \
