@@ -25,6 +25,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp target/release/server /app/server-bin \
     && cp target/wasm32-wasip1/release/tic_tac_toe_component.wasm /app/wasm-bin.wasm
 
+COPY packages/game-sdk/ /app/packages/game-sdk/
+WORKDIR /app/packages/game-sdk
+RUN npm ci && npm run build
+WORKDIR /app
+
+COPY games/tic_tac_toe/web/ /app/games/tic_tac_toe/web/
+WORKDIR /app/games/tic_tac_toe/web
+RUN npm ci && npm run build
+WORKDIR /app
+
 COPY lobby/ lobby/
 WORKDIR /app/lobby
 RUN npm ci && npm run build:css
@@ -49,9 +59,9 @@ COPY --from=builder /app/server-bin /app/server
 
 COPY --from=builder /app/wasm-bin.wasm /app/games/tic_tac_toe/logic.wasm
 COPY games/tic_tac_toe/manifest.json /app/games/tic_tac_toe/manifest.json
-COPY games/tic_tac_toe/client/ /app/games/tic_tac_toe/client/
+COPY --from=builder /app/games/tic_tac_toe/client/ /app/games/tic_tac_toe/client/
 
-COPY client-lib/ /app/lib/
+COPY --from=builder /app/client-lib/ /app/lib/
 
 COPY --from=builder /app/lobby-dist/ /app/lobby/
 
