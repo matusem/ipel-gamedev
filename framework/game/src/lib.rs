@@ -199,6 +199,10 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
         result: &Self::Result,
     ) -> Self::PlayerResult;
 
+    /// Float score for each player when the game ends (`result` from [`Self::check_game_over`]).
+    /// Convention: win = 1.0, loss = 0.0, draw = equal split across players (e.g. 0.5 each in 2‑player games).
+    fn scores_at_end(result: &Self::Result) -> Vec<(Self::Player, f64)>;
+
     /// Builds a map of player events from the game state and game events.
     /// # Arguments
     /// * `game_state` - The full state of the game.

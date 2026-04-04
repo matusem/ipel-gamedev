@@ -375,10 +375,23 @@ pub async fn mark_lobby_in_game(
     Ok(())
 }
 
+/// After the game instance reports a terminal result; lobby leaves the active list.
+pub async fn mark_lobby_finished(pool: &SqlitePool, lobby_id: Uuid) -> Result<(), sqlx::Error> {
+    let now = now_secs();
+    sqlx::query(
+        "UPDATE pregame_lobbies SET status = 'finished', updated_at = ? WHERE id = ? AND status = 'in_game'",
+    )
+    .bind(now)
+    .bind(lobby_id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn reopen_lobby_after_game(pool: &SqlitePool, lobby_id: Uuid) -> Result<bool, sqlx::Error> {
     let now = now_secs();
     let r = sqlx::query(
-        "UPDATE pregame_lobbies SET status = 'waiting', game_instance_id = NULL, updated_at = ? WHERE id = ? AND status = 'in_game'",
+        "UPDATE pregame_lobbies SET status = 'waiting', game_instance_id = NULL, updated_at = ? WHERE id = ? AND status IN ('in_game', 'finished')",
     )
     .bind(now)
     .bind(lobby_id.to_string())

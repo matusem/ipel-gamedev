@@ -1,10 +1,12 @@
 use crate::db::GameInstanceStore;
-use crate::game_core::{self, Buffer, Game, GameCore, Player, TakeActionResult};
+use crate::game_core::{self, Buffer, Game, GameCore, NewPlayerState, Player, TakeActionResult};
+use crate::lobby_db::{self, LobbyListNotify};
 use actix_web::ResponseError;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::SqlitePool;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -101,6 +103,73 @@ impl PlayerChannel {
 pub struct GameRunPersistence {
     pub game_id: Uuid,
     pub store: Arc<GameInstanceStore>,
+    pub lobby_id: Option<Uuid>,
+    pub pool: SqlitePool,
+    pub game_db: GameDb,
+    pub lobby_notify: LobbyListNotify,
+}
+
+fn player_identity_utf8(buf: &[u8]) -> String {
+    serde_json::from_slice::<String>(buf).unwrap_or_else(|_| String::from_utf8_lossy(buf).into_owned())
+}
+
+fn game_over_from_event_json(raw: &[u8]) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(raw).ok()?;
+    match v.get("GameOver")? {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Object(m) => {
+            if m.contains_key("Draw") {
+                Some("Draw".into())
+            } else if m.contains_key("Win") {
+                Some("Win".into())
+            } else if m.contains_key("Loss") {
+                Some("Loss".into())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// If this action tick ended the game, map seat identity (JSON string) → outcome label (Win / Loss / Draw).
+fn terminal_outcomes_this_tick(player_states: &[NewPlayerState]) -> Option<HashMap<String, String>> {
+    let mut map = HashMap::new();
+    for nps in player_states {
+        let ident = player_identity_utf8(&nps.state.player);
+        for ev in &nps.events {
+            if let Some(out) = game_over_from_event_json(ev) {
+                map.insert(ident.clone(), out);
+            }
+        }
+    }
+    if map.is_empty() {
+        None
+    } else {
+        Some(map)
+    }
+}
+
+fn float_scores_from_outcomes(outcomes: &HashMap<String, String>) -> HashMap<String, f64> {
+    let n = outcomes.len().max(1) as f64;
+    let all_draw = outcomes.values().all(|x| x == "Draw");
+    if all_draw {
+        return outcomes
+            .keys()
+            .map(|k| (k.clone(), 1.0 / n))
+            .collect();
+    }
+    let wins = outcomes.values().filter(|x| *x == "Win").count();
+    if wins == 1 {
+        return outcomes
+            .iter()
+            .map(|(k, o)| (k.clone(), if o == "Win" { 1.0 } else { 0.0 }))
+            .collect();
+    }
+    outcomes
+        .keys()
+        .map(|k| (k.clone(), 1.0 / n))
+        .collect()
 }
 
 #[derive(Clone)]
@@ -206,7 +275,11 @@ impl GameInstance {
                             .collect(),
                     };
 
-                    let snap = encode_game_snapshot(&new_game).ok();
+                    let snap = encode_game_snapshot(&new_game)
+                        .unwrap_or_else(|e| {
+                            eprintln!("encode_game_snapshot: {e}");
+                            "{}".to_string()
+                        });
 
                     *game = new_game;
 
@@ -239,8 +312,65 @@ impl GameInstance {
                     drop(game);
                     drop(game_core);
 
-                    if let (Some(p), Some(json)) = (persistence.as_ref(), snap) {
-                        if let Err(e) = p.store.update_game_state(p.game_id, &json).await {
+                    if let Some(p) = persistence.as_ref() {
+                        if let Some(outcomes) = terminal_outcomes_this_tick(&player_states) {
+                            let result_json = serde_json::to_string(&json!({
+                                "version": 1,
+                                "per_player_outcome": outcomes,
+                            }))
+                            .unwrap_or_else(|_| "{}".to_string());
+                            let scores = float_scores_from_outcomes(&outcomes);
+                            let scores_json =
+                                serde_json::to_string(&scores).unwrap_or_else(|_| "{}".to_string());
+                            let seats_json = if let Some(lid) = p.lobby_id {
+                                match lobby_db::get_lobby(&p.pool, lid).await {
+                                    Ok(Some(detail)) => {
+                                        let seats: Vec<_> = detail
+                                            .seats
+                                            .iter()
+                                            .map(|s| {
+                                                json!({
+                                                    "seat_index": s.seat_index,
+                                                    "player_identity": s.player_identity,
+                                                    "claimed_by_user_id": s.claimed_by_user_id.map(|u| u.to_string()),
+                                                    "claimed_display_name": s.claimed_display_name,
+                                                })
+                                            })
+                                            .collect();
+                                        serde_json::to_string(&seats)
+                                            .unwrap_or_else(|_| "[]".to_string())
+                                    }
+                                    _ => "[]".to_string(),
+                                }
+                            } else {
+                                "[]".to_string()
+                            };
+
+                            if let Err(e) = p
+                                .store
+                                .finish_game_record(
+                                    p.game_id,
+                                    &snap,
+                                    &result_json,
+                                    &scores_json,
+                                    &seats_json,
+                                )
+                                .await
+                            {
+                                eprintln!("finish_game_record failed: {e}");
+                            }
+                            if let Some(lid) = p.lobby_id {
+                                let _ = lobby_db::mark_lobby_finished(&p.pool, lid).await;
+                                p.lobby_notify.ping();
+                            }
+                            p.game_db.remove_game(p.game_id);
+                            p.game_db.notify_game_list_changed();
+                            break;
+                        }
+                    }
+
+                    if let Some(p) = persistence.as_ref() {
+                        if let Err(e) = p.store.update_game_state(p.game_id, &snap).await {
                             eprintln!("game_instances state persist failed: {e}");
                         }
                     }
@@ -351,6 +481,11 @@ impl GameDb {
 
     pub fn notify_game_list_changed(&self) {
         self.ping_list_subscribers();
+    }
+
+    pub fn remove_game(&self, game_id: Uuid) {
+        let mut db = self.0.write().unwrap();
+        db.games.remove(&game_id);
     }
 
     pub fn new_game(&self, game_id: Uuid, game_instance: GameInstance) {

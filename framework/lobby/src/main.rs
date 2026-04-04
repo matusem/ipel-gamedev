@@ -24,6 +24,7 @@ const USER_ID_KEY: &str = "ipel_user_id";
 enum AppRoute {
     Home,
     Lobby(String),
+    GameResult(String),
 }
 
 fn read_hash_route() -> AppRoute {
@@ -39,12 +40,24 @@ fn read_hash_route() -> AppRoute {
             return AppRoute::Lobby(id);
         }
     }
+    if let Some(rest) = hash.strip_prefix("#/game/") {
+        let id = rest.trim().to_string();
+        if !id.is_empty() {
+            return AppRoute::GameResult(id);
+        }
+    }
     AppRoute::Home
 }
 
 fn navigate_lobby(id: &str) {
     if let Some(w) = web_sys::window() {
         let _ = w.location().set_hash(&format!("#/lobby/{id}"));
+    }
+}
+
+fn navigate_game_result(id: &str) {
+    if let Some(w) = web_sys::window() {
+        let _ = w.location().set_hash(&format!("#/game/{id}"));
     }
 }
 
@@ -240,6 +253,35 @@ struct GameInfo {
     game_type: String,
     player_identities: Vec<String>,
     connected_players: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GameResultRow {
+    game_id: String,
+    game_type: String,
+    lobby_id: Option<String>,
+    finished_at: i64,
+    result_json: String,
+    player_scores_json: String,
+    seats_snapshot_json: String,
+    #[serde(default)]
+    result_ui_path: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct LoadedGameResult {
+    row: GameResultRow,
+    iframe_src: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecentFinishedRow {
+    game_id: String,
+    game_type: String,
+    finished_at: i64,
+    player_scores_json: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -710,6 +752,12 @@ fn App() -> Element {
                             error_msg,
                         }
                     },
+                    AppRoute::GameResult(id) => rsx! {
+                        GameResultPage {
+                            key: "{id}",
+                            game_id: id,
+                        }
+                    },
                 }
                 if let Some(p) = playing() {
                     GamePlayer {
@@ -871,6 +919,7 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
     let game_types: Signal<Vec<GameTypeInfo>> = use_signal(Vec::new);
     let games: Signal<Vec<GameInfo>> = use_signal(Vec::new);
     let lobbies: Signal<Vec<LobbySummary>> = use_signal(Vec::new);
+    let recent_finished: Signal<Vec<RecentFinishedRow>> = use_signal(Vec::new);
     let loading = use_signal(|| true);
     let mut create_type = use_signal(|| String::new());
     let mut creating = use_signal(|| false);
@@ -900,6 +949,7 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
         let mut game_types = game_types;
         let mut games = games;
         let mut lobbies = lobbies;
+        let mut recent_finished = recent_finished;
         let mut error_msg = error_msg;
         let mut loading = loading;
         start_game_instances_subscription(games);
@@ -911,17 +961,20 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
                 game_types: Vec<GameTypeInfo>,
                 game_instances: Vec<GameInfo>,
                 lobbies: Vec<LobbySummary>,
+                recent_finished_games: Vec<RecentFinishedRow>,
             }
             let q = r#"query {
                 gameTypes { name displayName version minPlayers maxPlayers description configUiPath configSchemaJson }
                 gameInstances { gameId gameType playerIdentities connectedPlayers }
                 lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }
+                recentFinishedGames(limit: 12) { gameId gameType finishedAt playerScoresJson }
             }"#;
             match graphql_post::<Boot>(q).await {
                 Ok(data) => {
                     game_types.set(data.game_types);
                     games.set(data.game_instances);
                     lobbies.set(data.lobbies);
+                    recent_finished.set(data.recent_finished_games);
                 }
                 Err(e) => error_msg.set(Some(e)),
             }
@@ -1005,6 +1058,34 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
                                     class: "px-3 py-1 bg-indigo-700 hover:bg-indigo-600 rounded text-sm shrink-0",
                                     onclick: move |_| navigate_lobby(&lob.id),
                                     "Open"
+                                }
+                            }
+                        }
+                    }
+                }
+                section { class: "mb-10",
+                    h2 { class: "text-2xl font-semibold mb-4", "Recent results" }
+                    if recent_finished().is_empty() {
+                        p { class: "text-gray-400", "No finished games recorded yet." }
+                    }
+                    div { class: "space-y-2",
+                        for it in recent_finished() {
+                            {
+                                let gid = it.game_id.clone();
+                                let gt = it.game_type.clone();
+                                let sc = it.player_scores_json.clone();
+                                rsx! {
+                                    div { class: "bg-gray-800 rounded p-3 border border-gray-700 flex justify-between gap-2 items-start",
+                                        div {
+                                            p { class: "font-medium", "{gt}" }
+                                            p { class: "text-xs text-gray-500 font-mono break-all", "{sc}" }
+                                        }
+                                        button {
+                                            class: "px-2 py-1 bg-indigo-700 hover:bg-indigo-600 rounded text-xs shrink-0",
+                                            onclick: move |_| navigate_game_result(&gid),
+                                            "Details"
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1373,8 +1454,42 @@ fn LobbyRoomBody(
             .any(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
     });
     let lobby_id_default_config = lobby_for_cols.id.clone();
+    let lobby_finished = lobby_for_cols.status == "finished";
+    let game_id_for_results_btn = lobby_for_cols.game_instance_id.clone();
+    let lobby_id_reopen_finished = lobby_for_cols.id.clone();
 
     rsx! {
+        div {
+        if lobby_finished {
+            div { class: "mb-4 p-4 rounded-lg bg-amber-900/25 border border-amber-700/80",
+                p { class: "text-amber-100 font-medium mb-2", "This match is over." }
+                div { class: "flex flex-wrap gap-2",
+                    if let Some(g) = game_id_for_results_btn.clone() {
+                        button {
+                            class: "px-3 py-1 bg-amber-700 hover:bg-amber-600 rounded text-sm",
+                            onclick: move |_| {
+                                navigate_game_result(&g);
+                            },
+                            "View results"
+                        }
+                    }
+                    if is_owner {
+                        button {
+                            class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm",
+                            onclick: move |_| {
+                                let lid = lobby_id_reopen_finished.clone();
+                                spawn(async move {
+                                    let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
+                                    let vars = serde_json::json!({ "id": lid });
+                                    let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                });
+                            },
+                            "Play again (reset lobby)"
+                        }
+                    }
+                }
+            }
+        }
         div { class: "lobby-room-grid",
             div { class: "lobby-col lobby-col-types",
                 h3 { class: "text-sm font-semibold text-gray-400 mb-3", "Game type" }
@@ -1529,7 +1644,7 @@ fn LobbyRoomBody(
                             "Cancel lobby"
                         }
                     }
-                    if !is_owner && user_in_seat && in_staging {
+                    if user_in_seat && in_staging {
                         button {
                             class: "px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm",
                             onclick: move |_| {
@@ -1562,6 +1677,124 @@ fn LobbyRoomBody(
                     lobby_id: lobby_id_chat_panel,
                     messages: lobby_for_cols.messages.clone(),
                 }
+            }
+        }
+        }
+    }
+}
+
+#[component]
+fn GameResultPage(game_id: String) -> Element {
+    let mut loaded: Signal<Option<LoadedGameResult>> = use_signal(|| None);
+    let mut err: Signal<Option<String>> = use_signal(|| None);
+    let mut done: Signal<bool> = use_signal(|| false);
+    let gid_fetch = game_id.clone();
+    use_hook(move || {
+        let gid_fetch = gid_fetch.clone();
+        let mut loaded = loaded;
+        let mut err = err;
+        let mut done = done;
+        spawn(async move {
+            let q = r#"query G($id: ID!) { finishedGame(gameId: $id) { gameId gameType lobbyId finishedAt resultJson playerScoresJson seatsSnapshotJson resultUiPath } }"#;
+            let vars = serde_json::json!({ "id": gid_fetch });
+            #[derive(Deserialize)]
+            struct Wrap {
+                #[serde(rename = "finishedGame")]
+                finished_game: Option<GameResultRow>,
+            }
+            match graphql_exec::<Wrap>(q, Some(vars)).await {
+                Ok(w) => {
+                    if let Some(r) = w.finished_game {
+                        let iframe_src = r.result_ui_path.as_ref().and_then(|path| {
+                            let result_v: Value =
+                                serde_json::from_str(&r.result_json).unwrap_or(Value::Null);
+                            let scores_v: Value =
+                                serde_json::from_str(&r.player_scores_json).unwrap_or(Value::Null);
+                            let seats_v: Value =
+                                serde_json::from_str(&r.seats_snapshot_json).unwrap_or(Value::Null);
+                            let payload = serde_json::json!({
+                                "gameId": &r.game_id,
+                                "gameType": &r.game_type,
+                                "finishedAt": r.finished_at,
+                                "lobbyId": &r.lobby_id,
+                                "result": result_v,
+                                "scores": scores_v,
+                                "seats": seats_v,
+                            });
+                            let s = payload.to_string();
+                            let enc = urlencoding::encode(&s);
+                            Some(format!(
+                                "/games/{}/{}?payload={}",
+                                r.game_type, path, enc
+                            ))
+                        });
+                        loaded.set(Some(LoadedGameResult {
+                            row: r,
+                            iframe_src,
+                        }));
+                    } else {
+                        loaded.set(None);
+                    }
+                }
+                Err(e) => err.set(Some(e)),
+            }
+            done.set(true);
+        });
+    });
+
+    rsx! {
+        div { class: "max-w-4xl mx-auto px-4 py-8",
+            button {
+                class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm mb-6",
+                onclick: move |_| navigate_home(),
+                "← Home"
+            }
+            h1 { class: "text-2xl font-bold mb-2", "Game result" }
+            p { class: "text-gray-500 text-sm mb-6", "{game_id}" }
+            if let Some(e) = err() {
+                div { class: "bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded", "{e}" }
+            } else if !done() {
+                p { class: "text-gray-400", "Loading…" }
+            } else if let Some(ld) = loaded() {
+                p { class: "text-gray-400 text-sm mb-2", "Finished at UNIX {ld.row.finished_at}" }
+                if let Some(lid) = ld.row.lobby_id.clone() {
+                    p { class: "text-sm mb-4",
+                        "Lobby: "
+                        button {
+                            class: "text-indigo-400 hover:underline",
+                            onclick: move |_| navigate_lobby(&lid),
+                            "{lid}"
+                        }
+                    }
+                }
+                if let Some(src) = ld.iframe_src.clone() {
+                    p { class: "text-xs text-gray-500 mb-2", "Game-specific view (client/result.html)" }
+                    iframe {
+                        class: "w-full min-h-[32rem] border border-gray-700 rounded-lg bg-gray-950 mb-6",
+                        src: src,
+                    }
+                } else {
+                    p { class: "text-amber-200/90 text-sm mb-3",
+                        "This game type has no client/result.html — raw payload below."
+                    }
+                }
+                details { class: "text-sm",
+                    summary { class: "cursor-pointer text-gray-400 mb-2", "Raw JSON" }
+                    h2 { class: "text-lg font-semibold mt-2 mb-2", "Scores (float)" }
+                    pre { class: "text-xs bg-gray-950 border border-gray-700 rounded p-3 overflow-x-auto mb-4",
+                        "{ld.row.player_scores_json}"
+                    }
+                    h2 { class: "text-lg font-semibold mt-4 mb-2", "Outcome (JSON)" }
+                    pre { class: "text-xs bg-gray-950 border border-gray-700 rounded p-3 overflow-x-auto mb-4",
+                        "{ld.row.result_json}"
+                    }
+                    h2 { class: "text-lg font-semibold mt-4 mb-2", "Seats at finish" }
+                    pre { class: "text-xs bg-gray-950 border border-gray-700 rounded p-3 overflow-x-auto",
+                        "{ld.row.seats_snapshot_json}"
+                    }
+                }
+            } else {
+                p { class: "text-gray-400", "No saved result for this game (wrong id or not finished yet)." }
             }
         }
     }

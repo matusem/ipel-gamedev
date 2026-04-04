@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Match result — Tic Tac Toe</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-4">
+  <div id="root" class="max-w-lg mx-auto">
+    <p class="text-gray-400">Loading…</p>
+  </div>
+  <script>
+    /**
+     * Query param `payload` = encodeURIComponent(JSON.stringify({
+     *   gameId, gameType, finishedAt, lobbyId,
+     *   result: object,   // server result_json
+     *   scores: object,   // player id -> float
+     *   seats: array      // seat snapshot
+     * }))
+     */
+    function normalizePlayerKey(k) {
+      if (k == null) return "?";
+      const s = String(k);
+      if (s.startsWith('"') && s.endsWith('"')) {
+        try { return JSON.parse(s); } catch { return s.slice(1, -1); }
+      }
+      return s;
+    }
+
+    function outcomeLabel(out) {
+      if (out === "Win") return { text: "Win", cls: "bg-emerald-900/80 text-emerald-200" };
+      if (out === "Loss") return { text: "Loss", cls: "bg-red-900/80 text-red-200" };
+      if (out === "Draw") return { text: "Draw", cls: "bg-amber-900/80 text-amber-200" };
+      return { text: String(out), cls: "bg-gray-700 text-gray-200" };
+    }
+
+    function render(data) {
+      const root = document.getElementById("root");
+      const outcomes = (data.result && data.result.per_player_outcome) || {};
+      const scores = data.scores && typeof data.scores === "object" ? data.scores : {};
+      const seats = Array.isArray(data.seats) ? data.seats : [];
+
+      let html = "";
+      html += `<h1 class="text-2xl font-bold mb-1">${escapeHtml(data.gameType || "game")}</h1>`;
+      html += `<p class="text-gray-500 text-sm mb-6">Game <code class="text-gray-400">${escapeHtml(data.gameId || "")}</code></p>`;
+
+      html += `<section class="mb-6"><h2 class="text-sm font-semibold text-gray-400 mb-2">Outcomes</h2><ul class="space-y-2">`;
+      for (const [rawK, out] of Object.entries(outcomes)) {
+        const k = normalizePlayerKey(rawK);
+        const o = outcomeLabel(out);
+        const sc = scores[rawK] !== undefined ? scores[rawK] : scores[k];
+        const scoreStr = typeof sc === "number" ? sc.toFixed(2) : "";
+        html += `<li class="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+          <span class="font-mono font-semibold">${escapeHtml(String(k))}</span>
+          <span class="flex items-center gap-2">
+            ${scoreStr !== "" ? `<span class="text-gray-400 text-sm">${scoreStr}</span>` : ""}
+            <span class="text-xs px-2 py-0.5 rounded ${o.cls}">${escapeHtml(o.text)}</span>
+          </span>
+        </li>`;
+      }
+      html += `</ul></section>`;
+
+      if (seats.length) {
+        html += `<section class="mb-6"><h2 class="text-sm font-semibold text-gray-400 mb-2">Seats</h2>
+          <div class="text-xs rounded-lg border border-gray-700 overflow-hidden">
+            <table class="w-full text-left">
+              <thead class="bg-gray-800 text-gray-500"><tr>
+                <th class="p-2">#</th><th class="p-2">Role</th><th class="p-2">Player</th>
+              </tr></thead><tbody>`;
+        for (const s of seats) {
+          const idx = s.seat_index != null ? s.seat_index : s.seatIndex;
+          const id = s.player_identity != null ? s.player_identity : s.playerIdentity;
+          const name = s.claimed_display_name != null ? s.claimed_display_name : s.claimedDisplayName || "—";
+          html += `<tr class="border-t border-gray-700"><td class="p-2">${idx}</td><td class="p-2 font-mono">${escapeHtml(String(id || ""))}</td><td class="p-2">${escapeHtml(String(name))}</td></tr>`;
+        }
+        html += `</tbody></table></div></section>`;
+      }
+
+      html += `<p class="text-xs text-gray-600">Finished at UNIX ${Number(data.finishedAt) || 0}</p>`;
+      root.innerHTML = html;
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function main() {
+      const root = document.getElementById("root");
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get("payload");
+      if (!raw) {
+        root.innerHTML = `<p class="text-amber-200">Missing <code class="text-white">payload</code> query parameter (URI-encoded JSON).</p>`;
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(decodeURIComponent(raw));
+      } catch (e) {
+        root.innerHTML = `<p class="text-red-300">Invalid JSON payload: ${escapeHtml(e.message)}</p>`;
+        return;
+      }
+      try {
+        render(data);
+      } catch (e) {
+        root.innerHTML = `<p class="text-red-300">Render error: ${escapeHtml(e.message)}</p>`;
+      }
+    }
+    main();
+  </script>
+</body>
+</html>

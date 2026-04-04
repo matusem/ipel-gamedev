@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::auth_password;
 use crate::component_db::ComponentDb;
-use crate::db::{self, GameInstanceStore};
+use crate::db::{self, FinishedGameRow, GameInstanceStore};
 use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
 use crate::game_service;
@@ -55,6 +55,7 @@ pub struct GameTypeGql {
     pub max_players: u32,
     pub description: String,
     pub config_ui_path: Option<String>,
+    pub result_ui_path: Option<String>,
     pub config_schema_json: Option<String>,
 }
 
@@ -64,6 +65,36 @@ pub struct GameInstanceGql {
     pub game_type: String,
     pub player_identities: Vec<String>,
     pub connected_players: usize,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct FinishedGameGql {
+    pub game_id: String,
+    pub game_type: String,
+    pub lobby_id: Option<String>,
+    pub finished_at: i64,
+    pub result_json: String,
+    pub player_scores_json: String,
+    pub seats_snapshot_json: String,
+    pub result_ui_path: Option<String>,
+}
+
+fn map_finished_row(r: FinishedGameRow, registry: &GameRegistry) -> FinishedGameGql {
+    let result_ui_path = registry
+        .game_types()
+        .iter()
+        .find(|gt| gt.manifest.name == r.game_type)
+        .and_then(|gt| gt.result_ui_path.clone());
+    FinishedGameGql {
+        game_id: r.id.to_string(),
+        game_type: r.game_type,
+        lobby_id: r.lobby_id.map(|u| u.to_string()),
+        finished_at: r.finished_at,
+        result_json: r.result_json,
+        player_scores_json: r.player_scores_json,
+        seats_snapshot_json: r.seats_snapshot_json,
+        result_ui_path,
+    }
 }
 
 #[derive(SimpleObject, Clone)]
@@ -193,6 +224,7 @@ impl QueryRoot {
                 max_players: gt.manifest.max_players,
                 description: gt.manifest.description.clone(),
                 config_ui_path: gt.config_ui_path.clone(),
+                result_ui_path: gt.result_ui_path.clone(),
                 config_schema_json: gt
                     .manifest
                     .config_schema
@@ -205,6 +237,39 @@ impl QueryRoot {
     async fn game_instances(&self, ctx: &Context<'_>) -> Result<Vec<GameInstanceGql>> {
         let db = ctx.data::<GameDb>()?;
         Ok(map_game_entries(db))
+    }
+
+    async fn finished_game(
+        &self,
+        ctx: &Context<'_>,
+        game_id: async_graphql::types::ID,
+    ) -> Result<Option<FinishedGameGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let registry = ctx.data::<Arc<GameRegistry>>()?;
+        let gid = Uuid::parse_str(game_id.as_str()).map_err(|_| Error::new("invalid game id"))?;
+        let row = db::get_finished_game(pool, gid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(row.map(|r| map_finished_row(r, registry)))
+    }
+
+    async fn recent_finished_games(
+        &self,
+        ctx: &Context<'_>,
+        limit: Option<i32>,
+    ) -> Result<Vec<FinishedGameGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let registry = ctx.data::<Arc<GameRegistry>>()?;
+        let lim = limit.unwrap_or(15).clamp(1, 100) as i64;
+        let rows = db::list_recent_finished_games(pool, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| map_finished_row(r, registry))
+            .collect())
     }
 
     async fn user(&self, ctx: &Context<'_>, id: async_graphql::types::ID) -> Result<Option<UserGql>> {
@@ -375,6 +440,8 @@ impl MutationRoot {
         let component_db = ctx.data::<ComponentDb>()?;
         let game_db = ctx.data::<GameDb>()?;
         let game_store = ctx.data::<Arc<GameInstanceStore>>()?;
+        let pool = ctx.data::<SqlitePool>()?.clone();
+        let notify = ctx.data::<LobbyListNotify>()?.clone();
         let config = config_json.into_bytes();
         let id = game_service::create_and_spawn_game(
             component_db,
@@ -382,6 +449,9 @@ impl MutationRoot {
             game_store.clone(),
             game_type,
             config,
+            None,
+            pool,
+            notify,
         )
         .await
         .map_err(Error::new)?;
@@ -571,6 +641,9 @@ impl MutationRoot {
             game_store.clone(),
             detail.game_type,
             config,
+            Some(lid),
+            pool.clone(),
+            notify.clone(),
         )
         .await
         .map_err(Error::new)?;

@@ -397,6 +397,16 @@ impl GameCore for TicTacToe {
             GameOutcome::Draw => PlayerOutcome::Draw,
         }
     }
+
+    fn scores_at_end(result: &Self::Result) -> Vec<(Self::Player, f64)> {
+        match result {
+            GameOutcome::Win(w) => vec![
+                (Player::X, if *w == Player::X { 1.0 } else { 0.0 }),
+                (Player::O, if *w == Player::O { 1.0 } else { 0.0 }),
+            ],
+            GameOutcome::Draw => vec![(Player::X, 0.5), (Player::O, 0.5)],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -412,6 +422,16 @@ mod tests {
         assert_eq!(serde_json::to_string(&win).unwrap(), r#"{"GameOver":"Win"}"#);
         assert_eq!(serde_json::to_string(&loss).unwrap(), r#"{"GameOver":"Loss"}"#);
         assert_eq!(serde_json::to_string(&draw).unwrap(), r#"{"GameOver":"Draw"}"#);
+    }
+
+    #[test]
+    fn scores_at_end_draw_and_win() {
+        let s = TicTacToe::scores_at_end(&GameOutcome::Draw);
+        assert_eq!(s.len(), 2);
+        assert!((s.iter().find(|(p, _)| *p == Player::X).unwrap().1 - 0.5).abs() < 1e-9);
+        let s2 = TicTacToe::scores_at_end(&GameOutcome::Win(Player::X));
+        assert_eq!(s2.iter().find(|(p, _)| *p == Player::X).unwrap().1, 1.0);
+        assert_eq!(s2.iter().find(|(p, _)| *p == Player::O).unwrap().1, 0.0);
     }
 
     #[test]
