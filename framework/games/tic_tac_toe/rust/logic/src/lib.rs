@@ -12,6 +12,21 @@ pub enum Player {
     O,
 }
 
+/// Authoritative end state: either a winning player or a full board with no winner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum GameOutcome {
+    Win(Player),
+    Draw,
+}
+
+/// What this player sees when the game ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PlayerOutcome {
+    Win,
+    Loss,
+    Draw,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Position(pub u8, pub u8);
 
@@ -52,6 +67,10 @@ impl Board {
         if i < self.0.len() {
             self.0[i] = Some(player);
         }
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.0.iter().all(|c| c.is_some())
     }
 }
 
@@ -263,7 +282,7 @@ fn try_win_segment(
     Some(first)
 }
 
-fn check_game_over_state(state: &State) -> Option<Player> {
+fn winner(state: &State) -> Option<Player> {
     let side = state.config.side_length;
     let win = state.config.win_length;
     let last = side.saturating_sub(win);
@@ -299,6 +318,16 @@ fn check_game_over_state(state: &State) -> Option<Player> {
     None
 }
 
+fn check_game_over_state(state: &State) -> Option<GameOutcome> {
+    if let Some(w) = winner(state) {
+        return Some(GameOutcome::Win(w));
+    }
+    if state.board.is_full() {
+        return Some(GameOutcome::Draw);
+    }
+    None
+}
+
 impl GameCore for TicTacToe {
     type Config = Config;
 
@@ -312,8 +341,8 @@ impl GameCore for TicTacToe {
     type Event = ();
     type PlayerEvent = PlayerEvent;
 
-    type Result = Self::Player;
-    type PlayerResult = Self::Result;
+    type Result = GameOutcome;
+    type PlayerResult = PlayerOutcome;
 
     fn init(config: &Self::Config) -> Self::State {
         let n = (config.side_length as usize).saturating_pow(2);
@@ -359,16 +388,31 @@ impl GameCore for TicTacToe {
 
     fn derive_player_result(
         _state: &Self::State,
-        _player: &Self::Player,
+        player: &Self::Player,
         result: &Self::Result,
     ) -> Self::PlayerResult {
-        *result
+        match result {
+            GameOutcome::Win(w) if *w == *player => PlayerOutcome::Win,
+            GameOutcome::Win(_) => PlayerOutcome::Loss,
+            GameOutcome::Draw => PlayerOutcome::Draw,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use game::PlayerEvent;
+
+    #[test]
+    fn player_event_game_over_json_shape() {
+        let win: PlayerEvent<TicTacToe> = PlayerEvent::GameOver(PlayerOutcome::Win);
+        let loss: PlayerEvent<TicTacToe> = PlayerEvent::GameOver(PlayerOutcome::Loss);
+        let draw: PlayerEvent<TicTacToe> = PlayerEvent::GameOver(PlayerOutcome::Draw);
+        assert_eq!(serde_json::to_string(&win).unwrap(), r#"{"GameOver":"Win"}"#);
+        assert_eq!(serde_json::to_string(&loss).unwrap(), r#"{"GameOver":"Loss"}"#);
+        assert_eq!(serde_json::to_string(&draw).unwrap(), r#"{"GameOver":"Draw"}"#);
+    }
 
     #[test]
     fn default_config_deserializes_from_null() {
@@ -389,6 +433,33 @@ mod tests {
         for c in 0..4u8 {
             state.board.set(Position(0, c), 5, Player::X);
         }
-        assert_eq!(check_game_over_state(&state), Some(Player::X));
+        assert_eq!(
+            check_game_over_state(&state),
+            Some(GameOutcome::Win(Player::X))
+        );
+    }
+
+    #[test]
+    fn draw_when_board_full_no_winner() {
+        let cfg = Config::default();
+        cfg.validate().unwrap();
+        let mut state = TicTacToe::init(&cfg);
+        // Cat's game pattern on 3x3
+        let moves = [
+            (Player::X, Position(0, 0)),
+            (Player::O, Position(0, 1)),
+            (Player::X, Position(0, 2)),
+            (Player::O, Position(1, 1)),
+            (Player::X, Position(1, 0)),
+            (Player::O, Position(1, 2)),
+            (Player::X, Position(2, 1)),
+            (Player::O, Position(2, 0)),
+            (Player::X, Position(2, 2)),
+        ];
+        for (p, pos) in moves {
+            state.board.set(pos, 3, p);
+        }
+        assert_eq!(winner(&state), None);
+        assert_eq!(check_game_over_state(&state), Some(GameOutcome::Draw));
     }
 }

@@ -226,13 +226,34 @@
         updateStatus();
       } else if (event && event.GameOver !== undefined) {
         gameOver = true;
-        const winner = normalizePlayer(event.GameOver);
-        if (winner === myPlayer) {
+        const go = event.GameOver;
+        /** @param {unknown} v */
+        function isTagged(v, tag) {
+          return v != null && typeof v === "object" && Object.prototype.hasOwnProperty.call(v, tag);
+        }
+        // serde_json encodes Rust unit enums like PlayerOutcome as JSON strings ("Win" | "Loss" | "Draw").
+        if (go === "Draw" || isTagged(go, "Draw")) {
+          statusEl.textContent = "Draw!";
+          statusEl.className = "text-lg mb-4 text-amber-400 font-bold";
+        } else if (go === "Win" || isTagged(go, "Win")) {
           statusEl.textContent = "You win!";
           statusEl.className = "text-lg mb-4 text-green-400 font-bold";
-        } else {
-          statusEl.textContent = `${winner ?? "?"} wins!`;
+        } else if (go === "Loss" || isTagged(go, "Loss")) {
+          statusEl.textContent = "You lost!";
           statusEl.className = "text-lg mb-4 text-red-400 font-bold";
+        } else {
+          // Legacy: GameOver was the winning Player only ("X" / "O" or tagged player)
+          const winner = normalizePlayer(go);
+          if (winner === myPlayer) {
+            statusEl.textContent = "You win!";
+            statusEl.className = "text-lg mb-4 text-green-400 font-bold";
+          } else if (winner != null) {
+            statusEl.textContent = `${winner} wins!`;
+            statusEl.className = "text-lg mb-4 text-red-400 font-bold";
+          } else {
+            statusEl.textContent = "Game over";
+            statusEl.className = "text-lg mb-4 text-gray-400 font-bold";
+          }
         }
       }
     }
