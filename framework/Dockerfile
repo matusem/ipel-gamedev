@@ -39,6 +39,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 WORKDIR /app
 
+RUN mkdir -p /app/data
+
 COPY --from=builder /app/server-bin /app/server
 
 COPY --from=builder /app/wasm-bin.wasm /app/games/tic_tac_toe/logic.wasm
@@ -51,6 +53,7 @@ COPY --from=builder /app/lobby-dist/ /app/lobby/
 
 ENV HOST=0.0.0.0
 ENV PORT=8080
+ENV DATABASE_URL=sqlite:///app/data/app.db
 ENV GAMES_DIR=/app/games
 ENV LOBBY_DIR=/app/lobby
 ENV LIB_DIR=/app/lib

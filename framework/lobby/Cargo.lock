@@ -1154,6 +1154,7 @@ name = "lobby"
 version = "0.1.0"
 dependencies = [
  "dioxus",
+ "futures-util",
  "gloo-events",
  "gloo-net",
  "js-sys",

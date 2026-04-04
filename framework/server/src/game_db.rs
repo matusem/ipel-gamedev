@@ -1,16 +1,37 @@
+use crate::db::GameInstanceStore;
 use crate::game_core::{self, Buffer, Game, GameCore, Player, TakeActionResult};
 use actix_web::ResponseError;
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
+use tokio::sync::broadcast;
 use uuid::Uuid;
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::p1::WasiP1Ctx;
 
-#[derive(Clone)]
-pub struct GameDb(Arc<RwLock<HashMap<Uuid, GameInstance>>>);
+/// JSON snapshot of WASM `game` (base64 for binary buffers) for DB durability / future replay.
+pub fn encode_game_snapshot(game: &Game) -> Result<String, serde_json::Error> {
+    let player_states: Vec<_> = game
+        .player_states
+        .iter()
+        .map(|ps| {
+            json!({
+                "player": B64.encode(&ps.player),
+                "state": B64.encode(&ps.state),
+            })
+        })
+        .collect();
+    let v = json!({
+        "full_state": B64.encode(&game.full_state),
+        "player_states": player_states,
+    });
+    serde_json::to_string(&v)
+}
 
 #[derive(Debug)]
 pub enum GameInstanceError {
@@ -70,10 +91,16 @@ impl PlayerChannel {
     ) -> Result<(), async_channel::SendError<(Player, Buffer)>> {
         self.action_sender.send((self.player.clone(), action)).await
     }
-    
+
     pub async fn receive_event(&self) -> Result<Buffer, async_channel::RecvError> {
         self.event_receiver.recv().await
     }
+}
+
+#[derive(Clone)]
+pub struct GameRunPersistence {
+    pub game_id: Uuid,
+    pub store: Arc<GameInstanceStore>,
 }
 
 #[derive(Clone)]
@@ -124,16 +151,12 @@ impl GameInstance {
         self.players.read().map(|p| p.len()).unwrap_or(0)
     }
 
-    pub fn get_player_ids(&self) -> Vec<Uuid> {
-        self.players
-            .read()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>()
-    }
-
-    pub async fn run(&mut self, engine: &Engine, mut store: Store<WasiP1Ctx>) {
+    pub async fn run(
+        &mut self,
+        _engine: &Engine,
+        mut store: Store<WasiP1Ctx>,
+        persistence: Option<GameRunPersistence>,
+    ) {
         while let Ok((player, action)) = self.action_receiver.recv().await {
             let game_core = self.game_core.write().unwrap();
             let mut game = self.game.write().unwrap();
@@ -175,7 +198,7 @@ impl GameInstance {
                         player_states,
                     } = take_action_result;
 
-                    *game = Game {
+                    let new_game = Game {
                         full_state: new_game_full_state,
                         player_states: player_states
                             .iter()
@@ -183,13 +206,16 @@ impl GameInstance {
                             .collect(),
                     };
 
+                    let snap = encode_game_snapshot(&new_game).ok();
+
+                    *game = new_game;
+
                     println!(
                         "Action successful, sending events to {} connected players",
                         players.len()
                     );
 
-                    // Send updated player states
-                    for (other_player_id, other_player_channel) in players.iter() {
+                    for (_other_player_id, other_player_channel) in players.iter() {
                         let player_events = player_states
                             .iter()
                             .find(|new_player_state| {
@@ -206,6 +232,16 @@ impl GameInstance {
 
                         for event in player_events {
                             let _ = other_player_channel.event_sender.send(event).await;
+                        }
+                    }
+
+                    drop(players);
+                    drop(game);
+                    drop(game_core);
+
+                    if let (Some(p), Some(json)) = (persistence.as_ref(), snap) {
+                        if let Err(e) = p.store.update_game_state(p.game_id, &json).await {
+                            eprintln!("game_instances state persist failed: {e}");
                         }
                     }
                 }
@@ -257,6 +293,14 @@ impl GameInstance {
     }
 }
 
+struct GameDbInner {
+    games: HashMap<Uuid, GameInstance>,
+    list_notify: Option<broadcast::Sender<()>>,
+}
+
+#[derive(Clone)]
+pub struct GameDb(Arc<RwLock<GameDbInner>>);
+
 #[derive(Clone, Debug)]
 pub enum GameDbError {
     LockFailed,
@@ -282,30 +326,57 @@ impl ResponseError for GameDbError {
 }
 
 impl GameDb {
-    pub fn new() -> Self {
-        Self(Arc::new(RwLock::new(HashMap::new())))
+    pub fn new(list_notify: Option<broadcast::Sender<()>>) -> Self {
+        Self(Arc::new(RwLock::new(GameDbInner {
+            games: HashMap::new(),
+            list_notify,
+        })))
+    }
+
+    fn ping_list_subscribers(&self) {
+        if let Ok(guard) = self.0.read() {
+            if let Some(tx) = &guard.list_notify {
+                let _ = tx.send(());
+            }
+        }
+    }
+
+    /// For GraphQL subscriptions; `None` if the server was built without a list broadcast channel.
+    pub fn subscribe_game_list(&self) -> Option<broadcast::Receiver<()>> {
+        self.0
+            .read()
+            .ok()
+            .and_then(|g| g.list_notify.as_ref().map(|s| s.subscribe()))
+    }
+
+    pub fn notify_game_list_changed(&self) {
+        self.ping_list_subscribers();
     }
 
     pub fn new_game(&self, game_id: Uuid, game_instance: GameInstance) {
         let mut db = self.0.write().unwrap();
-        db.insert(game_id, game_instance);
+        db.games.insert(game_id, game_instance);
+        drop(db);
+        self.ping_list_subscribers();
     }
 
     pub fn get_game(&self, game_id: Uuid) -> Result<GameInstance, GameDbError> {
         let db = self.0.read().unwrap();
-        db.get(&game_id)
+        db.games
+            .get(&game_id)
             .cloned()
             .ok_or(GameDbError::NotFound(game_id))
     }
 
     pub fn games(&self) -> Vec<Uuid> {
         let db = self.0.read().unwrap();
-        db.keys().cloned().collect()
+        db.games.keys().cloned().collect()
     }
 
     pub fn list_games(&self) -> Vec<GameListEntry> {
         let db = self.0.read().unwrap();
-        db.iter()
+        db.games
+            .iter()
             .map(|(id, instance)| GameListEntry {
                 game_id: id.to_string(),
                 game_type: instance.game_type().to_string(),
@@ -316,7 +387,7 @@ impl GameDb {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GameListEntry {
     pub game_id: String,
     pub game_type: String,

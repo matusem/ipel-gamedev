@@ -1,16 +1,27 @@
-use crate::game_db::GameInstance;
+use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
-use crate::{component_db::ComponentDb, game_core::Buffer, game_db::GameDb};
+use crate::graphql_api::AppSchema;
+use crate::{component_db::ComponentDb, game_core::Buffer};
 use actix_files::Files;
-use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, rt, web};
+use actix_web::guard;
+use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Result as ActixResult, rt};
+use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
+use async_graphql::Data as GqlData;
+use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 mod component_db;
+mod db;
 mod game_db;
 mod game_registry;
+mod game_service;
+mod graphql_api;
 
 mod game_core {
     use wasmtime::component::bindgen;
@@ -31,7 +42,8 @@ fn player_identity_from_query_param(param: &str) -> Buffer {
     if t.starts_with('"') && t.ends_with('"') && t.len() >= 2 {
         return t.as_bytes().to_vec();
     }
-    serde_json::to_vec(&serde_json::Value::String(t.to_string())).unwrap_or_else(|_| t.as_bytes().to_vec())
+    serde_json::to_vec(&serde_json::Value::String(t.to_string()))
+        .unwrap_or_else(|_| t.as_bytes().to_vec())
 }
 
 struct GameRequestParams {
@@ -59,8 +71,6 @@ impl GameRequestParams {
             .get("player")
             .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'player' parameter"))?;
 
-        // Game logic stores identities as JSON (e.g. enum "X" -> bytes b"\"X\""). Plain ?player=X
-        // must match those buffers, so we JSON-encode simple tokens; pass-through if already JSON.
         let player: Buffer = player_identity_from_query_param(player);
 
         Ok(Self { game_id, player })
@@ -84,6 +94,8 @@ async fn game(
         let mut game_instance = game_db.get_game(game_id)?;
         game_instance.register_player(player.clone())?
     };
+
+    game_db.notify_game_list_changed();
 
     println!("Sending initial state to player");
     let initial = String::from_utf8_lossy(&player_state.0);
@@ -138,6 +150,7 @@ async fn game(
 
         let mut game_instance = game_db.get_game(game_id).unwrap();
         let _ = game_instance.unregister_player(player_state.2);
+        game_db.notify_game_list_changed();
     });
 
     Ok(response)
@@ -177,35 +190,20 @@ async fn create_game(
     request: HttpRequest,
     game_db: web::Data<GameDb>,
     component_db: web::Data<ComponentDb>,
+    game_store: web::Data<Arc<db::GameInstanceStore>>,
 ) -> Result<HttpResponse, Error> {
     println!("Creating new game...");
     let params = CreateGameParams::parse(&request)?;
 
-    let engine = component_db.get_engine();
-    let game_type = params.game.clone();
-
-    let (game_core, mut store) = component_db
-        .create_game_core(&params.game)
-        .await
-        .map_err(|error| actix_web::error::ErrorNotAcceptable(error))?;
-
-    let game = game_core
-        .call_init(
-            &mut store,
-            game_core::SerializationFormat::Json,
-            &params.config,
-        )
-        .await
-        .map_err(|error| actix_web::error::ErrorNotAcceptable(error))?
-        .map_err(|error| actix_web::error::ErrorNotAcceptable(error))?;
-
-    let game_id = Uuid::new_v4();
-    game_db.new_game(game_id, GameInstance::new(game, game_core, game_type));
-
-    rt::spawn(async move {
-        let mut game = game_db.get_game(game_id).unwrap();
-        game.run(&engine, store).await;
-    });
+    let game_id = game_service::create_and_spawn_game(
+        component_db.get_ref(),
+        game_db.get_ref(),
+        game_store.get_ref().clone(),
+        params.game,
+        params.config,
+    )
+    .await
+    .map_err(|e| actix_web::error::ErrorNotAcceptable(e))?;
 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
@@ -263,6 +261,81 @@ async fn get_games(game_db: web::Data<GameDb>) -> Result<HttpResponse, Error> {
         .body(serde_json::to_string(&game_infos).unwrap()))
 }
 
+async fn graphql_playground() -> ActixResult<HttpResponse> {
+    let html = playground_source(GraphQLPlaygroundConfig::new("/graphql").subscription_endpoint("/graphql"));
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html))
+}
+
+async fn graphql_post(
+    schema: web::Data<AppSchema>,
+    pool: web::Data<SqlitePool>,
+    game_db: web::Data<GameDb>,
+    registry: web::Data<Arc<GameRegistry>>,
+    component_db: web::Data<ComponentDb>,
+    game_store: web::Data<Arc<db::GameInstanceStore>>,
+    req: GraphQLRequest,
+) -> GraphQLResponse {
+    let req = req
+        .into_inner()
+        .data(pool.get_ref().clone())
+        .data(game_db.get_ref().clone())
+        .data(registry.get_ref().clone())
+        .data(component_db.get_ref().clone())
+        .data(game_store.get_ref().clone());
+    schema.execute(req).await.into()
+}
+
+async fn graphql_ws(
+    schema: web::Data<AppSchema>,
+    pool: web::Data<SqlitePool>,
+    game_db: web::Data<GameDb>,
+    registry: web::Data<Arc<GameRegistry>>,
+    component_db: web::Data<ComponentDb>,
+    game_store: web::Data<Arc<db::GameInstanceStore>>,
+    req: HttpRequest,
+    payload: web::Payload,
+) -> Result<HttpResponse, Error> {
+    let mut data = GqlData::default();
+    data.insert(pool.get_ref().clone());
+    data.insert(game_db.get_ref().clone());
+    data.insert(registry.get_ref().clone());
+    data.insert(component_db.get_ref().clone());
+    data.insert(game_store.get_ref().clone());
+
+    GraphQLSubscription::new(schema.get_ref().clone())
+        .with_data(data)
+        .start(&req, payload)
+}
+
+/// Create parent dirs for file-backed SQLite so `sqlite:///abs/path.db` works in Docker.
+///
+/// `sqlite:///app/data/app.db` becomes `///app/...` after the `sqlite:` prefix; stripping *all*
+/// leading `/` wrongly yields a relative path (`app/...`) and `mkdir` targets the wrong place
+/// while SQLx still opens the absolute file → SQLite error 14.
+fn ensure_sqlite_parent_dir(database_url: &str) {
+    let Some(rest) = database_url.strip_prefix("sqlite:") else {
+        return;
+    };
+    if rest.starts_with(":memory:") {
+        return;
+    }
+    let path = if rest.starts_with("///") {
+        std::path::PathBuf::from(format!("/{}", rest.trim_start_matches('/')))
+    } else if rest.starts_with("//") {
+        // Authority-style URL (unusual for our deployments); avoid guessing a filesystem path.
+        return;
+    } else {
+        std::path::PathBuf::from(rest)
+    };
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
@@ -271,16 +344,30 @@ async fn main() -> std::io::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
+    let database_url =
+        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:./data/app.db".to_string());
+
+    ensure_sqlite_parent_dir(&database_url);
+
+    let pool = db::connect_and_migrate(&database_url)
+        .await
+        .expect("database connect/migrate");
+
     let games_dir = PathBuf::from(std::env::var("GAMES_DIR").unwrap_or_else(|_| "./games".into()));
     let lobby_dir = PathBuf::from(std::env::var("LOBBY_DIR").unwrap_or_else(|_| "./lobby".into()));
     let lib_dir = PathBuf::from(std::env::var("LIB_DIR").unwrap_or_else(|_| "./lib".into()));
 
-    let game_db = web::Data::new(GameDb::new());
+    let (list_tx, _list_rx) = broadcast::channel::<()>(256);
+    let game_db = web::Data::new(GameDb::new(Some(list_tx)));
+    let game_store = web::Data::new(Arc::new(db::GameInstanceStore::new(pool.clone())));
 
     let component_db = ComponentDb::new();
     let registry = GameRegistry::load(&games_dir, &component_db);
+    let registry = web::Data::new(Arc::new(registry));
     let component_db = web::Data::new(component_db.clone());
-    let registry_data = web::Data::new(registry.clone());
+
+    let pool_data = web::Data::new(pool.clone());
+    let schema = web::Data::new(graphql_api::build_schema());
 
     println!("Starting server on {}:{}", host, port);
 
@@ -288,18 +375,27 @@ async fn main() -> std::io::Result<()> {
         let mut app = App::new()
             .app_data(game_db.clone())
             .app_data(component_db.clone())
-            .app_data(registry_data.clone())
+            .app_data(registry.clone())
+            .app_data(pool_data.clone())
+            .app_data(game_store.clone())
+            .app_data(schema.clone())
             .route("/api/create_game", web::post().to(create_game))
             .route("/api/game_types", web::get().to(get_game_types))
             .route("/api/games", web::get().to(get_games))
-            .route("/game", web::get().to(game));
+            .route("/game", web::get().to(game))
+            .service(
+                web::resource("/graphql")
+                    .guard(guard::Post())
+                    .to(graphql_post),
+            )
+            .route("/graphql", web::get().to(graphql_ws))
+            .route("/graphql/playground", web::get().to(graphql_playground));
 
-        for gt in registry.game_types() {
+        for gt in registry.get_ref().game_types() {
             if gt.client_dir.exists() {
                 let route = format!("/games/{}", gt.manifest.name);
                 app = app.service(
-                    Files::new(&route, &gt.client_dir)
-                        .index_file("index.html"),
+                    Files::new(&route, &gt.client_dir).index_file("index.html"),
                 );
             }
         }

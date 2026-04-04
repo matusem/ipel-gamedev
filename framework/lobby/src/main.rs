@@ -1,7 +1,12 @@
 use dioxus::prelude::*;
+use futures_util::{SinkExt, StreamExt};
 use gloo_events::EventListener;
+use gloo_net::http::Request;
+use gloo_net::websocket::futures::WebSocket;
+use gloo_net::websocket::Message;
 use js_sys::{Array, Object, Reflect};
 use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::collections::HashMap;
 use wasm_bindgen::JsCast;
@@ -13,6 +18,26 @@ const LOBBY_STYLES: &str = include_str!("../assets/lobby.css");
 const CONFIG_MSG_SOURCE: &str = "ipel-game-config";
 const CONFIG_RESULT_SOURCE: &str = "ipel-game-config-result";
 const CONFIG_SCHEMA_SOURCE: &str = "ipel-game-config-schema";
+const USER_ID_KEY: &str = "ipel_user_id";
+
+const BOOTSTRAP_QUERY: &str = r#"query Bootstrap {
+  gameTypes {
+    name
+    displayName
+    version
+    minPlayers
+    maxPlayers
+    description
+    configUiPath
+    configSchemaJson
+  }
+  gameInstances {
+    gameId
+    gameType
+    playerIdentities
+    connectedPlayers
+  }
+}"#;
 
 fn parse_iframe_config_message(data: &wasm_bindgen::JsValue) -> Option<(String, String)> {
     let s = js_sys::JSON::stringify(data).ok()?.as_string()?;
@@ -97,11 +122,37 @@ fn post_config_schema_to_window(win: &web_sys::Window, origin: &str, game: &str,
     let _ = win.post_message(&JsValue::from(obj), origin);
 }
 
-fn main() {
-    dioxus::launch(App);
+fn graphql_ws_url() -> String {
+    let window = web_sys::window().unwrap();
+    let location = window.location();
+    let protocol = location.protocol().unwrap_or_default();
+    let host = location.host().unwrap_or_default();
+    let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
+    format!("{ws_protocol}//{host}/graphql")
+}
+
+async fn graphql_post<T: DeserializeOwned>(query: &str) -> Result<T, String> {
+    let body = serde_json::json!({ "query": query });
+    let resp = Request::post("/graphql")
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .map_err(|e| format!("{e}"))?
+        .send()
+        .await
+        .map_err(|e| format!("{e}"))?;
+    let text = resp.text().await.map_err(|e| format!("{e}"))?;
+    let v: Value = serde_json::from_str(&text).map_err(|e| format!("{e}"))?;
+    if let Some(errs) = v.get("errors").and_then(|x| x.as_array()) {
+        if !errs.is_empty() {
+            return Err(serde_json::to_string(errs).unwrap_or_else(|_| "GraphQL errors".into()));
+        }
+    }
+    let data = v.get("data").cloned().ok_or_else(|| "missing data".to_string())?;
+    serde_json::from_value(data).map_err(|e| format!("{e}"))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
 struct GameTypeInfo {
     name: String,
     display_name: String,
@@ -111,16 +162,130 @@ struct GameTypeInfo {
     description: String,
     #[serde(default)]
     config_ui_path: Option<String>,
+    /// JSON Schema string from manifest (GraphQL).
     #[serde(default)]
-    config_schema: Option<Value>,
+    config_schema_json: Option<String>,
+}
+
+impl GameTypeInfo {
+    fn config_schema_value(&self) -> Option<Value> {
+        self.config_schema_json
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok())
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
 struct GameInfo {
     game_id: String,
     game_type: String,
     player_identities: Vec<String>,
     connected_players: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BootstrapData {
+    game_types: Vec<GameTypeInfo>,
+    game_instances: Vec<GameInfo>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterUserData {
+    register_user: RegisterUserRow,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RegisterUserRow {
+    id: String,
+}
+
+fn local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok()?
+}
+
+async fn ensure_guest_user() -> Result<(), String> {
+    if let Some(st) = local_storage() {
+        if st.get_item(USER_ID_KEY).ok().flatten().is_some() {
+            return Ok(());
+        }
+    }
+    let q = r#"mutation { registerUser(displayName: "Guest") { id displayName createdAt } }"#;
+    let data: RegisterUserData = graphql_post(q).await?;
+    if let Some(st) = local_storage() {
+        let _ = st.set_item(USER_ID_KEY, &data.register_user.id);
+    }
+    Ok(())
+}
+
+fn start_game_instances_subscription(mut games: Signal<Vec<GameInfo>>) {
+    spawn(async move {
+        let url = graphql_ws_url();
+        let Ok(mut ws) = WebSocket::open_with_protocol(&url, "graphql-ws") else {
+            return;
+        };
+        if ws
+            .send(Message::Text(r#"{"type":"connection_init"}"#.into()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        let mut acked = false;
+        while let Some(msg) = ws.next().await {
+            let Ok(msg) = msg else { break };
+            let text = match msg {
+                Message::Text(t) => t,
+                _ => continue,
+            };
+            let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+            match v.get("type").and_then(|x| x.as_str()) {
+                Some("connection_ack") => {
+                    acked = true;
+                    break;
+                }
+                Some("connection_error") => return,
+                _ if !acked => continue,
+                _ => {}
+            }
+        }
+        if !acked {
+            return;
+        }
+        let sub = serde_json::json!({
+            "type": "start",
+            "id": "games1",
+            "payload": {
+                "query": "subscription { gameInstancesUpdated { gameId gameType playerIdentities connectedPlayers } }"
+            }
+        });
+        if ws.send(Message::Text(sub.to_string())).await.is_err() {
+            return;
+        }
+        while let Some(msg) = ws.next().await {
+            let Ok(msg) = msg else { break };
+            let text = match msg {
+                Message::Text(t) => t,
+                _ => continue,
+            };
+            let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+            if v.get("type").and_then(|x| x.as_str()) != Some("next") {
+                continue;
+            }
+            let Some(raw) = v
+                .pointer("/payload/data/gameInstancesUpdated")
+                .cloned()
+            else {
+                continue;
+            };
+            if let Ok(list) = serde_json::from_value::<Vec<GameInfo>>(raw) {
+                games.set(list);
+            }
+        }
+    });
 }
 
 fn get_ws_base() -> String {
@@ -132,20 +297,16 @@ fn get_ws_base() -> String {
     format!("{}//{}/game", ws_protocol, host)
 }
 
-async fn api_get<T: for<'de> Deserialize<'de>>(url: &str) -> Result<T, String> {
-    let resp = gloo_net::http::Request::get(url)
-        .send()
-        .await
-        .map_err(|e| format!("{e}"))?;
-    resp.json().await.map_err(|e| format!("{e}"))
-}
-
 async fn api_post_text(url: &str) -> Result<String, String> {
-    let resp = gloo_net::http::Request::post(url)
+    let resp = Request::post(url)
         .send()
         .await
         .map_err(|e| format!("{e}"))?;
     resp.text().await.map_err(|e| format!("{e}"))
+}
+
+fn main() {
+    dioxus::launch(App);
 }
 
 #[component]
@@ -178,10 +339,10 @@ fn App() -> Element {
 
 #[component]
 fn Lobby(on_play: EventHandler<(String, String, String)>) -> Element {
-    let mut game_types: Signal<Vec<GameTypeInfo>> = use_signal(Vec::new);
-    let mut games: Signal<Vec<GameInfo>> = use_signal(Vec::new);
-    let mut error_msg: Signal<Option<String>> = use_signal(|| None);
-    let mut loading = use_signal(|| true);
+    let game_types: Signal<Vec<GameTypeInfo>> = use_signal(Vec::new);
+    let games: Signal<Vec<GameInfo>> = use_signal(Vec::new);
+    let error_msg: Signal<Option<String>> = use_signal(|| None);
+    let loading = use_signal(|| true);
     let iframe_configs: Signal<HashMap<String, String>> = use_signal(HashMap::new);
 
     use_hook(move || {
@@ -201,7 +362,7 @@ fn Lobby(on_play: EventHandler<(String, String, String)>) -> Element {
             let schema_opt = types
                 .iter()
                 .find(|g| g.name == game)
-                .and_then(|g| g.config_schema.clone());
+                .and_then(|g| g.config_schema_value());
             match validate_config_json(&config_str, schema_opt.as_ref()) {
                 Ok(()) => {
                     iframe_configs.write().insert(game.clone(), config_str);
@@ -215,23 +376,42 @@ fn Lobby(on_play: EventHandler<(String, String, String)>) -> Element {
         std::mem::forget(listener);
     });
 
-    let refresh_games = move || {
-        spawn(async move {
-            match api_get::<Vec<GameInfo>>("/api/games").await {
-                Ok(g) => games.set(g),
-                Err(e) => error_msg.set(Some(e)),
-            }
-        });
+    let refresh_games = {
+        let mut games = games;
+        let mut error_msg = error_msg;
+        move || {
+            spawn(async move {
+                let q = r#"query { gameInstances { gameId gameType playerIdentities connectedPlayers } }"#;
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct G {
+                    game_instances: Vec<GameInfo>,
+                }
+                match graphql_post::<G>(q).await {
+                    Ok(g) => games.set(g.game_instances),
+                    Err(e) => error_msg.set(Some(e)),
+                }
+            });
+        }
     };
 
     use_effect(move || {
+        let mut game_types = game_types;
+        let mut games = games;
+        let mut error_msg = error_msg;
+        let mut loading = loading;
         spawn(async move {
-            match api_get::<Vec<GameTypeInfo>>("/api/game_types").await {
-                Ok(types) => game_types.set(types),
-                Err(e) => error_msg.set(Some(e)),
+            if let Err(e) = ensure_guest_user().await {
+                error_msg.set(Some(e));
+                loading.set(false);
+                return;
             }
-            match api_get::<Vec<GameInfo>>("/api/games").await {
-                Ok(g) => games.set(g),
+            match graphql_post::<BootstrapData>(BOOTSTRAP_QUERY).await {
+                Ok(data) => {
+                    game_types.set(data.game_types);
+                    games.set(data.game_instances);
+                    start_game_instances_subscription(games);
+                }
                 Err(e) => error_msg.set(Some(e)),
             }
             loading.set(false);
@@ -303,7 +483,7 @@ fn GameTypeCard(
     let mut config_input = use_signal(|| "null".to_string());
 
     let gt_name = game_type.name.clone();
-    let config_schema_push = game_type.config_schema.clone();
+    let config_schema_json = game_type.config_schema_json.clone();
     let config_path = game_type.config_ui_path.clone();
     let iframe_src = config_path
         .as_ref()
@@ -364,7 +544,10 @@ fn GameTypeCard(
                     src: "{src}",
                     title: "Game config",
                     onmounted: move |evt| {
-                        let Some(schema) = config_schema_push.clone() else {
+                        let Some(schema_str) = config_schema_json.clone() else {
+                            return;
+                        };
+                        let Ok(schema) = serde_json::from_str::<Value>(&schema_str) else {
                             return;
                         };
                         let game = gt_name.clone();
@@ -435,7 +618,7 @@ fn GameCard(game: GameInfo, on_play: EventHandler<(String, String, String)>) -> 
                 }
             }
             div { class: "flex gap-2",
-                for identity in &game.player_identities {
+                for identity in game.player_identities.clone() {
                     {
                         let gt = game_type.clone();
                         let gid = game.game_id.clone();
@@ -446,7 +629,7 @@ fn GameCard(game: GameInfo, on_play: EventHandler<(String, String, String)>) -> 
                                 onclick: move |_| {
                                     on_play.call((gt.clone(), gid.clone(), pid.clone()));
                                 },
-                                "Join as {identity}"
+                                "Join as {pid}"
                             }
                         }
                     }
