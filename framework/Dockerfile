@@ -7,6 +7,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     rustup target add wasm32-wasip1 wasm32-unknown-unknown \
     && cargo install cargo-component --locked \
+    && cargo install wasm-bindgen-cli --version 0.2.117 --locked \
     && cargo install dioxus-cli --locked
 
 WORKDIR /app
@@ -46,6 +47,19 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 WORKDIR /app
 
+COPY games/checkers/ /app/games/checkers/
+WORKDIR /app/games/checkers
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/games/checkers/target \
+    cargo component build -p checkers_component --release \
+    && cp target/wasm32-wasip1/release/checkers_component.wasm /app/checkers-logic.wasm \
+    && cargo build -p checkers_web --release --target wasm32-unknown-unknown \
+    && wasm-bindgen target/wasm32-unknown-unknown/release/checkers_web.wasm \
+        --out-dir client --target web --no-typescript
+
+WORKDIR /app
+
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
@@ -60,6 +74,10 @@ COPY --from=builder /app/server-bin /app/server
 COPY --from=builder /app/wasm-bin.wasm /app/games/tic_tac_toe/logic.wasm
 COPY games/tic_tac_toe/manifest.json /app/games/tic_tac_toe/manifest.json
 COPY --from=builder /app/games/tic_tac_toe/client/ /app/games/tic_tac_toe/client/
+
+COPY --from=builder /app/checkers-logic.wasm /app/games/checkers/logic.wasm
+COPY games/checkers/manifest.json /app/games/checkers/manifest.json
+COPY --from=builder /app/games/checkers/client/ /app/games/checkers/client/
 
 COPY --from=builder /app/client-lib/ /app/lib/
 

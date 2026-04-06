@@ -718,13 +718,8 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("lobby not found"))?;
-        let allowed = detail.owner_user_id == uid
-            || detail
-                .seats
-                .iter()
-                .any(|s| s.claimed_by_user_id == Some(uid));
-        if !allowed {
-            return Err(Error::new("only the owner or seated players can chat"));
+        if detail.status == "cancelled" {
+            return Err(Error::new("cannot chat in a cancelled lobby"));
         }
         let trimmed = body.trim();
         if trimmed.is_empty() {

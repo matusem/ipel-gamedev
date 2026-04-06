@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Checkers — New game</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 1rem; font-family: system-ui, sans-serif; background: #030712; color: #e5e7eb; font-size: 14px; }
+    p { margin: 0 0 0.75rem; line-height: 1.4; color: #9ca3af; }
+    button {
+      padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; background: #2563eb; color: #fff;
+      font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #3b82f6; }
+    #err { color: #f87171; min-height: 1.2em; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <p>Fixed 8×8 English/American rules. Send preview so the lobby can validate JSON (no options).</p>
+  <button type="button" id="apply">Send preview to lobby</button>
+  <div id="err" aria-live="polite"></div>
+  <script>
+    (function () {
+      var game = "checkers";
+      var errEl = document.getElementById("err");
+      window.addEventListener("message", function (ev) {
+        if (ev.origin !== window.location.origin) return;
+        var d = ev.data;
+        if (!d || typeof d !== "object") return;
+        if (d.source === "ipel-game-config-result" && d.game === game) {
+          if (d.ok) errEl.textContent = "";
+          else errEl.textContent = (d.errors && d.errors.length ? d.errors.join("; ") : "Config rejected.");
+        }
+      });
+      document.getElementById("apply").addEventListener("click", function () {
+        window.parent.postMessage({ source: "ipel-game-config", game: game, config: "null" }, window.location.origin);
+      });
+    })();
+  </script>
+</body>
+</html>

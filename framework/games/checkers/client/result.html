@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Match result — Checkers</title>
+  <style>
+    body { margin: 0; padding: 1rem; font-family: system-ui, sans-serif; background: #111827; color: #f9fafb; }
+    code { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div id="root"><p class="muted">Loading…</p></div>
+  <script>
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    (function () {
+      var root = document.getElementById("root");
+      var params = new URLSearchParams(window.location.search);
+      var raw = params.get("payload");
+      if (!raw) {
+        root.innerHTML = "<p>Missing <code>payload</code> query parameter.</p>";
+        return;
+      }
+      var data;
+      try { data = JSON.parse(decodeURIComponent(raw)); } catch (e) {
+        root.innerHTML = "<p>Invalid JSON payload.</p>";
+        return;
+      }
+      var outcomes = (data.result && data.result.per_player_outcome) || {};
+      var html = "<h1>Checkers</h1><p>Game <code>" + escapeHtml(data.gameId || "") + "</code></p><ul>";
+      for (var k in outcomes) {
+        if (!Object.prototype.hasOwnProperty.call(outcomes, k)) continue;
+        html += "<li><strong>" + escapeHtml(k) + "</strong>: " + escapeHtml(String(outcomes[k])) + "</li>";
+      }
+      html += "</ul>";
+      root.innerHTML = html;
+    })();
+  </script>
+</body>
+</html>

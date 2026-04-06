@@ -1,0 +1,12 @@
+{
+  "name": "checkers",
+  "display_name": "Checkers (8×8)",
+  "version": "1.0.0",
+  "min_players": 2,
+  "max_players": 2,
+  "description": "English/American 8×8 checkers; mandatory maximum captures; Bevy WASM client",
+  "config_schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "oneOf": [{ "type": "null" }, { "type": "object", "additionalProperties": false }]
+  }
+}

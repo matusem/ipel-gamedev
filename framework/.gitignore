@@ -6,3 +6,5 @@ lobby/node_modules
 packages/game-sdk/node_modules
 packages/game-sdk/dist
 games/tic_tac_toe/web/node_modules
+
+games/checkers/target
