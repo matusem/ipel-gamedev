@@ -65,12 +65,25 @@ impl ComponentDb {
         let mut store = Store::new(&self.engine, WasiCtxBuilder::new().build_p1());
         let game_core = GameCore::instantiate_async(&mut store, &component, &linker)
             .await
-            .unwrap();
+            .map_err(|e| format!("Failed to instantiate component: {e}"))?;
 
         Ok((game_core, store))
     }
 
     pub fn get_engine(&self) -> Engine {
         self.engine.clone()
+    }
+
+    pub async fn validate_component_instantiable(&self, wasm_bytes: &[u8]) -> Result<(), String> {
+        let component = Component::new(&self.engine, wasm_bytes)
+            .map_err(|e| format!("Failed to parse component: {e}"))?;
+        let mut linker = wasmtime::component::Linker::new(&self.engine);
+        wasmtime_wasi::p2::add_to_linker_async(&mut linker)
+            .map_err(|e| format!("Failed to link WASI imports: {e}"))?;
+        let mut store = Store::new(&self.engine, WasiCtxBuilder::new().build_p1());
+        GameCore::instantiate_async(&mut store, &component, &linker)
+            .await
+            .map_err(|e| format!("Component runtime incompatibility: {e}"))?;
+        Ok(())
     }
 }

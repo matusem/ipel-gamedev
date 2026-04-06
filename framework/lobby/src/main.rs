@@ -1,6 +1,9 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
+use dioxus::events::{DragData, FormData};
+use dioxus::html::{FileData, HasFileData};
 use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
-use gloo_events::EventListener;
+use gloo_events::{EventListener, EventListenerOptions};
 use gloo_net::http::Request;
 use gloo_net::websocket::futures::WebSocket;
 use gloo_net::websocket::Message;
@@ -19,53 +22,6 @@ const CONFIG_RESULT_SOURCE: &str = "ipel-game-config-result";
 const CONFIG_SCHEMA_SOURCE: &str = "ipel-game-config-schema";
 const CONFIG_STATE_SOURCE: &str = "ipel-game-config-state";
 const USER_ID_KEY: &str = "ipel_user_id";
-
-#[derive(Clone, Debug, PartialEq)]
-enum AppRoute {
-    Home,
-    Lobby(String),
-    GameResult(String),
-}
-
-fn read_hash_route() -> AppRoute {
-    let Some(window) = web_sys::window() else {
-        return AppRoute::Home;
-    };
-    let Ok(hash) = window.location().hash() else {
-        return AppRoute::Home;
-    };
-    if let Some(rest) = hash.strip_prefix("#/lobby/") {
-        let id = rest.trim().to_string();
-        if !id.is_empty() {
-            return AppRoute::Lobby(id);
-        }
-    }
-    if let Some(rest) = hash.strip_prefix("#/game/") {
-        let id = rest.trim().to_string();
-        if !id.is_empty() {
-            return AppRoute::GameResult(id);
-        }
-    }
-    AppRoute::Home
-}
-
-fn navigate_lobby(id: &str) {
-    if let Some(w) = web_sys::window() {
-        let _ = w.location().set_hash(&format!("#/lobby/{id}"));
-    }
-}
-
-fn navigate_game_result(id: &str) {
-    if let Some(w) = web_sys::window() {
-        let _ = w.location().set_hash(&format!("#/game/{id}"));
-    }
-}
-
-fn navigate_home() {
-    if let Some(w) = web_sys::window() {
-        let _ = w.location().set_hash("");
-    }
-}
 
 fn parse_iframe_config_message(data: &wasm_bindgen::JsValue) -> Option<(String, String)> {
     let s = js_sys::JSON::stringify(data).ok()?.as_string()?;
@@ -344,6 +300,26 @@ struct PlayOverlay {
     game_id: String,
     player: String,
     return_lobby_id: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct AppShellContext {
+    playing: Signal<Option<PlayOverlay>>,
+    error_msg: Signal<Option<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Routable)]
+#[rustfmt::skip]
+pub enum LobbyRoute {
+    #[layout(OverlayLayout)]
+    #[route("/", HomePageRoute)]
+    Home {},
+    #[route("/lobby/:id", LobbyRoomRoute)]
+    Lobby { id: String },
+    #[route("/game/:id", GameResultRoute)]
+    GameResult { id: String },
+    #[route("/developer/uploads", DeveloperUploadsRoute)]
+    DeveloperUploads {},
 }
 
 #[derive(Deserialize)]
@@ -671,21 +647,83 @@ fn main() {
 }
 
 #[component]
+fn HomePageRoute() -> Element {
+    let shell = use_context::<AppShellContext>();
+    rsx! {
+        HomePage {
+            playing: shell.playing,
+            error_msg: shell.error_msg,
+        }
+    }
+}
+
+#[component]
+fn LobbyRoomRoute(id: String) -> Element {
+    let shell = use_context::<AppShellContext>();
+    rsx! {
+        LobbyRoomPage {
+            key: "{id}",
+            lobby_id: id,
+            playing: shell.playing,
+            error_msg: shell.error_msg,
+        }
+    }
+}
+
+#[component]
+fn GameResultRoute(id: String) -> Element {
+    rsx! {
+        GameResultPage {
+            key: "{id}",
+            game_id: id,
+        }
+    }
+}
+
+#[component]
+fn DeveloperUploadsRoute() -> Element {
+    rsx! {
+        DeveloperUploadsPage {}
+    }
+}
+
+#[component]
+fn OverlayLayout() -> Element {
+    let mut shell = use_context::<AppShellContext>();
+    let nav = use_navigator();
+    rsx! {
+        Outlet::<LobbyRoute> {}
+        if let Some(p) = (shell.playing)() {
+            GamePlayer {
+                game_type: p.game_type.clone(),
+                game_id: p.game_id.clone(),
+                player: p.player.clone(),
+                return_lobby_id: p.return_lobby_id.clone(),
+                on_close: move |_| {
+                    shell.playing.set(None);
+                },
+                on_navigate_lobby: move |id: String| {
+                    nav.push(LobbyRoute::Lobby { id });
+                },
+            }
+        }
+    }
+}
+
+#[component]
+fn AuthedShell(playing: Signal<Option<PlayOverlay>>, error_msg: Signal<Option<String>>) -> Element {
+    use_context_provider(|| AppShellContext { playing, error_msg });
+    rsx! {
+        Router::<LobbyRoute> {}
+    }
+}
+
+#[component]
 fn App() -> Element {
-    let route: Signal<AppRoute> = use_signal(read_hash_route);
     let mut session_ok: Signal<bool> = use_signal(|| false);
     let mut session_checked: Signal<bool> = use_signal(|| false);
     let mut playing: Signal<Option<PlayOverlay>> = use_signal(|| None);
     let error_msg: Signal<Option<String>> = use_signal(|| None);
-
-    use_hook(move || {
-        let window = web_sys::window().expect("window");
-        let mut r = route;
-        let listener = EventListener::new(&window, "hashchange", move |_| {
-            r.set(read_hash_route());
-        });
-        std::mem::forget(listener);
-    });
 
     use_effect(move || {
         let mut session_ok = session_ok;
@@ -726,9 +764,12 @@ fn App() -> Element {
         document::Stylesheet {
             href: asset!("/assets/tailwind.css"),
         }
-        div { class: "min-h-screen bg-gray-900 text-white",
+        div { class: "min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-indigo-950/35 text-white",
             if !session_checked() {
-                p { class: "text-center text-gray-400 py-12", "Checking session…" }
+                div { class: "flex flex-col items-center justify-center min-h-[50vh] gap-3",
+                    p { class: "text-sm font-medium text-indigo-200/90", "Checking session…" }
+                    p { class: "text-xs text-gray-500", "Hang tight" }
+                }
             } else if !session_ok() {
                 AuthGate {
                     on_ready: move |_| {
@@ -737,38 +778,9 @@ fn App() -> Element {
                     }
                 }
             } else {
-                match route() {
-                    AppRoute::Home => rsx! {
-                        HomePage {
-                            playing,
-                            error_msg,
-                        }
-                    },
-                    AppRoute::Lobby(id) => rsx! {
-                        LobbyRoomPage {
-                            key: "{id}",
-                            lobby_id: id,
-                            playing,
-                            error_msg,
-                        }
-                    },
-                    AppRoute::GameResult(id) => rsx! {
-                        GameResultPage {
-                            key: "{id}",
-                            game_id: id,
-                        }
-                    },
-                }
-                if let Some(p) = playing() {
-                    GamePlayer {
-                        game_type: p.game_type.clone(),
-                        game_id: p.game_id.clone(),
-                        player: p.player.clone(),
-                        return_lobby_id: p.return_lobby_id.clone(),
-                        on_close: move |_| {
-                            playing.set(None);
-                        },
-                    }
+                AuthedShell {
+                    playing,
+                    error_msg,
                 }
             }
         }
@@ -785,25 +797,32 @@ fn AuthGate(on_ready: EventHandler<()>) -> Element {
     let mut err = use_signal(|| None::<String>);
 
     rsx! {
-        div { class: "max-w-lg mx-auto px-4 py-16",
-            h1 { class: "text-3xl font-bold mb-2 text-center", "Sign in" }
-            p { class: "text-gray-500 text-sm text-center mb-8",
-                "Choose guest, sign up, or log in to open lobbies."
+        div { class: "max-w-lg mx-auto px-4 py-12 sm:py-20",
+            div { class: "text-center mb-10",
+                h1 { class: "text-3xl sm:text-4xl font-bold tracking-tight text-white", "Welcome" }
+                p { class: "mt-2 text-sm text-indigo-200/70",
+                    "Guest, sign up, or log in to join lobbies."
+                }
             }
             if let Some(e) = err() {
-                div { class: "bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded mb-6", "{e}" }
+                div { class: "rounded-xl border border-red-500/50 bg-red-950/45 px-4 py-3 mb-6 shadow-lg shadow-red-900/20",
+                    p { class: "text-sm font-medium text-red-100", "{e}" }
+                }
             }
-            div { class: "space-y-8",
-                div { class: "bg-gray-800 rounded-lg p-4 border border-gray-700",
-                    h2 { class: "font-semibold mb-3", "Continue as guest" }
+            div { class: "space-y-6",
+                div { class: "rounded-2xl border border-indigo-500/25 bg-gray-900/60 p-5 sm:p-6 shadow-xl shadow-black/30 backdrop-blur-sm",
+                    div { class: "flex items-center gap-2 mb-4",
+                        span { class: "flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm", "→" }
+                        h2 { class: "font-semibold text-white", "Continue as guest" }
+                    }
                     input {
-                        class: "w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm mb-3",
+                        class: "w-full px-3 py-2.5 bg-gray-950/80 border border-gray-600 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 mb-3",
                         placeholder: "Display name",
                         value: "{guest_name}",
                         oninput: move |e| guest_name.set(e.value()),
                     }
                     button {
-                        class: "w-full px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded font-medium",
+                        class: "w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold shadow-lg shadow-indigo-900/30",
                         onclick: move |_| {
                             let n = guest_name();
                             spawn(async move {
@@ -823,23 +842,26 @@ fn AuthGate(on_ready: EventHandler<()>) -> Element {
                         "Continue"
                     }
                 }
-                div { class: "bg-gray-800 rounded-lg p-4 border border-gray-700",
-                    h2 { class: "font-semibold mb-3", "Sign up" }
+                div { class: "rounded-2xl border border-emerald-500/25 bg-gray-900/60 p-5 sm:p-6 shadow-xl shadow-black/30 backdrop-blur-sm",
+                    div { class: "flex items-center gap-2 mb-4",
+                        span { class: "flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold", "+" }
+                        h2 { class: "font-semibold text-white", "Sign up" }
+                    }
                     input {
-                        class: "w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm mb-2",
+                        class: "w-full px-3 py-2.5 bg-gray-950/80 border border-gray-600 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 mb-2",
                         placeholder: "Display name",
                         value: "{signup_name}",
                         oninput: move |e| signup_name.set(e.value()),
                     }
                     input {
-                        class: "w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm mb-3",
+                        class: "w-full px-3 py-2.5 bg-gray-950/80 border border-gray-600 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 mb-3",
                         r#type: "password",
                         placeholder: "Password (min 4 chars)",
                         value: "{signup_pass}",
                         oninput: move |e| signup_pass.set(e.value()),
                     }
                     button {
-                        class: "w-full px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded font-medium",
+                        class: "w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold shadow-lg shadow-emerald-900/25",
                         onclick: move |_| {
                             let n = signup_name();
                             let p = signup_pass();
@@ -866,23 +888,26 @@ fn AuthGate(on_ready: EventHandler<()>) -> Element {
                         "Create account"
                     }
                 }
-                div { class: "bg-gray-800 rounded-lg p-4 border border-gray-700",
-                    h2 { class: "font-semibold mb-3", "Log in" }
+                div { class: "rounded-2xl border border-gray-600/60 bg-gray-900/60 p-5 sm:p-6 shadow-xl shadow-black/30 backdrop-blur-sm",
+                    div { class: "flex items-center gap-2 mb-4",
+                        span { class: "flex h-8 w-8 items-center justify-center rounded-lg bg-gray-700 text-sm", "⌘" }
+                        h2 { class: "font-semibold text-white", "Log in" }
+                    }
                     input {
-                        class: "w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm mb-2",
+                        class: "w-full px-3 py-2.5 bg-gray-950/80 border border-gray-600 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500/40 mb-2",
                         placeholder: "Display name",
                         value: "{login_name}",
                         oninput: move |e| login_name.set(e.value()),
                     }
                     input {
-                        class: "w-full px-2 py-2 bg-gray-700 border border-gray-600 rounded text-sm mb-3",
+                        class: "w-full px-3 py-2.5 bg-gray-950/80 border border-gray-600 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500/40 mb-3",
                         r#type: "password",
                         placeholder: "Password",
                         value: "{login_pass}",
                         oninput: move |e| login_pass.set(e.value()),
                     }
                     button {
-                        class: "w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded font-medium",
+                        class: "w-full px-4 py-2.5 rounded-xl border border-gray-500/50 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold transition-colors",
                         onclick: move |_| {
                             let n = login_name();
                             let p = login_pass();
@@ -916,12 +941,12 @@ fn AuthGate(on_ready: EventHandler<()>) -> Element {
 
 #[component]
 fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<String>>) -> Element {
+    let nav = use_navigator();
     let game_types: Signal<Vec<GameTypeInfo>> = use_signal(Vec::new);
     let games: Signal<Vec<GameInfo>> = use_signal(Vec::new);
     let lobbies: Signal<Vec<LobbySummary>> = use_signal(Vec::new);
     let recent_finished: Signal<Vec<RecentFinishedRow>> = use_signal(Vec::new);
     let loading = use_signal(|| true);
-    let mut create_type = use_signal(|| String::new());
     let mut creating = use_signal(|| false);
 
     let refresh_games = {
@@ -983,90 +1008,131 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
     });
 
     rsx! {
-        div { class: "max-w-4xl mx-auto px-4 py-8",
-            h1 { class: "text-4xl font-bold mb-8 text-center", "Game Server" }
+        div { class: "max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8",
+            div { class: "flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6",
+                div {
+                    h1 { class: "text-3xl sm:text-4xl font-bold tracking-tight text-white", "Game lobby" }
+                    p { class: "mt-2 text-sm text-indigo-200/75 max-w-lg",
+                        "Create a room, then the owner picks a game and options. Join a lobby from the list below."
+                    }
+                }
+                button {
+                    class: "shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold shadow-lg shadow-emerald-900/25",
+                    onclick: move |_| {
+                        nav.push(LobbyRoute::DeveloperUploads {});
+                    },
+                    "Developer uploads"
+                }
+            }
             if let Some(err) = error_msg() {
-                div { class: "bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded mb-6", "{err}" }
+                div { class: "rounded-xl border border-red-500/50 bg-red-950/45 px-4 py-3 shadow-lg shadow-red-900/20",
+                    p { class: "text-sm font-medium text-red-100", "{err}" }
+                }
             }
             if loading() {
-                p { class: "text-center text-gray-400", "Loading…" }
+                div { class: "flex flex-col items-center justify-center py-16 gap-2",
+                    p { class: "text-sm font-medium text-indigo-200/80", "Loading…" }
+                    p { class: "text-xs text-gray-500", "Fetching game types and lobbies" }
+                }
             } else {
-                section { class: "mb-10",
-                    h2 { class: "text-2xl font-semibold mb-4", "Create lobby" }
-                    p { class: "text-gray-500 text-sm mb-3",
-                        "Pick a game type only. You will set options in the lobby room."
+                section { class: "rounded-2xl border border-indigo-500/20 bg-gray-900/50 p-5 sm:p-6 shadow-xl shadow-black/30 backdrop-blur-sm",
+                    div { class: "flex items-center gap-2 mb-1",
+                        span { class: "flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm", "+" }
+                        h2 { class: "text-lg font-semibold text-white", "Create lobby" }
                     }
-                    div { class: "flex flex-wrap gap-2 items-end",
-                        select {
-                            class: "px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm min-w-[12rem]",
-                            onchange: move |e| create_type.set(e.value()),
-                            option { value: "", "Select game type…" }
-                            for gt in game_types() {
-                                option { value: "{gt.name}", "{gt.display_name}" }
-                            }
-                        }
-                        button {
-                            class: "px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded text-sm font-medium disabled:opacity-50",
-                            disabled: creating() || create_type().is_empty(),
-                            onclick: move |_| {
-                                let t = create_type();
-                                if t.is_empty() { return; }
-                                creating.set(true);
-                                spawn(async move {
-                                    let q = "mutation Create($t: String!) { createLobby(gameType: $t) { id } }";
-                                    let vars = serde_json::json!({ "t": t });
-                                    #[derive(Deserialize)]
-                                    #[serde(rename_all = "camelCase")]
-                                    struct Cr { create_lobby: RegisterUserRow }
-                                    match graphql_exec::<Cr>(q, Some(vars)).await {
-                                        Ok(c) => {
-                                            navigate_lobby(&c.create_lobby.id);
-                                        }
-                                        Err(e) => {
-                                            let _ = web_sys::window().unwrap().alert_with_message(&e);
-                                        }
+                    p { class: "text-gray-400 text-sm mb-4",
+                        "Opens an empty lobby. Only you (the owner) can choose the game and settings inside the room."
+                    }
+                    button {
+                        class: "px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-sm font-semibold text-white shadow-lg shadow-indigo-900/30 disabled:opacity-40 disabled:shadow-none",
+                        disabled: creating(),
+                        onclick: move |_| {
+                            creating.set(true);
+                            let nav = nav;
+                            spawn(async move {
+                                let q = "mutation { createLobby { id } }";
+                                #[derive(Deserialize)]
+                                #[serde(rename_all = "camelCase")]
+                                struct Cr { create_lobby: RegisterUserRow }
+                                match graphql_exec::<Cr>(q, None).await {
+                                    Ok(c) => {
+                                        nav.push(LobbyRoute::Lobby {
+                                            id: c.create_lobby.id,
+                                        });
                                     }
-                                    creating.set(false);
-                                });
-                            },
-                            if creating() { "Creating…" } else { "Create lobby" }
+                                    Err(e) => {
+                                        let _ = web_sys::window().unwrap().alert_with_message(&e);
+                                    }
+                                }
+                                creating.set(false);
+                            });
+                        },
+                        if creating() { "Creating…" } else { "Create lobby" }
+                    }
+                }
+                section { class: "rounded-2xl border border-gray-700/70 bg-gray-900/40 p-5 sm:p-6 shadow-lg shadow-black/25 backdrop-blur-sm",
+                    div { class: "mb-4",
+                        h2 { class: "text-lg font-semibold text-white", "Games on this server" }
+                        p { class: "text-sm text-gray-500 mt-1",
+                            "Same look as live tables — these are the game types you can run in a lobby (owner picks one in the room)."
+                        }
+                    }
+                    if game_types().is_empty() {
+                        p { class: "text-sm text-gray-500", "No games published yet. Developers can upload builds from Developer uploads." }
+                    }
+                    div { class: "space-y-3",
+                        for gt in game_types() {
+                            GameTypeCatalogCard { gt: gt.clone() }
                         }
                     }
                 }
-                section { class: "mb-10",
+                section { class: "rounded-2xl border border-gray-700/70 bg-gray-900/40 p-5 sm:p-6 shadow-lg shadow-black/25 backdrop-blur-sm",
                     div { class: "flex items-center justify-between mb-4",
-                        h2 { class: "text-2xl font-semibold", "Lobbies" }
+                        h2 { class: "text-lg font-semibold text-white", "Lobbies" }
                         button {
-                            class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-800/80 hover:bg-gray-700 text-sm text-gray-200",
                             onclick: move |_| refresh_lobbies(),
                             "Refresh"
                         }
                     }
                     if lobbies().is_empty() {
-                        p { class: "text-gray-400", "No active lobbies yet." }
+                        p { class: "text-sm text-gray-500", "No active lobbies yet." }
                     }
                     div { class: "space-y-3",
                         for lob in lobbies() {
-                            div { class: "bg-gray-800 rounded-lg p-4 border border-gray-700 flex justify-between items-center",
-                                div {
-                                    p { class: "font-medium", "{lob.game_type}" }
+                            {
+                                let types = game_types();
+                                let title = game_type_display_title(&types, &lob.game_type);
+                                let desc = game_type_description(&types, &lob.game_type);
+                                let lid_open = lob.id.clone();
+                                rsx! {
+                            div { class: "rounded-xl border border-gray-600/60 bg-gray-950/50 p-4 flex justify-between items-center gap-3 shadow-md",
+                                div { class: "min-w-0",
+                                    p { class: "font-medium text-white", "{title}" }
+                                    if let Some(ref d) = desc {
+                                        p { class: "text-xs text-gray-500 mt-1 line-clamp-2", "{d}" }
+                                    }
                                     p { class: "text-xs text-gray-400 mt-1",
                                         "{lob.owner_display_name} · {lob.seats_filled}/{lob.seats_total} · {lob.status}"
                                     }
                                 }
                                 button {
-                                    class: "px-3 py-1 bg-indigo-700 hover:bg-indigo-600 rounded text-sm shrink-0",
-                                    onclick: move |_| navigate_lobby(&lob.id),
+                                    class: "px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-sm font-medium text-white shrink-0 shadow-md shadow-indigo-900/20",
+                                    onclick: move |_| {
+                                        nav.push(LobbyRoute::Lobby { id: lid_open.clone() });
+                                    },
                                     "Open"
+                                }
+                            }
                                 }
                             }
                         }
                     }
                 }
-                section { class: "mb-10",
-                    h2 { class: "text-2xl font-semibold mb-4", "Recent results" }
+                section { class: "rounded-2xl border border-gray-700/70 bg-gray-900/40 p-5 sm:p-6 shadow-lg shadow-black/25 backdrop-blur-sm",
+                    h2 { class: "text-lg font-semibold text-white mb-4", "Recent results" }
                     if recent_finished().is_empty() {
-                        p { class: "text-gray-400", "No finished games recorded yet." }
+                        p { class: "text-sm text-gray-500", "No finished games recorded yet." }
                     }
                     div { class: "space-y-2",
                         for it in recent_finished() {
@@ -1075,14 +1141,16 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
                                 let gt = it.game_type.clone();
                                 let sc = it.player_scores_json.clone();
                                 rsx! {
-                                    div { class: "bg-gray-800 rounded p-3 border border-gray-700 flex justify-between gap-2 items-start",
-                                        div {
-                                            p { class: "font-medium", "{gt}" }
-                                            p { class: "text-xs text-gray-500 font-mono break-all", "{sc}" }
+                                    div { class: "rounded-xl border border-gray-600/50 bg-gray-950/40 p-3 flex justify-between gap-2 items-start",
+                                        div { class: "min-w-0",
+                                            p { class: "font-medium text-gray-100", "{gt}" }
+                                            p { class: "text-xs text-gray-500 font-mono break-all mt-1", "{sc}" }
                                         }
                                         button {
-                                            class: "px-2 py-1 bg-indigo-700 hover:bg-indigo-600 rounded text-xs shrink-0",
-                                            onclick: move |_| navigate_game_result(&gid),
+                                            class: "px-2.5 py-1 rounded-lg bg-indigo-600/90 hover:bg-indigo-500 text-xs font-medium text-white shrink-0",
+                                            onclick: move |_| {
+                                                nav.push(LobbyRoute::GameResult { id: gid.clone() });
+                                            },
                                             "Details"
                                         }
                                     }
@@ -1091,22 +1159,23 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
                         }
                     }
                 }
-                section {
+                section { class: "rounded-2xl border border-gray-700/70 bg-gray-900/40 p-5 sm:p-6 shadow-lg shadow-black/25 backdrop-blur-sm",
                     div { class: "flex items-center justify-between mb-4",
-                        h2 { class: "text-2xl font-semibold", "Active games" }
+                        h2 { class: "text-lg font-semibold text-white", "Active games" }
                         button {
-                            class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-800/80 hover:bg-gray-700 text-sm text-gray-200",
                             onclick: move |_| refresh_games(),
                             "Refresh"
                         }
                     }
                     if games().is_empty() {
-                        p { class: "text-gray-400", "No active games." }
+                        p { class: "text-sm text-gray-500", "No active games." }
                     }
                     div { class: "space-y-3",
                         for game in games() {
                             GameCard {
                                 game: game.clone(),
+                                catalog: game_types(),
                                 playing,
                             }
                         }
@@ -1123,25 +1192,25 @@ fn LobbyChatPanel(lobby_id: String, messages: Vec<LobbyMessage>) -> Element {
     let mut draft = use_signal(|| String::new());
     let lid_send = lobby_id.clone();
     rsx! {
-        h4 { class: "text-xs font-semibold text-gray-500 mt-6 mb-2", "Chat" }
+        h4 { class: "text-xs font-semibold uppercase tracking-wide text-indigo-300/80 mt-6 mb-2", "Chat" }
         div { class: "lobby-chat-messages",
             for m in messages.iter().rev().take(40).rev() {
                 p {
                     key: "{m.id}",
-                    class: "text-xs text-gray-300 mb-1",
-                    span { class: "text-gray-500", "{m.display_name}: " }
+                    class: "text-xs text-gray-200 mb-1.5 leading-relaxed",
+                    span { class: "text-indigo-300/90 font-medium", "{m.display_name}: " }
                     "{m.body}"
                 }
             }
         }
         textarea {
-            class: "w-full mt-2 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-xs min-h-[3rem]",
+            class: "w-full mt-2 px-3 py-2 bg-gray-950/80 border border-gray-600 rounded-xl text-xs text-white placeholder-gray-500 min-h-[3.25rem] focus:outline-none focus:ring-2 focus:ring-indigo-500/35",
             placeholder: "Message…",
             value: "{draft()}",
             oninput: move |e| draft.set(e.value()),
         }
         button {
-            class: "mt-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs",
+            class: "mt-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-xs font-semibold text-white shadow-md shadow-indigo-900/25",
             onclick: move |_| {
                 let body = draft();
                 if body.trim().is_empty() { return; }
@@ -1159,14 +1228,23 @@ fn LobbyChatPanel(lobby_id: String, messages: Vec<LobbyMessage>) -> Element {
 }
 
 #[component]
-fn GameCard(game: GameInfo, mut playing: Signal<Option<PlayOverlay>>) -> Element {
+fn GameCard(
+    game: GameInfo,
+    catalog: Vec<GameTypeInfo>,
+    mut playing: Signal<Option<PlayOverlay>>,
+) -> Element {
     let game_type = game.game_type.clone();
+    let title = game_type_display_title(&catalog, &game.game_type);
+    let desc = game_type_description(&catalog, &game.game_type);
     rsx! {
-        div { class: "bg-gray-800 rounded-lg p-4 border border-gray-700 flex items-center justify-between flex-wrap gap-2",
-            div {
-                p { class: "font-medium",
-                    "{game.game_type}"
-                    span { class: "text-gray-500 text-sm ml-2", "{game.game_id}" }
+        div { class: "rounded-xl border border-emerald-500/20 bg-gray-950/50 p-4 flex items-center justify-between flex-wrap gap-3 shadow-md",
+            div { class: "min-w-0",
+                p { class: "font-medium text-white",
+                    "{title}"
+                    span { class: "text-gray-500 text-sm ml-2 font-mono", "{game.game_id}" }
+                }
+                if let Some(ref d) = desc {
+                    p { class: "text-xs text-gray-500 mt-1 line-clamp-2", "{d}" }
                 }
                 p { class: "text-xs text-gray-400 mt-1",
                     "Connected: {game.connected_players} / {game.player_identities.len()}"
@@ -1180,7 +1258,7 @@ fn GameCard(game: GameInfo, mut playing: Signal<Option<PlayOverlay>>) -> Element
                         let pid = identity.clone();
                         rsx! {
                             button {
-                                class: "px-3 py-1 bg-green-700 hover:bg-green-600 rounded text-sm",
+                                class: "px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-medium text-white shadow-md shadow-emerald-900/20",
                                 onclick: move |_| {
                                     playing.set(Some(PlayOverlay {
                                         game_type: gt.clone(),
@@ -1194,6 +1272,53 @@ fn GameCard(game: GameInfo, mut playing: Signal<Option<PlayOverlay>>) -> Element
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+fn game_type_display_title(types: &[GameTypeInfo], stored_name: &str) -> String {
+    let t = stored_name.trim();
+    if t.is_empty() {
+        return "No game selected yet".to_string();
+    }
+    types
+        .iter()
+        .find(|g| g.name == t)
+        .map(|g| g.display_name.clone())
+        .unwrap_or_else(|| t.to_string())
+}
+
+fn game_type_description(types: &[GameTypeInfo], stored_name: &str) -> Option<String> {
+    let t = stored_name.trim();
+    if t.is_empty() {
+        return None;
+    }
+    types.iter().find(|g| g.name == t).and_then(|g| {
+        let d = g.description.trim();
+        if d.is_empty() {
+            None
+        } else {
+            Some(d.to_string())
+        }
+    })
+}
+
+#[component]
+fn GameTypeCatalogCard(gt: GameTypeInfo) -> Element {
+    let desc = gt.description.trim();
+    rsx! {
+        div { class: "rounded-xl border border-emerald-500/20 bg-gray-950/50 p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 shadow-md",
+            div { class: "min-w-0 flex-1",
+                p { class: "font-medium text-white text-base", "{gt.display_name}" }
+                p { class: "text-xs text-gray-500 font-mono mt-0.5", "{gt.name} · v{gt.version}" }
+                p { class: "text-xs text-indigo-200/70 mt-1", "{gt.min_players}–{gt.max_players} players" }
+                if !desc.is_empty() {
+                    p { class: "text-sm text-gray-300 mt-2 leading-relaxed", "{desc}" }
+                }
+            }
+            div { class: "shrink-0 self-start rounded-lg border border-gray-600/80 bg-gray-800/80 px-3 py-1.5 text-xs text-gray-400",
+                "Join a lobby to play"
             }
         }
     }
@@ -1346,13 +1471,13 @@ fn LobbyConfigPanel(
             "Preview JSON (from the config panel). Saving is separate — use Apply below."
         }
         textarea {
-            class: "config-preview-json w-full mt-2 min-h-[6rem] text-xs font-mono bg-gray-950 border border-gray-700 rounded p-2 text-gray-300",
+            class: "config-preview-json w-full mt-2 min-h-[6rem] text-xs font-mono bg-gray-950/90 border border-indigo-500/15 rounded-xl p-3 text-gray-300 ring-1 ring-white/5",
             readonly: true,
             value: "{preview()}",
         }
         if !read_only {
             button {
-                class: "mt-3 px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded text-sm font-medium",
+                class: "mt-3 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-sm font-semibold text-white shadow-lg shadow-indigo-900/25",
                 onclick: move |_| {
                     let cfg = draft_for_apply.borrow().clone();
                     let lid = lobby_id_apply.clone();
@@ -1379,7 +1504,9 @@ fn LobbyConfigPanel(
                 "Apply configuration"
             }
         } else {
-            p { class: "text-xs text-gray-500 mt-2", "Read-only: only the lobby owner can change configuration." }
+            p { class: "text-xs text-amber-200/80 mt-3 rounded-lg border border-amber-500/25 bg-amber-950/30 px-3 py-2",
+                "Read-only: only the lobby owner can change configuration."
+            }
         }
     }
 }
@@ -1391,10 +1518,12 @@ fn LobbyRoomBody(
     uid: Option<String>,
     mut playing: Signal<Option<PlayOverlay>>,
 ) -> Element {
+    let nav = use_navigator();
     let is_owner = uid.as_deref() == Some(lobby_for_cols.owner_user_id.as_str());
     let lobby_id_start = lobby_for_cols.id.clone();
     let lobby_id_cancel = lobby_for_cols.id.clone();
     let lobby_id_chat_panel = lobby_for_cols.id.clone();
+    let no_game_yet = lobby_for_cols.game_type.trim().is_empty();
     let selected_gt = gt_list
         .iter()
         .find(|g| g.name == lobby_for_cols.game_type)
@@ -1461,21 +1590,21 @@ fn LobbyRoomBody(
     rsx! {
         div {
         if lobby_finished {
-            div { class: "mb-4 p-4 rounded-lg bg-amber-900/25 border border-amber-700/80",
-                p { class: "text-amber-100 font-medium mb-2", "This match is over." }
+            div { class: "mb-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-950/60 to-orange-950/40 border border-amber-500/35 shadow-lg shadow-amber-900/20",
+                p { class: "text-amber-100 font-semibold mb-3", "This match is over." }
                 div { class: "flex flex-wrap gap-2",
                     if let Some(g) = game_id_for_results_btn.clone() {
                         button {
-                            class: "px-3 py-1 bg-amber-700 hover:bg-amber-600 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-sm font-medium text-gray-950 shadow-md",
                             onclick: move |_| {
-                                navigate_game_result(&g);
+                                nav.push(LobbyRoute::GameResult { id: g.clone() });
                             },
                             "View results"
                         }
                     }
                     if is_owner {
                         button {
-                            class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg border border-gray-500/50 bg-gray-800 hover:bg-gray-700 text-sm font-medium",
                             onclick: move |_| {
                                 let lid = lobby_id_reopen_finished.clone();
                                 spawn(async move {
@@ -1492,11 +1621,21 @@ fn LobbyRoomBody(
         }
         div { class: "lobby-room-grid",
             div { class: "lobby-col lobby-col-types",
-                h3 { class: "text-sm font-semibold text-gray-400 mb-3", "Game type" }
+                h3 { class: "text-xs font-semibold uppercase tracking-wide text-indigo-300/80 mb-3", "Game type" }
+                if no_game_yet {
+                    p { class: "text-xs text-gray-500 mb-3 leading-relaxed",
+                        if is_owner {
+                            "Choose a game below. Configuration and player seats appear after you select one."
+                        } else {
+                            "Waiting for the lobby owner to choose a game."
+                        }
+                    }
+                }
                 div { class: "lobby-type-list",
                     for gt in gt_list.iter().cloned() {
                         {
-                            let active = gt.name == lobby_for_cols.game_type;
+                            let active = !no_game_yet && gt.name == lobby_for_cols.game_type;
+                            let desc = gt.description.trim();
                             let lid_set = lobby_for_cols.id.clone();
                             let gtn = gt.name.clone();
                             rsx! {
@@ -1527,7 +1666,10 @@ fn LobbyRoomBody(
                                             }
                                         });
                                     },
-                                    "{gt.display_name}"
+                                    span { class: "font-medium", "{gt.display_name}" }
+                                    if !desc.is_empty() {
+                                        span { class: "mt-1 text-xs text-gray-400 leading-snug line-clamp-4", "{desc}" }
+                                    }
                                 }
                             }
                         }
@@ -1535,8 +1677,12 @@ fn LobbyRoomBody(
                 }
             }
             div { class: "lobby-col lobby-col-config",
-                h3 { class: "text-sm font-semibold text-gray-400 mb-3", "Configuration" }
-                if let Some(src) = iframe_src {
+                h3 { class: "text-xs font-semibold uppercase tracking-wide text-indigo-300/80 mb-3", "Configuration" }
+                if no_game_yet {
+                    p { class: "text-gray-500 text-sm leading-relaxed",
+                        "Select a game in the first column. The config editor loads here when the game provides one."
+                    }
+                } else if let Some(src) = iframe_src {
                     LobbyConfigPanel {
                         key: "{config_panel_key}",
                         lobby_id: lobby_for_cols.id.clone(),
@@ -1552,7 +1698,7 @@ fn LobbyRoomBody(
                     }
                     if is_owner && lobby_for_cols.seats.is_empty() {
                         button {
-                            class: "px-3 py-1 bg-indigo-800 hover:bg-indigo-700 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white shadow-md",
                             onclick: move |_| {
                                 let lid = lobby_id_default_config.clone();
                                 spawn(async move {
@@ -1567,8 +1713,8 @@ fn LobbyRoomBody(
                 }
             }
             div { class: "lobby-col lobby-col-seats",
-                h3 { class: "text-sm font-semibold text-gray-400 mb-3", "Players" }
-                p { class: "text-xs text-gray-500 mb-3", "{claimed}/{total} seats claimed" }
+                h3 { class: "text-xs font-semibold uppercase tracking-wide text-indigo-300/80 mb-3", "Players" }
+                p { class: "text-xs text-gray-400 mb-3", "{claimed}/{total} seats claimed" }
                 div { class: "space-y-2 mb-4",
                     for seat in lobby_for_cols.seats.clone() {
                         {
@@ -1580,13 +1726,13 @@ fn LobbyRoomBody(
                                 .clone()
                                 .unwrap_or_else(|| "free".into());
                             rsx! {
-                                div { class: "flex items-center gap-2 text-sm",
-                                    span { class: "text-gray-500 w-24 truncate", "{seat.player_identity}" }
+                                div { class: "flex items-center gap-2 text-sm rounded-lg border border-gray-700/50 bg-gray-950/40 px-2 py-1.5",
+                                    span { class: "text-gray-400 w-24 truncate font-mono text-xs", "{seat.player_identity}" }
                                     if taken {
-                                        span { "{label}" }
+                                        span { class: "text-gray-200", "{label}" }
                                     } else {
                                         button {
-                                            class: "px-2 py-0.5 bg-indigo-700 hover:bg-indigo-600 rounded text-xs",
+                                            class: "px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white",
                                             onclick: move |_| {
                                                 let lid = lid.clone();
                                                 spawn(async move {
@@ -1612,7 +1758,7 @@ fn LobbyRoomBody(
                 div { class: "flex flex-wrap gap-2",
                     if is_owner && in_staging {
                         button {
-                            class: "px-3 py-1 bg-emerald-700 hover:bg-emerald-600 rounded text-sm disabled:opacity-40",
+                            class: "px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-semibold text-white shadow-md disabled:opacity-40 disabled:shadow-none",
                             disabled: !can_start,
                             onclick: move |_| {
                                 let lid = lobby_id_start.clone();
@@ -1631,14 +1777,15 @@ fn LobbyRoomBody(
                             "Start game"
                         }
                         button {
-                            class: "px-3 py-1 bg-red-900 hover:bg-red-800 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg border border-red-500/40 bg-red-950/70 hover:bg-red-900 text-sm font-medium text-red-100",
                             onclick: move |_| {
                                 let lid = lobby_id_cancel.clone();
+                                let nav = nav;
                                 spawn(async move {
                                     let q = "mutation C($id: ID!) { cancelLobby(lobbyId: $id) }";
                                     let vars = serde_json::json!({ "id": lid });
                                     let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                    navigate_home();
+                                    nav.push(LobbyRoute::Home {});
                                 });
                             },
                             "Cancel lobby"
@@ -1646,7 +1793,7 @@ fn LobbyRoomBody(
                     }
                     if user_in_seat && in_staging {
                         button {
-                            class: "px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-800 hover:bg-gray-700 text-sm",
                             onclick: move |_| {
                                 let lid = lobby_for_cols.id.clone();
                                 spawn(async move {
@@ -1660,7 +1807,7 @@ fn LobbyRoomBody(
                     }
                     if let Some((gt, gid, pid, lid_ret)) = play_row.clone() {
                         button {
-                            class: "px-3 py-1 bg-green-700 hover:bg-green-600 rounded text-sm",
+                            class: "px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-semibold text-white shadow-md",
                             onclick: move |_| {
                                 playing.set(Some(PlayOverlay {
                                     game_type: gt.clone(),
@@ -1685,6 +1832,7 @@ fn LobbyRoomBody(
 
 #[component]
 fn GameResultPage(game_id: String) -> Element {
+    let nav = use_navigator();
     let mut loaded: Signal<Option<LoadedGameResult>> = use_signal(|| None);
     let mut err: Signal<Option<String>> = use_signal(|| None);
     let mut done: Signal<bool> = use_signal(|| false);
@@ -1743,58 +1891,68 @@ fn GameResultPage(game_id: String) -> Element {
     });
 
     rsx! {
-        div { class: "max-w-4xl mx-auto px-4 py-8",
+        div { class: "max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6",
             button {
-                class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm mb-6",
-                onclick: move |_| navigate_home(),
+                class: "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800/90 border border-gray-600 text-gray-200 text-sm hover:bg-gray-700 hover:border-gray-500 transition-colors",
+                onclick: move |_| {
+                    nav.push(LobbyRoute::Home {});
+                },
                 "← Home"
             }
-            h1 { class: "text-2xl font-bold mb-2", "Game result" }
-            p { class: "text-gray-500 text-sm mb-6", "{game_id}" }
+            div {
+                h1 { class: "text-2xl sm:text-3xl font-bold tracking-tight text-white", "Game result" }
+                p { class: "text-gray-500 text-sm mt-1 font-mono break-all", "{game_id}" }
+            }
             if let Some(e) = err() {
-                div { class: "bg-red-900/50 border border-red-500 text-red-200 px-4 py-3 rounded", "{e}" }
+                div { class: "rounded-xl border border-red-500/50 bg-red-950/45 px-4 py-3 shadow-lg shadow-red-900/20",
+                    p { class: "text-sm font-medium text-red-100", "{e}" }
+                }
             } else if !done() {
-                p { class: "text-gray-400", "Loading…" }
+                p { class: "text-sm text-indigo-200/80", "Loading…" }
             } else if let Some(ld) = loaded() {
-                p { class: "text-gray-400 text-sm mb-2", "Finished at UNIX {ld.row.finished_at}" }
-                if let Some(lid) = ld.row.lobby_id.clone() {
-                    p { class: "text-sm mb-4",
-                        "Lobby: "
-                        button {
-                            class: "text-indigo-400 hover:underline",
-                            onclick: move |_| navigate_lobby(&lid),
-                            "{lid}"
+                div { class: "rounded-2xl border border-gray-700/70 bg-gray-900/50 p-5 sm:p-6 shadow-xl shadow-black/30 backdrop-blur-sm space-y-4",
+                    p { class: "text-gray-400 text-sm", "Finished at UNIX {ld.row.finished_at}" }
+                    if let Some(lid) = ld.row.lobby_id.clone() {
+                        p { class: "text-sm text-gray-300",
+                            "Lobby: "
+                            button {
+                                class: "text-indigo-400 hover:text-indigo-300 hover:underline font-mono text-xs",
+                                onclick: move |_| {
+                                    nav.push(LobbyRoute::Lobby { id: lid.clone() });
+                                },
+                                "{lid}"
+                            }
+                        }
+                    }
+                    if let Some(src) = ld.iframe_src.clone() {
+                        p { class: "text-xs text-gray-500", "Game-specific view (client/result.html)" }
+                        iframe {
+                            class: "w-full min-h-[32rem] border border-indigo-500/20 rounded-xl bg-gray-950 shadow-inner ring-1 ring-white/5",
+                            src: src,
+                        }
+                    } else {
+                        p { class: "text-amber-200/90 text-sm rounded-lg border border-amber-500/25 bg-amber-950/30 px-3 py-2",
+                            "This game type has no client/result.html — raw payload below."
+                        }
+                    }
+                    details { class: "text-sm rounded-xl border border-gray-700/50 bg-gray-950/40 p-4",
+                        summary { class: "cursor-pointer text-indigo-200/80 font-medium", "Raw JSON" }
+                        h2 { class: "text-base font-semibold mt-4 mb-2 text-white", "Scores (float)" }
+                        pre { class: "text-xs bg-gray-950 border border-gray-700/80 rounded-xl p-3 overflow-x-auto mb-4 text-gray-300",
+                            "{ld.row.player_scores_json}"
+                        }
+                        h2 { class: "text-base font-semibold mt-4 mb-2 text-white", "Outcome (JSON)" }
+                        pre { class: "text-xs bg-gray-950 border border-gray-700/80 rounded-xl p-3 overflow-x-auto mb-4 text-gray-300",
+                            "{ld.row.result_json}"
+                        }
+                        h2 { class: "text-base font-semibold mt-4 mb-2 text-white", "Seats at finish" }
+                        pre { class: "text-xs bg-gray-950 border border-gray-700/80 rounded-xl p-3 overflow-x-auto text-gray-300",
+                            "{ld.row.seats_snapshot_json}"
                         }
                     }
                 }
-                if let Some(src) = ld.iframe_src.clone() {
-                    p { class: "text-xs text-gray-500 mb-2", "Game-specific view (client/result.html)" }
-                    iframe {
-                        class: "w-full min-h-[32rem] border border-gray-700 rounded-lg bg-gray-950 mb-6",
-                        src: src,
-                    }
-                } else {
-                    p { class: "text-amber-200/90 text-sm mb-3",
-                        "This game type has no client/result.html — raw payload below."
-                    }
-                }
-                details { class: "text-sm",
-                    summary { class: "cursor-pointer text-gray-400 mb-2", "Raw JSON" }
-                    h2 { class: "text-lg font-semibold mt-2 mb-2", "Scores (float)" }
-                    pre { class: "text-xs bg-gray-950 border border-gray-700 rounded p-3 overflow-x-auto mb-4",
-                        "{ld.row.player_scores_json}"
-                    }
-                    h2 { class: "text-lg font-semibold mt-4 mb-2", "Outcome (JSON)" }
-                    pre { class: "text-xs bg-gray-950 border border-gray-700 rounded p-3 overflow-x-auto mb-4",
-                        "{ld.row.result_json}"
-                    }
-                    h2 { class: "text-lg font-semibold mt-4 mb-2", "Seats at finish" }
-                    pre { class: "text-xs bg-gray-950 border border-gray-700 rounded p-3 overflow-x-auto",
-                        "{ld.row.seats_snapshot_json}"
-                    }
-                }
             } else {
-                p { class: "text-gray-400", "No saved result for this game (wrong id or not finished yet)." }
+                p { class: "text-sm text-gray-500", "No saved result for this game (wrong id or not finished yet)." }
             }
         }
     }
@@ -1806,6 +1964,7 @@ fn LobbyRoomPage(
     mut playing: Signal<Option<PlayOverlay>>,
     mut error_msg: Signal<Option<String>>,
 ) -> Element {
+    let nav = use_navigator();
     let mut detail: Signal<Option<LobbyDetail>> = use_signal(|| None);
     let mut game_types: Signal<Vec<GameTypeInfo>> = use_signal(Vec::new);
     let my_user_id = use_signal(|| stored_user_id());
@@ -1846,22 +2005,32 @@ fn LobbyRoomPage(
     let uid = my_user_id();
 
     rsx! {
-        div { class: "lobby-room-wrap px-4 py-6 max-w-[1400px] mx-auto",
-            div { class: "flex items-center gap-4 mb-6",
+        div { class: "lobby-room-wrap px-4 sm:px-6 py-6 sm:py-8 max-w-[1400px] mx-auto",
+            div { class: "flex flex-wrap items-center gap-4 mb-8 rounded-2xl border border-gray-700/60 bg-gray-900/40 px-4 py-3 shadow-lg shadow-black/20 backdrop-blur-sm",
                 button {
-                    class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm",
-                    onclick: move |_| navigate_home(),
+                    class: "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800/90 border border-gray-600 text-gray-200 text-sm hover:bg-gray-700 hover:border-gray-500 transition-colors shrink-0",
+                    onclick: move |_| {
+                        nav.push(LobbyRoute::Home {});
+                    },
                     "← Home"
                 }
                 if let Some(ref l) = d {
-                    h1 { class: "text-xl font-semibold",
-                        "{l.game_type}"
-                        span { class: "text-gray-500 text-sm ml-2 font-normal", "{l.id}" }
+                    div { class: "min-w-0 flex-1",
+                        h1 { class: "text-lg sm:text-xl font-semibold text-white",
+                            "{game_type_display_title(&gt_list, &l.game_type)}"
+                        }
+                        if let Some(ref sd) = game_type_description(&gt_list, &l.game_type) {
+                            p { class: "text-sm text-gray-400 mt-1 leading-snug", "{sd}" }
+                        }
+                        p { class: "text-xs text-gray-500 font-mono mt-1.5 break-all", "Lobby {l.id}" }
                     }
                 }
             }
             if d.is_none() {
-                p { class: "text-gray-400", "Loading lobby…" }
+                div { class: "flex flex-col items-center py-12 gap-2",
+                    p { class: "text-sm font-medium text-indigo-200/80", "Loading lobby…" }
+                    p { class: "text-xs text-gray-500", "Subscribing to room updates" }
+                }
             } else if let Some(lob) = d {
                 LobbyRoomBody {
                     lobby_for_cols: lob.clone(),
@@ -1881,6 +2050,7 @@ fn GamePlayer(
     player: String,
     return_lobby_id: Option<String>,
     on_close: EventHandler<()>,
+    on_navigate_lobby: EventHandler<String>,
 ) -> Element {
     let ws_base = get_ws_base();
     let player_q = urlencoding::encode(&player);
@@ -1890,10 +2060,10 @@ fn GamePlayer(
     let ret = return_lobby_id.clone();
 
     rsx! {
-        div { class: "flex flex-col h-screen fixed inset-0 z-50 bg-gray-900",
-            div { class: "flex items-center gap-4 px-4 py-3 bg-gray-800 border-b border-gray-700",
+        div { class: "flex flex-col h-screen fixed inset-0 z-50 bg-gradient-to-b from-gray-950 via-gray-900 to-indigo-950/30",
+            div { class: "flex items-center gap-4 px-4 py-3 border-b border-indigo-500/20 bg-gray-900/80 backdrop-blur-md shadow-lg shadow-black/40",
                 button {
-                    class: "px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm",
+                    class: "px-3 py-1.5 rounded-lg border border-gray-600 bg-gray-800 hover:bg-gray-700 text-sm font-medium text-white",
                     onclick: move |_| {
                         let lid = ret.clone();
                         spawn(async move {
@@ -1904,20 +2074,689 @@ fn GamePlayer(
                             }
                             on_close.call(());
                             if let Some(id) = lid {
-                                navigate_lobby(&id);
+                                on_navigate_lobby.call(id);
                             }
                         });
                     },
                     "Back to lobby"
                 }
-                span { class: "text-gray-400 text-sm",
-                    "Playing {game_type} as {player}"
+                span { class: "text-indigo-200/80 text-sm",
+                    "Playing "
+                    span { class: "font-semibold text-white", "{game_type}" }
+                    " as "
+                    span { class: "text-emerald-300/90 font-mono text-xs sm:text-sm", "{player}" }
                 }
             }
             iframe {
-                class: "flex-1 w-full border-0",
+                class: "flex-1 w-full border-0 bg-gray-950",
                 src: "{iframe_src}",
             }
         }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadDiag {
+    severity: String,
+    code: String,
+    message: String,
+    path: Option<String>,
+    hint: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadReport {
+    ok: bool,
+    errors: i32,
+    warnings: i32,
+    infos: i32,
+    required_index_html: bool,
+    required_config_html: bool,
+    required_result_html: bool,
+    diagnostics: Vec<UploadDiag>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct GameDraftShort {
+    id: String,
+    game_name: String,
+    display_name: String,
+    version: String,
+    status: String,
+    manifest_json: String,
+    created_at: i64,
+    published_at: Option<i64>,
+}
+
+fn manifest_description_from_json(manifest_json: &str) -> String {
+    serde_json::from_str::<Value>(manifest_json)
+        .ok()
+        .and_then(|v| {
+            v.get("description")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default()
+}
+
+#[component]
+fn DeveloperDraftRow(
+    draft: GameDraftShort,
+    mut err: Signal<Option<String>>,
+    on_refresh: EventHandler<()>,
+) -> Element {
+    let desc0 = manifest_description_from_json(&draft.manifest_json);
+    let mut publish_name = use_signal(|| draft.game_name.clone());
+    let mut publish_display = use_signal(|| draft.display_name.clone());
+    let mut publish_version = use_signal(|| draft.version.clone());
+    let mut publish_desc = use_signal(|| desc0);
+    let mut saving = use_signal(|| false);
+
+    use_effect({
+        let d = draft.clone();
+        move || {
+            publish_name.set(d.game_name.clone());
+            publish_display.set(d.display_name.clone());
+            publish_version.set(d.version.clone());
+            publish_desc.set(manifest_description_from_json(&d.manifest_json));
+        }
+    });
+
+    let status = draft.status.clone();
+    let id_pub = draft.id.clone();
+    let id_unpub = draft.id.clone();
+    let id_disc = draft.id.clone();
+    let id_save = draft.id.clone();
+
+    rsx! {
+        div { class: "{draft_card_classes(&draft.status)}",
+            div { class: "flex-1 min-w-0 space-y-3",
+                div {
+                    div { class: "flex flex-wrap items-center gap-2 mb-1",
+                        span { class: "px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide {draft_status_style(&draft.status).0}",
+                            "{draft.status}"
+                        }
+                        span { class: "text-white font-semibold", "{draft.display_name}" }
+                        span { class: "text-gray-500 text-sm", "({draft.game_name})" }
+                        span { class: "text-indigo-300/90 text-sm font-mono", "v{draft.version}" }
+                    }
+                    p { class: "text-xs text-gray-500 font-mono",
+                        "created {draft.created_at}"
+                        if draft.published_at.is_some() {
+                            " · published {draft.published_at.unwrap_or(0)}"
+                        }
+                    }
+                }
+                if status == "ready" {
+                    p { class: "text-xs text-gray-400",
+                        "Adjust how the game appears in the lobby, then save before publishing. Folder name uses "
+                        span { class: "font-mono text-indigo-200/90", "name" }
+                        " (letters, digits, "
+                        span { class: "font-mono", "_ -" }
+                        " only)."
+                    }
+                    div { class: "grid sm:grid-cols-2 gap-3",
+                        label { class: "block space-y-1",
+                            span { class: "text-[11px] uppercase tracking-wide text-gray-500", "name (folder id)" }
+                            input {
+                                class: "w-full px-3 py-2 bg-gray-950/80 border border-gray-600 rounded-lg text-sm text-white font-mono",
+                                value: "{publish_name()}",
+                                oninput: move |e| publish_name.set(e.value()),
+                            }
+                        }
+                        label { class: "block space-y-1",
+                            span { class: "text-[11px] uppercase tracking-wide text-gray-500", "display name" }
+                            input {
+                                class: "w-full px-3 py-2 bg-gray-950/80 border border-gray-600 rounded-lg text-sm text-white",
+                                value: "{publish_display()}",
+                                oninput: move |e| publish_display.set(e.value()),
+                            }
+                        }
+                        label { class: "block space-y-1",
+                            span { class: "text-[11px] uppercase tracking-wide text-gray-500", "version" }
+                            input {
+                                class: "w-full px-3 py-2 bg-gray-950/80 border border-gray-600 rounded-lg text-sm text-white font-mono",
+                                value: "{publish_version()}",
+                                oninput: move |e| publish_version.set(e.value()),
+                            }
+                        }
+                    }
+                    label { class: "block space-y-1",
+                        span { class: "text-[11px] uppercase tracking-wide text-gray-500", "description" }
+                        textarea {
+                            class: "w-full px-3 py-2 bg-gray-950/80 border border-gray-600 rounded-lg text-sm text-white min-h-[4rem]",
+                            value: "{publish_desc()}",
+                            oninput: move |e| publish_desc.set(e.value()),
+                        }
+                    }
+                    button {
+                        class: "px-4 py-2 rounded-lg border border-indigo-500/50 bg-indigo-950/50 text-indigo-100 text-xs font-semibold hover:bg-indigo-900/50 disabled:opacity-40",
+                        disabled: saving(),
+                        onclick: move |_| {
+                            saving.set(true);
+                            let id = id_save.clone();
+                            let n = publish_name();
+                            let dn = publish_display();
+                            let v = publish_version();
+                            let d = publish_desc();
+                            spawn(async move {
+                                let q = r#"mutation U($id: ID!, $n: String!, $dn: String!, $v: String!, $d: String!) {
+                                    updateGameDraftManifest(draftId: $id, name: $n, displayName: $dn, version: $v, description: $d) { id }
+                                }"#;
+                                let vars = serde_json::json!({
+                                    "id": id,
+                                    "n": n,
+                                    "dn": dn,
+                                    "v": v,
+                                    "d": d,
+                                });
+                                match graphql_exec::<Value>(q, Some(vars)).await {
+                                    Ok(_) => {
+                                        err.set(None);
+                                        on_refresh.call(());
+                                    }
+                                    Err(e) => err.set(Some(e)),
+                                }
+                                saving.set(false);
+                            });
+                        },
+                        if saving() { "Saving…" } else { "Save manifest fields" }
+                    }
+                }
+            }
+            div { class: "flex flex-wrap gap-2 shrink-0",
+                button {
+                    class: "px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-900/30 disabled:opacity-35 disabled:shadow-none transition-colors",
+                    disabled: draft.status != "ready",
+                    onclick: move |_| {
+                        let id2 = id_pub.clone();
+                        spawn(async move {
+                            let q = "mutation P($id: ID!) { publishGameDraft(draftId: $id) { id } }";
+                            let vars = serde_json::json!({ "id": id2 });
+                            match graphql_exec::<Value>(q, Some(vars)).await {
+                                Ok(_) => {
+                                    err.set(None);
+                                    on_refresh.call(());
+                                }
+                                Err(e) => err.set(Some(e)),
+                            }
+                        });
+                    },
+                    "Publish"
+                }
+                button {
+                    class: "px-4 py-2 rounded-lg border border-amber-500/70 bg-amber-950/50 text-amber-100 text-xs font-semibold hover:bg-amber-900/45 disabled:opacity-35 disabled:shadow-none transition-colors",
+                    disabled: draft.status != "published",
+                    onclick: move |_| {
+                        let id2 = id_unpub.clone();
+                        let Some(win) = web_sys::window() else {
+                            return;
+                        };
+                        let Ok(true) = win.confirm_with_message(
+                            "Remove this game from the live lobby? Players will not see it until someone publishes again.",
+                        ) else {
+                            return;
+                        };
+                        spawn(async move {
+                            let q = "mutation U($id: ID!) { unpublishGameDraft(draftId: $id) { id status } }";
+                            let vars = serde_json::json!({ "id": id2 });
+                            match graphql_exec::<Value>(q, Some(vars)).await {
+                                Ok(_) => {
+                                    err.set(None);
+                                    on_refresh.call(());
+                                }
+                                Err(e) => err.set(Some(e)),
+                            }
+                        });
+                    },
+                    "Take down"
+                }
+                button {
+                    class: "px-4 py-2 rounded-lg border border-red-500/60 bg-red-950/40 text-red-200 text-xs font-semibold hover:bg-red-900/50 disabled:opacity-35 transition-colors",
+                    disabled: draft.status == "published",
+                    onclick: move |_| {
+                        let id2 = id_disc.clone();
+                        spawn(async move {
+                            let q = "mutation D($id: ID!) { discardGameDraft(draftId: $id) }";
+                            let vars = serde_json::json!({ "id": id2 });
+                            match graphql_exec::<Value>(q, Some(vars)).await {
+                                Ok(_) => {
+                                    err.set(None);
+                                    on_refresh.call(());
+                                }
+                                Err(e) => err.set(Some(e)),
+                            }
+                        });
+                    },
+                    "Discard"
+                }
+            }
+        }
+    }
+}
+
+fn upload_diag_panel_class(severity: &str) -> &'static str {
+    match severity {
+        "error" => "border-l-4 border-l-red-500 bg-red-950/40 border border-red-900/50 rounded-r-lg",
+        "warning" => "border-l-4 border-l-amber-400 bg-amber-950/35 border border-amber-900/40 rounded-r-lg",
+        "info" => "border-l-4 border-l-sky-500 bg-sky-950/30 border border-sky-900/40 rounded-r-lg",
+        _ => "border-l-4 border-l-gray-500 bg-gray-800/60 border border-gray-700 rounded-r-lg",
+    }
+}
+
+fn upload_diag_badge_class(severity: &str) -> &'static str {
+    match severity {
+        "error" => "bg-red-600 text-white",
+        "warning" => "bg-amber-500 text-gray-900",
+        "info" => "bg-sky-600 text-white",
+        _ => "bg-gray-600 text-gray-100",
+    }
+}
+
+fn upload_file_check_class(ok: bool) -> &'static str {
+    if ok {
+        "flex items-center gap-2 rounded-lg border border-emerald-700/60 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-100"
+    } else {
+        "flex items-center gap-2 rounded-lg border border-red-700/60 bg-red-950/40 px-3 py-2 text-sm text-red-100"
+    }
+}
+
+fn draft_status_style(status: &str) -> (&'static str, &'static str) {
+    match status {
+        "ready" => ("bg-violet-600 text-white", "border-l-violet-500"),
+        "published" => ("bg-emerald-600 text-white", "border-l-emerald-500"),
+        "discarded" => ("bg-gray-600 text-gray-200", "border-l-gray-500"),
+        _ => ("bg-slate-600 text-white", "border-l-slate-500"),
+    }
+}
+
+fn draft_card_classes(status: &str) -> String {
+    let (_, border) = draft_status_style(status);
+    format!(
+        "rounded-xl border border-gray-700/80 bg-gray-800/90 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-lg border-l-4 {border}"
+    )
+}
+
+fn spawn_read_zip_file(
+    fd: FileData,
+    mut zip_base64: Signal<String>,
+    mut filename: Signal<String>,
+    mut file_status: Signal<String>,
+    mut err: Signal<Option<String>>,
+) {
+    spawn(async move {
+        match fd.read_bytes().await {
+            Ok(bytes) => {
+                let name = fd.name();
+                let b64 = STANDARD.encode(&bytes);
+                let status = format!("{name} — {} bytes (ready)", bytes.len());
+                filename.set(name);
+                zip_base64.set(b64);
+                file_status.set(status);
+                err.set(None);
+            }
+            Err(e) => {
+                zip_base64.set(String::new());
+                file_status.set("No file selected".to_string());
+                err.set(Some(format!("Failed to read zip: {e}")));
+            }
+        }
+    });
+}
+
+#[component]
+fn DeveloperUploadsPage() -> Element {
+    let nav = use_navigator();
+    let mut is_dev = use_signal(|| None::<bool>);
+    let mut err = use_signal(|| None::<String>);
+    let mut filename = use_signal(|| "game.zip".to_string());
+    let mut zip_base64 = use_signal(String::new);
+    let file_status = use_signal(|| "No file selected".to_string());
+    let mut uploading = use_signal(|| false);
+    let mut report = use_signal(|| None::<UploadReport>);
+    let mut drafts = use_signal(Vec::<GameDraftShort>::new);
+    let mut zip_drag_over = use_signal(|| false);
+
+    // Prevent the browser from opening/downloading dragged files on this page (drops on our zone are handled in ondrop).
+    let _global_file_drag_guard: Rc<(EventListener, EventListener)> = use_hook(move || {
+        let win = web_sys::window().expect("window");
+        let doc = win.document().expect("document");
+        let opts = EventListenerOptions::enable_prevent_default();
+        let drag_over = EventListener::new_with_options(&doc, "dragover", opts.clone(), |e: &web_sys::Event| {
+            e.prevent_default();
+        });
+        let drop_doc = EventListener::new_with_options(&doc, "drop", opts, |e: &web_sys::Event| {
+            e.prevent_default();
+        });
+        Rc::new((drag_over, drop_doc))
+    });
+
+    let refresh_drafts = {
+        let mut drafts = drafts;
+        let mut err = err;
+        move || {
+            spawn(async move {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct Wrap {
+                    my_game_drafts: Vec<GameDraftShort>,
+                }
+                let q = "query { myGameDrafts { id gameName displayName version status manifestJson createdAt publishedAt } }";
+                match graphql_post::<Wrap>(q).await {
+                    Ok(v) => drafts.set(v.my_game_drafts),
+                    Err(e) => err.set(Some(e)),
+                }
+            });
+        }
+    };
+
+    use_hook(move || {
+        let mut is_dev = is_dev;
+        let mut err = err;
+        spawn(async move {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct P {
+                is_developer: bool,
+            }
+            let q = "query { isDeveloper }";
+            match graphql_post::<P>(q).await {
+                Ok(v) => is_dev.set(Some(v.is_developer)),
+                Err(e) => {
+                    is_dev.set(Some(false));
+                    err.set(Some(e));
+                }
+            }
+        });
+        refresh_drafts();
+    });
+
+    rsx! {
+        div { class: "max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8",
+                div { class: "flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4",
+                    div {
+                        button {
+                            class: "mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800/90 border border-gray-600 text-gray-200 text-sm hover:bg-gray-700 hover:border-gray-500 transition-colors",
+                            onclick: move |_| {
+                                nav.push(LobbyRoute::Home {});
+                            },
+                            "← Home"
+                        }
+                        h1 { class: "text-3xl sm:text-4xl font-bold tracking-tight text-white",
+                            "Developer uploads"
+                        }
+                        p { class: "mt-2 text-sm text-indigo-200/80 max-w-xl",
+                            "Package a game as zip, validate against the server, then publish drafts when checks pass."
+                        }
+                    }
+                    div { class: "hidden sm:block h-14 w-px bg-gradient-to-b from-transparent via-indigo-500/50 to-transparent" }
+                    div { class: "rounded-xl border border-indigo-500/30 bg-indigo-950/50 px-4 py-3 text-xs text-indigo-100/90 max-w-xs",
+                        p { class: "font-semibold text-indigo-200 mb-1", "Expected layout" }
+                        p { class: "font-mono text-[11px] leading-relaxed text-indigo-100/70",
+                            "manifest.json · logic.wasm · client/index|config|result.html"
+                        }
+                    }
+                }
+
+                if let Some(e) = err() {
+                    div { class: "rounded-xl border border-red-500/60 bg-red-950/50 px-4 py-3 shadow-lg shadow-red-900/20",
+                        div { class: "flex items-start gap-3",
+                            span { class: "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-600 text-sm font-bold text-white",
+                                "!"
+                            }
+                            div {
+                                p { class: "text-sm font-semibold text-red-100", "Something went wrong" }
+                                p { class: "mt-1 text-sm text-red-200/90 leading-relaxed", "{e}" }
+                            }
+                        }
+                    }
+                }
+
+                if is_dev() == Some(false) {
+                    div { class: "rounded-xl border border-amber-500/40 bg-amber-950/40 px-5 py-4",
+                        p { class: "text-amber-100 font-medium", "Developer access required" }
+                        p { class: "mt-2 text-sm text-amber-100/80",
+                            "Grant the developer role, or set OPEN_DEVELOPER_UPLOADS=true for open uploads."
+                        }
+                    }
+                } else {
+                    section { class: "rounded-2xl border border-gray-700/80 bg-gray-900/60 backdrop-blur-sm p-6 sm:p-8 shadow-xl shadow-black/40",
+                        div { class: "flex items-center gap-3 mb-2",
+                            span { class: "flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-lg", "📦" }
+                            div {
+                                h2 { class: "text-xl font-semibold text-white", "Upload game zip" }
+                                p { class: "text-sm text-gray-400", "Drag & drop or browse — then validate on the server." }
+                            }
+                        }
+                        div {
+                            class: "relative mt-6 min-h-[11rem] rounded-2xl border-2 border-dashed transition-all duration-200 overflow-hidden",
+                            class: if zip_drag_over() {
+                                "border-indigo-300 bg-gradient-to-br from-indigo-950/70 via-violet-950/50 to-indigo-900/40 shadow-[0_0_0_1px_rgba(165,180,252,0.45),0_0_28px_rgba(129,140,248,0.35)] ring-2 ring-indigo-400/40"
+                            } else {
+                                "border-indigo-500/35 bg-gradient-to-br from-gray-950/80 to-indigo-950/30 hover:border-indigo-400/55 hover:from-gray-900/90 hover:to-indigo-950/50"
+                            },
+                            div { class: "pointer-events-none px-6 py-10 text-center",
+                                p { class: "text-base text-gray-200 font-medium mb-1", "Drop your .zip here" }
+                                p { class: "text-xs text-gray-500 mb-5", "Release package at repo root (not a folder of zips)" }
+                                span { class: "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold shadow-lg shadow-indigo-900/40",
+                                    "Browse files…"
+                                }
+                            }
+                            input {
+                                id: "dev-zip-upload",
+                                class: "absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0",
+                                r#type: "file",
+                                accept: ".zip,application/zip,application/x-zip-compressed",
+                                ondragenter: move |evt: Event<DragData>| {
+                                    evt.prevent_default();
+                                    zip_drag_over.set(true);
+                                },
+                                ondragleave: move |evt: Event<DragData>| {
+                                    evt.prevent_default();
+                                    zip_drag_over.set(false);
+                                },
+                                ondragover: move |evt: Event<DragData>| {
+                                    evt.prevent_default();
+                                    evt.data().data_transfer().set_drop_effect("copy");
+                                },
+                                ondrop: move |evt: Event<DragData>| {
+                                    evt.prevent_default();
+                                    evt.stop_propagation();
+                                    zip_drag_over.set(false);
+                                    let files = evt.data().files();
+                                    let Some(fd) = files.into_iter().next() else {
+                                        return;
+                                    };
+                                    spawn_read_zip_file(
+                                        fd,
+                                        zip_base64,
+                                        filename,
+                                        file_status,
+                                        err,
+                                    );
+                                },
+                                onchange: move |evt: Event<FormData>| {
+                                    zip_drag_over.set(false);
+                                    let files = evt.data().files();
+                                    let Some(fd) = files.into_iter().next() else {
+                                        return;
+                                    };
+                                    spawn_read_zip_file(
+                                        fd,
+                                        zip_base64,
+                                        filename,
+                                        file_status,
+                                        err,
+                                    );
+                                },
+                            }
+                        }
+                        div { class: "mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3",
+                            p { class: "text-sm text-gray-300 flex items-center gap-2",
+                                span { class: "inline-block h-2 w-2 rounded-full shrink-0",
+                                    class: if zip_base64().trim().is_empty() { "bg-gray-600" } else { "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" },
+                                }
+                                span { class: "font-mono text-xs sm:text-sm text-gray-200", "{file_status()}" }
+                            }
+                            button {
+                                class: "inline-flex justify-center items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold shadow-lg shadow-indigo-900/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none transition-all",
+                                disabled: uploading() || zip_base64().trim().is_empty(),
+                                onclick: move |_| {
+                                    let n = filename();
+                                    let payload = zip_base64();
+                                    uploading.set(true);
+                                    err.set(None);
+                                    spawn(async move {
+                                        #[derive(Deserialize)]
+                                        #[serde(rename_all = "camelCase")]
+                                        struct R {
+                                            upload_game_zip: UploadResp,
+                                        }
+                                        #[derive(Deserialize)]
+                                        #[serde(rename_all = "camelCase")]
+                                        struct UploadResp {
+                                            report: UploadReport,
+                                        }
+                                        let q = "mutation Upload($f: String!, $z: String!) { uploadGameZip(filename: $f, zipBase64: $z) { report { ok errors warnings infos requiredIndexHtml requiredConfigHtml requiredResultHtml diagnostics { severity code message path hint } } } }";
+                                        let vars = serde_json::json!({ "f": n, "z": payload.trim() });
+                                        match graphql_exec::<R>(q, Some(vars)).await {
+                                            Ok(v) => {
+                                                report.set(Some(v.upload_game_zip.report));
+                                            }
+                                            Err(e) => err.set(Some(e)),
+                                        }
+                                        refresh_drafts();
+                                        uploading.set(false);
+                                    });
+                                },
+                                if uploading() {
+                                    span { "Validating…" }
+                                } else {
+                                    span { "Run validation" }
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(rep) = report() {
+                        section { class: "rounded-2xl border overflow-hidden shadow-xl shadow-black/30",
+                            class: if rep.ok { "border-emerald-600/40 bg-gray-900/70" } else { "border-red-600/45 bg-gray-900/70" },
+                            div { class: "px-6 py-4 border-b border-gray-700/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-gradient-to-r from-gray-900 to-gray-800/80",
+                                div { class: "flex items-center gap-3",
+                                    span { class: "flex h-12 w-12 items-center justify-center rounded-xl text-xl font-bold shrink-0",
+                                        class: if rep.ok { "bg-emerald-600 text-white" } else { "bg-red-600 text-white" },
+                                        if rep.ok { "✓" } else { "✕" }
+                                    }
+                                    div {
+                                        h3 { class: "text-lg font-semibold text-white", "Validation report" }
+                                        p { class: "text-sm text-gray-400",
+                                            if rep.ok { "Package accepted — draft created if applicable." } else { "Fix errors below and upload again." }
+                                        }
+                                    }
+                                }
+                                div { class: "grid grid-cols-3 gap-2 sm:gap-3 w-full sm:w-auto",
+                                    div { class: "rounded-lg bg-red-950/60 border border-red-800/50 px-3 py-2 text-center",
+                                        p { class: "text-2xl font-bold text-red-300", "{rep.errors}" }
+                                        p { class: "text-[10px] uppercase tracking-wider text-red-400/90", "Errors" }
+                                    }
+                                    div { class: "rounded-lg bg-amber-950/50 border border-amber-800/40 px-3 py-2 text-center",
+                                        p { class: "text-2xl font-bold text-amber-200", "{rep.warnings}" }
+                                        p { class: "text-[10px] uppercase tracking-wider text-amber-400/90", "Warnings" }
+                                    }
+                                    div { class: "rounded-lg bg-sky-950/50 border border-sky-800/40 px-3 py-2 text-center",
+                                        p { class: "text-2xl font-bold text-sky-200", "{rep.infos}" }
+                                        p { class: "text-[10px] uppercase tracking-wider text-sky-400/90", "Infos" }
+                                    }
+                                }
+                            }
+
+                            div { class: "px-6 py-5 border-b border-gray-700/60 bg-gray-950/40",
+                                p { class: "text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3", "Required client files" }
+                                div { class: "grid sm:grid-cols-3 gap-3",
+                                    div { class: upload_file_check_class(rep.required_index_html),
+                                        span { class: "text-lg", if rep.required_index_html { "✓" } else { "✕" } }
+                                        div {
+                                            p { class: "font-mono text-xs font-semibold", "client/index.html" }
+                                            p { class: "text-[11px] opacity-80", "Play UI entry" }
+                                        }
+                                    }
+                                    div { class: upload_file_check_class(rep.required_config_html),
+                                        span { class: "text-lg", if rep.required_config_html { "✓" } else { "✕" } }
+                                        div {
+                                            p { class: "font-mono text-xs font-semibold", "client/config.html" }
+                                            p { class: "text-[11px] opacity-80", "Lobby config iframe" }
+                                        }
+                                    }
+                                    div { class: upload_file_check_class(rep.required_result_html),
+                                        span { class: "text-lg", if rep.required_result_html { "✓" } else { "✕" } }
+                                        div {
+                                            p { class: "font-mono text-xs font-semibold", "client/result.html" }
+                                            p { class: "text-[11px] opacity-80", "Post-game screen" }
+                                        }
+                                    }
+                                }
+                            }
+
+                            div { class: "px-6 py-5",
+                                p { class: "text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3", "Diagnostics" }
+                                div { class: "space-y-2 max-h-80 overflow-y-auto pr-1",
+                                    for d in rep.diagnostics {
+                                        div { class: "pl-1 {upload_diag_panel_class(&d.severity)}",
+                                            div { class: "p-3 sm:p-4",
+                                                div { class: "flex flex-wrap items-center gap-2 mb-2",
+                                                    span { class: "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide {upload_diag_badge_class(&d.severity)}",
+                                                        "{d.severity}"
+                                                    }
+                                                    span { class: "font-mono text-xs text-gray-300", "{d.code}" }
+                                                }
+                                                p { class: "text-sm text-gray-100 leading-snug", "{d.message}" }
+                                                if let Some(ref pth) = d.path {
+                                                    p { class: "mt-2 text-xs font-mono text-gray-400 bg-black/25 rounded px-2 py-1 inline-block", "{pth}" }
+                                                }
+                                                if let Some(ref h) = d.hint {
+                                                    p { class: "mt-2 text-xs text-gray-300/90 border-l-2 border-gray-500 pl-2", "{h}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    section { class: "rounded-2xl border border-gray-700/80 bg-gray-900/50 p-6 sm:p-8 shadow-lg shadow-black/20",
+                        div { class: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6",
+                            div {
+                                h2 { class: "text-xl font-semibold text-white", "My drafts" }
+                                p { class: "text-sm text-gray-500 mt-1", "Publish to go live in the lobby game list." }
+                            }
+                            button {
+                                class: "self-start sm:self-auto px-4 py-2 rounded-xl border border-gray-600 bg-gray-800 text-gray-200 text-sm font-medium hover:bg-gray-700 hover:border-gray-500 transition-colors",
+                                onclick: move |_| refresh_drafts(),
+                                "Refresh list"
+                            }
+                        }
+                        if drafts().is_empty() {
+                            div { class: "rounded-xl border border-dashed border-gray-600 bg-gray-950/50 py-12 text-center",
+                                p { class: "text-gray-500 text-sm", "No drafts yet — validate a zip to create one." }
+                            }
+                        } else {
+                            div { class: "space-y-3",
+                                for d in drafts() {
+                                    DeveloperDraftRow {
+                                        key: "{d.id}",
+                                        draft: d.clone(),
+                                        err,
+                                        on_refresh: move |_| refresh_drafts(),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
     }
 }

@@ -204,6 +204,9 @@ pub async fn owner_replace_game_type_and_seats(
     if detail.status == "cancelled" {
         return Err("lobby is cancelled".into());
     }
+    if new_game_type.trim().is_empty() {
+        return Err("game type must not be empty".into());
+    }
     if !force && has_claimed_seats(&detail) {
         return Err("seats are claimed; confirm reset or pass force".into());
     }

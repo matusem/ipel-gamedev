@@ -1,13 +1,19 @@
 use std::pin::Pin;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 use async_graphql::{Context, Error, Object, Result, Schema, SimpleObject, Subscription};
+use base64::Engine;
 use futures_util::stream::{self, Stream, StreamExt};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::auth_password;
 use crate::component_db::ComponentDb;
+use crate::game_upload::{
+    publish_staged_game, remove_published_game_dir, validate_and_stage_zip_bytes,
+    validate_game_folder_name, write_manifest_to_staged_dir, ValidationReport,
+};
 use crate::db::{self, FinishedGameRow, GameInstanceStore};
 use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
@@ -17,6 +23,10 @@ use crate::lobby_db::{self, LobbyDetail, LobbyListNotify, LobbyMessage, LobbySea
 /// Authenticated user from `Authorization: Bearer <uuid>` (guest id from `registerUser`).
 #[derive(Clone, Copy, Debug)]
 pub struct RequestUser(pub Option<Uuid>);
+#[derive(Clone)]
+pub struct GamesDir(pub PathBuf);
+#[derive(Clone)]
+pub struct DraftsDir(pub PathBuf);
 
 fn require_user(ctx: &Context<'_>) -> Result<Uuid> {
     let RequestUser(u) = ctx.data::<RequestUser>()?;
@@ -37,6 +47,18 @@ async fn require_registered_user(ctx: &Context<'_>) -> Result<Uuid> {
         ));
     }
     Ok(uid)
+}
+
+async fn require_developer_user(ctx: &Context<'_>) -> Result<Uuid> {
+    let uid = require_registered_user(ctx).await?;
+    let pool = ctx.data::<SqlitePool>()?;
+    let open_uploads = std::env::var("OPEN_DEVELOPER_UPLOADS")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(true);
+    if open_uploads || db::user_has_role(pool, uid, "developer").await.unwrap_or(false) {
+        return Ok(uid);
+    }
+    Err(Error::new("developer permission required"))
 }
 
 #[derive(SimpleObject, Clone)]
@@ -68,6 +90,51 @@ pub struct GameInstanceGql {
 }
 
 #[derive(SimpleObject, Clone)]
+pub struct ValidationDiagnosticGql {
+    pub severity: String,
+    pub code: String,
+    pub message: String,
+    pub path: Option<String>,
+    pub hint: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct ValidationReportGql {
+    pub ok: bool,
+    pub errors: i32,
+    pub warnings: i32,
+    pub infos: i32,
+    pub required_index_html: bool,
+    pub required_config_html: bool,
+    pub required_result_html: bool,
+    pub diagnostics: Vec<ValidationDiagnosticGql>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GameDraftGql {
+    pub id: async_graphql::types::ID,
+    pub upload_id: async_graphql::types::ID,
+    pub owner_user_id: async_graphql::types::ID,
+    pub game_name: String,
+    pub display_name: String,
+    pub version: String,
+    pub status: String,
+    pub manifest_json: String,
+    pub report_json: String,
+    pub storage_path: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub published_at: Option<i64>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct UploadGameZipResultGql {
+    pub upload_id: async_graphql::types::ID,
+    pub draft: Option<GameDraftGql>,
+    pub report: ValidationReportGql,
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct FinishedGameGql {
     pub game_id: String,
     pub game_type: String,
@@ -79,12 +146,17 @@ pub struct FinishedGameGql {
     pub result_ui_path: Option<String>,
 }
 
-fn map_finished_row(r: FinishedGameRow, registry: &GameRegistry) -> FinishedGameGql {
+fn map_finished_row(r: FinishedGameRow, registry: &Arc<RwLock<GameRegistry>>) -> FinishedGameGql {
     let result_ui_path = registry
-        .game_types()
-        .iter()
-        .find(|gt| gt.manifest.name == r.game_type)
-        .and_then(|gt| gt.result_ui_path.clone());
+        .read()
+        .ok()
+        .map(|reg| {
+            reg.game_types()
+                .iter()
+                .find(|gt| gt.manifest.name == r.game_type)
+                .and_then(|gt| gt.result_ui_path.clone())
+        })
+        .flatten();
     FinishedGameGql {
         game_id: r.id.to_string(),
         game_type: r.game_type,
@@ -173,6 +245,47 @@ fn map_summary(s: LobbySummary) -> LobbySummaryGql {
     }
 }
 
+fn map_validation_report(report: ValidationReport) -> ValidationReportGql {
+    ValidationReportGql {
+        ok: report.ok,
+        errors: report.errors as i32,
+        warnings: report.warnings as i32,
+        infos: report.infos as i32,
+        required_index_html: report.required_index_html,
+        required_config_html: report.required_config_html,
+        required_result_html: report.required_result_html,
+        diagnostics: report
+            .diagnostics
+            .into_iter()
+            .map(|d| ValidationDiagnosticGql {
+                severity: d.severity,
+                code: d.code,
+                message: d.message,
+                path: d.path,
+                hint: d.hint,
+            })
+            .collect(),
+    }
+}
+
+fn map_draft(d: db::GameDraftRow) -> GameDraftGql {
+    GameDraftGql {
+        id: d.id.to_string().into(),
+        upload_id: d.upload_id.to_string().into(),
+        owner_user_id: d.owner_user_id.to_string().into(),
+        game_name: d.game_name,
+        display_name: d.display_name,
+        version: d.version,
+        status: d.status,
+        manifest_json: d.manifest_json,
+        report_json: d.report_json,
+        storage_path: d.storage_path,
+        created_at: d.created_at,
+        updated_at: d.updated_at,
+        published_at: d.published_at,
+    }
+}
+
 async fn lobby_to_gql(pool: &SqlitePool, d: LobbyDetail) -> Result<LobbyGql> {
     let msgs = lobby_db::list_lobby_messages(pool, d.id, 100)
         .await
@@ -212,8 +325,11 @@ pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
     async fn game_types(&self, ctx: &Context<'_>) -> Result<Vec<GameTypeGql>> {
-        let reg = ctx.data::<Arc<GameRegistry>>()?;
-        Ok(reg
+        let reg = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let guard = reg
+            .read()
+            .map_err(|_| Error::new("registry lock poisoned"))?;
+        Ok(guard
             .game_types()
             .iter()
             .map(|gt| GameTypeGql {
@@ -246,7 +362,7 @@ impl QueryRoot {
     ) -> Result<Option<FinishedGameGql>> {
         let _uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
-        let registry = ctx.data::<Arc<GameRegistry>>()?;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
         let gid = Uuid::parse_str(game_id.as_str()).map_err(|_| Error::new("invalid game id"))?;
         let row = db::get_finished_game(pool, gid)
             .await
@@ -261,7 +377,7 @@ impl QueryRoot {
     ) -> Result<Vec<FinishedGameGql>> {
         let _uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
-        let registry = ctx.data::<Arc<GameRegistry>>()?;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
         let lim = limit.unwrap_or(15).clamp(1, 100) as i64;
         let rows = db::list_recent_finished_games(pool, lim)
             .await
@@ -328,12 +444,60 @@ impl QueryRoot {
     async fn oauth_available(&self) -> bool {
         false
     }
+
+    async fn is_developer(&self, ctx: &Context<'_>) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let open_uploads = std::env::var("OPEN_DEVELOPER_UPLOADS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true);
+        if open_uploads {
+            return Ok(true);
+        }
+        db::user_has_role(pool, uid, "developer")
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn my_game_drafts(&self, ctx: &Context<'_>) -> Result<Vec<GameDraftGql>> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rows = db::list_game_drafts_for_owner(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows.into_iter().map(map_draft).collect())
+    }
+
+    async fn game_draft(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::types::ID,
+    ) -> Result<Option<GameDraftGql>> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let did = Uuid::parse_str(id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let row = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(row
+            .filter(|d| d.owner_user_id == uid)
+            .map(map_draft))
+    }
 }
 
 pub struct MutationRoot;
 
 #[Object]
 impl MutationRoot {
+    async fn grant_myself_developer(&self, ctx: &Context<'_>) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        db::grant_role(pool, uid, "developer")
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(true)
+    }
+
     async fn register_user(
         &self,
         ctx: &Context<'_>,
@@ -431,6 +595,328 @@ impl MutationRoot {
         Err(Error::new("invalid credentials"))
     }
 
+    async fn upload_game_zip(
+        &self,
+        ctx: &Context<'_>,
+        filename: String,
+        zip_base64: String,
+    ) -> Result<UploadGameZipResultGql> {
+        let uid = require_developer_user(ctx).await?;
+        println!("upload_game_zip: user={} filename={}", uid, filename);
+        let pool = ctx.data::<SqlitePool>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let drafts_dir = &ctx.data::<DraftsDir>()?.0;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(zip_base64.as_bytes())
+            .map_err(|e| Error::new(format!("invalid base64 payload: {e}")))?;
+
+        let validation = validate_and_stage_zip_bytes(
+            &bytes,
+            component_db,
+            drafts_dir,
+            Some(games_dir.as_path()),
+        )
+        .await;
+        match validation {
+            Ok(ok) => {
+                println!(
+                    "upload_game_zip: validation ok game={} version={}",
+                    ok.manifest.name, ok.manifest.version
+                );
+                let report_json = serde_json::to_string(&ok.report)
+                    .map_err(|e| Error::new(format!("serialize report: {e}")))?;
+                let upload_id = db::insert_upload(pool, uid, &filename, "validated", &report_json)
+                    .await
+                    .map_err(|e| Error::new(format!("db: {e}")))?;
+                let manifest_json = serde_json::to_string(&ok.manifest)
+                    .map_err(|e| Error::new(format!("serialize manifest: {e}")))?;
+                let taken = db::count_game_drafts_name_version_active(
+                    pool,
+                    &ok.manifest.name,
+                    &ok.manifest.version,
+                    None,
+                )
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
+                if taken > 0 {
+                    return Err(Error::new(format!(
+                        "Game name {:?} with version {:?} is already used by another draft or published record. Change the manifest (or edit the draft after upload) and try again.",
+                        ok.manifest.name, ok.manifest.version
+                    )));
+                }
+                let draft_id = db::insert_game_draft(
+                    pool,
+                    db::NewDraft {
+                        upload_id,
+                        owner_user_id: uid,
+                        game_name: &ok.manifest.name,
+                        display_name: &ok.manifest.display_name,
+                        version: &ok.manifest.version,
+                        status: "ready",
+                        manifest_json: &manifest_json,
+                        report_json: &report_json,
+                        storage_path: &ok.staged_dir.to_string_lossy(),
+                    },
+                )
+                .await
+                .map_err(|e| {
+                    let msg = e.to_string();
+                    if msg.contains("UNIQUE") {
+                        Error::new(
+                            "A draft or published record already uses this game name and version.",
+                        )
+                    } else {
+                        Error::new(format!("db: {msg}"))
+                    }
+                })?;
+                let draft = db::get_game_draft(pool, draft_id)
+                    .await
+                    .map_err(|e| Error::new(format!("db: {e}")))?
+                    .map(map_draft);
+                Ok(UploadGameZipResultGql {
+                    upload_id: upload_id.to_string().into(),
+                    draft,
+                    report: map_validation_report(ok.report),
+                })
+            }
+            Err(report_err) => {
+                println!("upload_game_zip: validation failed for user={}", uid);
+                let report: ValidationReport = serde_json::from_str(&report_err).unwrap_or(ValidationReport {
+                    ok: false,
+                    errors: 1,
+                    warnings: 0,
+                    infos: 0,
+                    required_index_html: false,
+                    required_config_html: false,
+                    required_result_html: false,
+                    diagnostics: vec![crate::game_upload::ValidationDiagnostic {
+                        severity: "error".to_string(),
+                        code: "E_UPLOAD_VALIDATION_FAILED".to_string(),
+                        message: report_err.clone(),
+                        path: None,
+                        hint: None,
+                    }],
+                });
+                let report_json = serde_json::to_string(&report)
+                    .unwrap_or_else(|_| "{\"ok\":false}".to_string());
+                let upload_id = db::insert_upload(pool, uid, &filename, "rejected", &report_json)
+                    .await
+                    .map_err(|e| Error::new(format!("db: {e}")))?;
+                Ok(UploadGameZipResultGql {
+                    upload_id: upload_id.to_string().into(),
+                    draft: None,
+                    report: map_validation_report(report),
+                })
+            }
+        }
+    }
+
+    async fn publish_game_draft(
+        &self,
+        ctx: &Context<'_>,
+        draft_id: async_graphql::types::ID,
+    ) -> Result<GameDraftGql> {
+        let uid = require_developer_user(ctx).await?;
+        println!("publish_game_draft: user={} draft={}", uid, draft_id.as_str());
+        let pool = ctx.data::<SqlitePool>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let draft = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found"))?;
+        if draft.owner_user_id != uid {
+            return Err(Error::new("not your draft"));
+        }
+        if draft.status != "ready" {
+            return Err(Error::new("draft is not publishable"));
+        }
+        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
+        let staged = PathBuf::from(&draft.storage_path);
+        publish_staged_game(&staged, games_dir, &draft.game_name).map_err(Error::new)?;
+        db::mark_draft_published(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        {
+            let mut reg = registry
+                .write()
+                .map_err(|_| Error::new("registry lock poisoned"))?;
+            reg.reload(games_dir, component_db);
+        }
+        let out = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found after publish"))?;
+        Ok(map_draft(out))
+    }
+
+    /// Take down the live game for this draft's folder name when this draft is the latest published
+    /// build for that name; otherwise only this row is demoted to `ready` (a newer published version
+    /// still owns the live folder).
+    async fn unpublish_game_draft(
+        &self,
+        ctx: &Context<'_>,
+        draft_id: async_graphql::types::ID,
+    ) -> Result<GameDraftGql> {
+        let uid = require_developer_user(ctx).await?;
+        println!("unpublish_game_draft: user={} draft={}", uid, draft_id.as_str());
+        let pool = ctx.data::<SqlitePool>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let draft = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found"))?;
+        if draft.owner_user_id != uid {
+            return Err(Error::new("not your draft"));
+        }
+        if draft.status != "published" {
+            return Err(Error::new("draft is not published"));
+        }
+        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
+
+        let max_pa = db::max_published_at_for_game_name(pool, &draft.game_name)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let my_pa = draft.published_at;
+        let this_is_latest_published = matches!((my_pa, max_pa), (Some(t), Some(m)) if t == m);
+
+        if this_is_latest_published {
+            remove_published_game_dir(games_dir, &draft.game_name).map_err(Error::new)?;
+            db::demote_all_published_for_game_name(pool, &draft.game_name)
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
+        } else {
+            db::demote_single_published_draft(pool, did)
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
+        }
+
+        {
+            let mut reg = registry
+                .write()
+                .map_err(|_| Error::new("registry lock poisoned"))?;
+            reg.reload(games_dir, component_db);
+        }
+
+        let out = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found after unpublish"))?;
+        Ok(map_draft(out))
+    }
+
+    /// Update manifest identity fields on a **ready** draft (writes `manifest.json` in draft storage).
+    async fn update_game_draft_manifest(
+        &self,
+        ctx: &Context<'_>,
+        draft_id: async_graphql::types::ID,
+        name: String,
+        display_name: String,
+        version: String,
+        description: String,
+    ) -> Result<GameDraftGql> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let draft = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found"))?;
+        if draft.owner_user_id != uid {
+            return Err(Error::new("not your draft"));
+        }
+        if draft.status != "ready" {
+            return Err(Error::new("only ready drafts can be edited"));
+        }
+        validate_game_folder_name(&name).map_err(|m| Error::new(m.to_string()))?;
+        let dn = display_name.trim();
+        let ver = version.trim();
+        if dn.is_empty() {
+            return Err(Error::new("display_name must not be empty"));
+        }
+        if ver.is_empty() {
+            return Err(Error::new("version must not be empty"));
+        }
+        let mut manifest: crate::game_registry::GameManifest =
+            serde_json::from_str(&draft.manifest_json)
+                .map_err(|e| Error::new(format!("stored manifest is invalid: {e}")))?;
+        manifest.name = name.trim().to_string();
+        manifest.display_name = dn.to_string();
+        manifest.version = ver.to_string();
+        manifest.description = description;
+        let manifest_json = serde_json::to_string(&manifest)
+            .map_err(|e| Error::new(format!("serialize manifest: {e}")))?;
+        let clash = db::count_game_drafts_name_version_active(pool, &manifest.name, &manifest.version, Some(did))
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        if clash > 0 {
+            return Err(Error::new(
+                "Another draft or published record already uses this name and version. Pick a different combination.",
+            ));
+        }
+        let staged = PathBuf::from(&draft.storage_path);
+        if !staged.is_dir() {
+            return Err(Error::new("draft storage is missing on disk"));
+        }
+        write_manifest_to_staged_dir(&staged, &manifest).map_err(Error::new)?;
+        let updated = db::update_game_draft_manifest_columns(
+            pool,
+            did,
+            uid,
+            &manifest.name,
+            &manifest.display_name,
+            &manifest.version,
+            &manifest_json,
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
+        if !updated {
+            return Err(Error::new("failed to update draft"));
+        }
+        let out = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found after update"))?;
+        Ok(map_draft(out))
+    }
+
+    async fn discard_game_draft(
+        &self,
+        ctx: &Context<'_>,
+        draft_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_developer_user(ctx).await?;
+        println!("discard_game_draft: user={} draft={}", uid, draft_id.as_str());
+        let pool = ctx.data::<SqlitePool>()?;
+        let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let draft = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found"))?;
+        if draft.owner_user_id != uid {
+            return Err(Error::new("not your draft"));
+        }
+        if draft.status == "published" {
+            return Err(Error::new(
+                "cannot discard a published draft; take it down from the lobby first",
+            ));
+        }
+        db::mark_draft_discarded(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let p = PathBuf::from(draft.storage_path);
+        if p.exists() {
+            let _ = std::fs::remove_dir_all(&p);
+        }
+        Ok(true)
+    }
+
     async fn create_game(
         &self,
         ctx: &Context<'_>,
@@ -458,13 +944,19 @@ impl MutationRoot {
         Ok(id.to_string().into())
     }
 
-    /// Game type only; lobby starts in `configuring` with no seats until config/type refresh.
-    async fn create_lobby(&self, ctx: &Context<'_>, game_type: String) -> Result<LobbyGql> {
+    /// New lobby with no game yet (`game_type` empty until owner calls `setLobbyGameType`).
+    /// Optional `game_type` is legacy; omit or pass empty and choose the game inside the lobby.
+    async fn create_lobby(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "gameType")] game_type: Option<String>,
+    ) -> Result<LobbyGql> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         let notify = ctx.data::<LobbyListNotify>()?;
         let lobby_id = Uuid::new_v4();
-        lobby_db::insert_lobby_skeleton(pool, lobby_id, uid, &game_type)
+        let gt = game_type.unwrap_or_default();
+        lobby_db::insert_lobby_skeleton(pool, lobby_id, uid, &gt)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         notify.ping();
@@ -614,6 +1106,9 @@ impl MutationRoot {
         }
         if detail.status != "waiting" && detail.status != "configuring" {
             return Err(Error::new("lobby cannot be started in this state"));
+        }
+        if detail.game_type.trim().is_empty() {
+            return Err(Error::new("choose a game type in the lobby before starting"));
         }
         let total = detail.seats.len();
         let claimed = detail

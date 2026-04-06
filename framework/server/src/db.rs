@@ -261,3 +261,257 @@ pub async fn set_password_hash(pool: &SqlitePool, id: Uuid, hash: &str) -> Resul
         .await?;
     Ok(())
 }
+
+#[derive(Debug, Clone)]
+pub struct GameDraftRow {
+    pub id: Uuid,
+    pub upload_id: Uuid,
+    pub owner_user_id: Uuid,
+    pub game_name: String,
+    pub display_name: String,
+    pub version: String,
+    pub status: String,
+    pub manifest_json: String,
+    pub report_json: String,
+    pub storage_path: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub published_at: Option<i64>,
+}
+
+pub async fn user_has_role(pool: &SqlitePool, user_id: Uuid, role: &str) -> Result<bool, sqlx::Error> {
+    let c: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_roles WHERE user_id = ? AND role = ?")
+        .bind(user_id.to_string())
+        .bind(role)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    Ok(c > 0)
+}
+
+pub async fn grant_role(pool: &SqlitePool, user_id: Uuid, role: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT OR IGNORE INTO user_roles (user_id, role, created_at) VALUES (?, ?, ?)")
+        .bind(user_id.to_string())
+        .bind(role)
+        .bind(GameInstanceStore::now_secs())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_upload(
+    pool: &SqlitePool,
+    owner_user_id: Uuid,
+    filename: &str,
+    status: &str,
+    report_json: &str,
+) -> Result<Uuid, sqlx::Error> {
+    let id = Uuid::new_v4();
+    let now = GameInstanceStore::now_secs();
+    sqlx::query(
+        "INSERT INTO game_uploads (id, owner_user_id, filename, status, report_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(id.to_string())
+    .bind(owner_user_id.to_string())
+    .bind(filename)
+    .bind(status)
+    .bind(report_json)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+pub struct NewDraft<'a> {
+    pub upload_id: Uuid,
+    pub owner_user_id: Uuid,
+    pub game_name: &'a str,
+    pub display_name: &'a str,
+    pub version: &'a str,
+    pub status: &'a str,
+    pub manifest_json: &'a str,
+    pub report_json: &'a str,
+    pub storage_path: &'a str,
+}
+
+pub async fn insert_game_draft(pool: &SqlitePool, draft: NewDraft<'_>) -> Result<Uuid, sqlx::Error> {
+    let id = Uuid::new_v4();
+    let now = GameInstanceStore::now_secs();
+    sqlx::query(
+        r#"INSERT INTO game_drafts
+           (id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)"#,
+    )
+    .bind(id.to_string())
+    .bind(draft.upload_id.to_string())
+    .bind(draft.owner_user_id.to_string())
+    .bind(draft.game_name)
+    .bind(draft.display_name)
+    .bind(draft.version)
+    .bind(draft.status)
+    .bind(draft.manifest_json)
+    .bind(draft.report_json)
+    .bind(draft.storage_path)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+fn map_draft_row(r: sqlx::sqlite::SqliteRow) -> Option<GameDraftRow> {
+    let id_s: String = r.get("id");
+    let upload_s: String = r.get("upload_id");
+    let owner_s: String = r.get("owner_user_id");
+    Some(GameDraftRow {
+        id: Uuid::parse_str(&id_s).ok()?,
+        upload_id: Uuid::parse_str(&upload_s).ok()?,
+        owner_user_id: Uuid::parse_str(&owner_s).ok()?,
+        game_name: r.get("game_name"),
+        display_name: r.get("display_name"),
+        version: r.get("version"),
+        status: r.get("status"),
+        manifest_json: r.get("manifest_json"),
+        report_json: r.get("report_json"),
+        storage_path: r.get("storage_path"),
+        created_at: r.get("created_at"),
+        updated_at: r.get("updated_at"),
+        published_at: r.get("published_at"),
+    })
+}
+
+pub async fn list_game_drafts_for_owner(pool: &SqlitePool, owner_user_id: Uuid) -> Result<Vec<GameDraftRow>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE owner_user_id = ? ORDER BY created_at DESC",
+    )
+    .bind(owner_user_id.to_string())
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().filter_map(map_draft_row).collect())
+}
+
+pub async fn get_game_draft(pool: &SqlitePool, draft_id: Uuid) -> Result<Option<GameDraftRow>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE id = ?",
+    )
+    .bind(draft_id.to_string())
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(map_draft_row))
+}
+
+pub async fn mark_draft_published(pool: &SqlitePool, draft_id: Uuid) -> Result<(), sqlx::Error> {
+    let now = GameInstanceStore::now_secs();
+    sqlx::query("UPDATE game_drafts SET status = 'published', published_at = ?, updated_at = ? WHERE id = ?")
+        .bind(now)
+        .bind(now)
+        .bind(draft_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_draft_discarded(pool: &SqlitePool, draft_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE game_drafts SET status = 'discarded', updated_at = ? WHERE id = ?")
+        .bind(GameInstanceStore::now_secs())
+        .bind(draft_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Latest `published_at` among drafts with `status = 'published'` for this folder name (`game_name`).
+pub async fn max_published_at_for_game_name(
+    pool: &SqlitePool,
+    game_name: &str,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT MAX(published_at) FROM game_drafts WHERE game_name = ? AND status = 'published'",
+    )
+    .bind(game_name)
+    .fetch_one(pool)
+    .await
+}
+
+/// Set every `published` draft for `game_name` back to `ready` and clear `published_at`
+/// (live folder was removed; no row should stay `published` for that folder id).
+pub async fn demote_all_published_for_game_name(pool: &SqlitePool, game_name: &str) -> Result<(), sqlx::Error> {
+    let now = GameInstanceStore::now_secs();
+    sqlx::query(
+        "UPDATE game_drafts SET status = 'ready', published_at = NULL, updated_at = ? WHERE game_name = ? AND status = 'published'",
+    )
+    .bind(now)
+    .bind(game_name)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Set a single `published` draft back to `ready` (older published row while a newer version is live).
+pub async fn demote_single_published_draft(pool: &SqlitePool, draft_id: Uuid) -> Result<(), sqlx::Error> {
+    let now = GameInstanceStore::now_secs();
+    sqlx::query(
+        "UPDATE game_drafts SET status = 'ready', published_at = NULL, updated_at = ? WHERE id = ? AND status = 'published'",
+    )
+    .bind(now)
+    .bind(draft_id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Counts drafts that reserve `game_name` + `version` in `ready` or `published` status.
+pub async fn count_game_drafts_name_version_active(
+    pool: &SqlitePool,
+    game_name: &str,
+    version: &str,
+    exclude_draft_id: Option<Uuid>,
+) -> Result<i64, sqlx::Error> {
+    match exclude_draft_id {
+        Some(ex) => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM game_drafts WHERE game_name = ? AND version = ? AND status IN ('ready', 'published') AND id != ?",
+            )
+            .bind(game_name)
+            .bind(version)
+            .bind(ex.to_string())
+            .fetch_one(pool)
+            .await
+        }
+        None => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM game_drafts WHERE game_name = ? AND version = ? AND status IN ('ready', 'published')",
+            )
+            .bind(game_name)
+            .bind(version)
+            .fetch_one(pool)
+            .await
+        }
+    }
+}
+
+pub async fn update_game_draft_manifest_columns(
+    pool: &SqlitePool,
+    draft_id: Uuid,
+    owner_user_id: Uuid,
+    game_name: &str,
+    display_name: &str,
+    version: &str,
+    manifest_json: &str,
+) -> Result<bool, sqlx::Error> {
+    let now = GameInstanceStore::now_secs();
+    let r = sqlx::query(
+        "UPDATE game_drafts SET game_name = ?, display_name = ?, version = ?, manifest_json = ?, updated_at = ? WHERE id = ? AND owner_user_id = ? AND status = 'ready'",
+    )
+    .bind(game_name)
+    .bind(display_name)
+    .bind(version)
+    .bind(manifest_json)
+    .bind(now)
+    .bind(draft_id.to_string())
+    .bind(owner_user_id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected() > 0)
+}

@@ -4,7 +4,7 @@
 
 @layer components {
   .config-iframe {
-    @apply w-full min-h-[12rem] rounded-lg border border-gray-700 bg-gray-950;
+    @apply w-full min-h-[12rem] rounded-xl border border-indigo-500/20 bg-gray-950/90 shadow-inner shadow-black/20 ring-1 ring-white/5;
   }
 
   .config-preview-json {
@@ -12,7 +12,7 @@
   }
 
   .lobby-room-grid {
-    @apply grid items-start gap-5;
+    @apply grid items-start gap-6;
     grid-template-columns: 1fr 2fr 1fr;
   }
 
@@ -23,7 +23,7 @@
   }
 
   .lobby-col {
-    @apply min-w-0;
+    @apply min-w-0 rounded-2xl border border-gray-700/70 bg-gray-900/50 p-4 sm:p-5 shadow-lg shadow-black/20 backdrop-blur-sm;
   }
 
   .lobby-type-list {
@@ -31,15 +31,15 @@
   }
 
   .lobby-type-btn {
-    @apply block w-full cursor-pointer rounded-md border border-gray-700 bg-gray-800 py-2 px-3 text-left text-sm text-gray-200;
+    @apply flex w-full flex-col items-stretch cursor-pointer rounded-xl border border-gray-600/80 bg-gray-800/80 py-2.5 px-3 text-left text-sm text-gray-100 transition-colors;
   }
 
   .lobby-type-btn:hover:not(:disabled) {
-    @apply bg-gray-700;
+    @apply border-gray-500 bg-gray-700/90;
   }
 
   .lobby-type-btn.active {
-    @apply border-indigo-500 bg-indigo-950;
+    @apply border-indigo-400/70 bg-gradient-to-r from-indigo-950/90 to-violet-950/50 text-white shadow-md shadow-indigo-900/30;
   }
 
   .lobby-type-btn:disabled {
@@ -47,6 +47,6 @@
   }
 
   .lobby-chat-messages {
-    @apply max-h-40 overflow-y-auto rounded-md border border-gray-700 bg-gray-950 p-2;
+    @apply max-h-44 overflow-y-auto rounded-xl border border-indigo-500/15 bg-gray-950/80 p-3 shadow-inner;
   }
 }

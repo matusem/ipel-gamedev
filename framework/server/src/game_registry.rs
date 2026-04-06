@@ -40,13 +40,19 @@ pub struct GameRegistry {
 
 impl GameRegistry {
     pub fn load(games_dir: &Path, component_db: &ComponentDb) -> Self {
+        let game_types = Self::scan_game_types(games_dir, component_db);
+        println!("Loaded {} game type(s)", game_types.len());
+        Self { game_types }
+    }
+
+    fn scan_game_types(games_dir: &Path, component_db: &ComponentDb) -> Vec<GameType> {
         let mut game_types = Vec::new();
 
         let entries = match std::fs::read_dir(games_dir) {
             Ok(entries) => entries,
             Err(e) => {
                 println!("Warning: could not read GAMES_DIR '{}': {}", games_dir.display(), e);
-                return Self { game_types };
+                return game_types;
             }
         };
 
@@ -118,8 +124,12 @@ impl GameRegistry {
             });
         }
 
-        println!("Loaded {} game type(s)", game_types.len());
-        Self { game_types }
+        game_types
+    }
+
+    pub fn reload(&mut self, games_dir: &Path, component_db: &ComponentDb) {
+        self.game_types = Self::scan_game_types(games_dir, component_db);
+        println!("Reloaded {} game type(s)", self.game_types.len());
     }
 
     pub fn game_types(&self) -> &[GameType] {
@@ -132,4 +142,5 @@ impl GameRegistry {
             .find(|gt| gt.manifest.name == name)
             .map(|gt| gt.client_dir.as_path())
     }
+
 }

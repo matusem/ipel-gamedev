@@ -3,6 +3,7 @@
 
 use bevy::prelude::*;
 use bevy::sprite::MaterialMesh2dBundle;
+use bevy::ui::{BorderColor, BorderRadius};
 use bevy::window::PrimaryWindow;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
@@ -15,6 +16,16 @@ use std::sync::{Arc, Mutex};
 
 const CELL: f32 = 56.0;
 
+/// HUD palette aligned with the wooden board tones.
+const HUD_PANEL_BG: Color = Color::srgb(0.13, 0.11, 0.10);
+const HUD_PANEL_BORDER: Color = Color::srgb(0.46, 0.38, 0.30);
+const HUD_MUTED: Color = Color::srgb(0.58, 0.54, 0.50);
+const HUD_TITLE: Color = Color::srgb(0.97, 0.94, 0.88);
+const HUD_DIVIDER: Color = Color::srgb(0.32, 0.28, 0.24);
+const HUD_PATH: Color = Color::srgb(0.98, 0.70, 0.36);
+const HUD_BTN_SEND: Color = Color::srgb(0.20, 0.50, 0.38);
+const HUD_BTN_CLEAR: Color = Color::srgb(0.50, 0.26, 0.24);
+
 #[derive(Resource, Default, Clone)]
 struct WsInbox(Arc<Mutex<Vec<String>>>);
 
@@ -23,6 +34,17 @@ struct NetModel {
     snapshot: Option<PlayerState>,
     path: Vec<Cell>,
     status: String,
+}
+
+/// Clears stale send/path messages once the player changes the path (e.g. after "Path needs at least 2 cells"
+/// while building a valid path, the HUD line must not keep prefixing that error).
+fn refresh_status_after_path_edit(model: &mut NetModel) {
+    if model.status.starts_with("Game over") {
+        return;
+    }
+    if model.snapshot.is_some() {
+        model.status = "In game".into();
+    }
 }
 
 #[derive(Resource, Clone)]
@@ -86,7 +108,7 @@ fn main() {
                 sync_built_path_visual,
                 button_send,
                 button_clear,
-                update_status_text,
+                update_hud,
             ),
         )
         .init_resource::<LastBoardSig>()
@@ -103,7 +125,16 @@ struct BoardCell {
 }
 
 #[derive(Component)]
-struct StatusText;
+struct HudStatusLine;
+
+#[derive(Component)]
+struct HudYouRole;
+
+#[derive(Component)]
+struct HudTurnRole;
+
+#[derive(Component)]
+struct HudPathLine;
 
 #[derive(Component)]
 struct SendBtn;
@@ -197,21 +228,64 @@ fn board_signature(ps: &PlayerState) -> u64 {
     }
 }
 
-/// Vertical screen row for drawing: Dark sits at the bottom (near side).
-fn view_display_row(logical_row: u8, seat: Player) -> u8 {
-    match seat {
-        Player::Dark => 7u8.saturating_sub(logical_row),
-        Player::Light => logical_row,
+/// Board layout: one coordinate system for sprites, pieces, highlights, and picking.
+/// Logical `(row,col)` is the wire/game state. Seat `Dark` rotates the view 180° (near side + correct left/right).
+mod board_geom {
+    use super::{Cell, Player, Vec2, CELL};
+
+    /// World position of the **center** of cell (0,0) in view space (top-left on screen for Light).
+    const ORIGIN: Vec2 = Vec2::new(-4.0 * CELL + 0.5 * CELL, 4.0 * CELL - 0.5 * CELL);
+
+    #[inline]
+    fn logical_to_view(row: u8, col: u8, seat: Player) -> (u8, u8) {
+        match seat {
+            Player::Light => (row, col),
+            Player::Dark => (7u8.saturating_sub(row), 7u8.saturating_sub(col)),
+        }
+    }
+
+    #[inline]
+    fn view_to_logical(view_row: u8, view_col: u8, seat: Player) -> Cell {
+        match seat {
+            Player::Light => Cell {
+                row: view_row,
+                col: view_col,
+            },
+            Player::Dark => Cell {
+                row: 7u8.saturating_sub(view_row),
+                col: 7u8.saturating_sub(view_col),
+            },
+        }
+    }
+
+    /// Center of the logical cell in world space (must match spawned tile sprites).
+    pub fn cell_center_world(logical: Cell, seat: Player) -> Vec2 {
+        let (vr, vc) = logical_to_view(logical.row, logical.col, seat);
+        Vec2::new(
+            ORIGIN.x + vc as f32 * CELL,
+            ORIGIN.y - vr as f32 * CELL,
+        )
+    }
+
+    /// Inverse of [`cell_center_world`]: which logical dark square was hit (if any).
+    pub fn world_to_logical_cell(world: Vec2, seat: Player) -> Option<Cell> {
+        let dx = (world.x - ORIGIN.x) / CELL;
+        let dy = (ORIGIN.y - world.y) / CELL;
+        let vr = (dy + 0.5).floor() as i32;
+        let vc = (dx + 0.5).floor() as i32;
+        if !(0..=7).contains(&vr) || !(0..=7).contains(&vc) {
+            return None;
+        }
+        Some(view_to_logical(vr as u8, vc as u8, seat))
     }
 }
 
+use board_geom::{cell_center_world, world_to_logical_cell};
+
+#[inline]
 fn board_cell_world_xy(logical_row: u8, col: u8, seat: Player) -> (f32, f32) {
-    let ox = -4.0 * CELL + CELL / 2.0;
-    let oy = 4.0 * CELL - CELL / 2.0;
-    let vr = view_display_row(logical_row, seat);
-    let x = ox + col as f32 * CELL;
-    let y = oy - vr as f32 * CELL;
-    (x, y)
+    let p = cell_center_world(Cell { row: logical_row, col }, seat);
+    (p.x, p.y)
 }
 
 fn sync_board_cell_layout(
@@ -294,14 +368,10 @@ async fn connect_ws(inbox: WsInbox, ws_slot: Arc<Mutex<Option<web_sys::WebSocket
 fn setup_scene(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 
-    let ox = -4.0 * CELL + CELL / 2.0;
-    let oy = 4.0 * CELL - CELL / 2.0;
-
     for row in 0..8u8 {
         for col in 0..8u8 {
             let dark = (row + col) % 2 == 1;
-            let x = ox + col as f32 * CELL;
-            let y = oy - row as f32 * CELL;
+            let p = cell_center_world(Cell { row, col }, Player::Light);
             let color = if dark {
                 Color::srgb(0.38, 0.24, 0.14)
             } else {
@@ -314,7 +384,7 @@ fn setup_scene(mut commands: Commands) {
                         custom_size: Some(Vec2::splat(CELL - 2.0)),
                         ..default()
                     },
-                    transform: Transform::from_xyz(x, y, 0.0),
+                    transform: Transform::from_xyz(p.x, p.y, 0.0),
                     ..default()
                 },
                 BoardCell { row, col },
@@ -322,92 +392,204 @@ fn setup_scene(mut commands: Commands) {
         }
     }
 
+    let label_style = TextStyle {
+        font_size: 12.0,
+        color: HUD_MUTED,
+        ..default()
+    };
+    let value_style = TextStyle {
+        font_size: 14.0,
+        color: HUD_TITLE,
+        ..default()
+    };
+
     commands
         .spawn(NodeBundle {
             style: Style {
                 position_type: PositionType::Absolute,
-                top: Val::Px(6.0),
-                left: Val::Px(6.0),
+                top: Val::Px(10.0),
+                left: Val::Px(10.0),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(6.0),
-                padding: UiRect::all(Val::Px(8.0)),
+                row_gap: Val::Px(10.0),
+                padding: UiRect::all(Val::Px(16.0)),
+                min_width: Val::Px(268.0),
+                max_width: Val::Px(360.0),
+                border: UiRect::all(Val::Px(1.0)),
                 ..default()
             },
-            background_color: Color::srgba(0.0, 0.0, 0.0, 0.55).into(),
+            background_color: BackgroundColor(HUD_PANEL_BG),
+            border_color: BorderColor(HUD_PANEL_BORDER),
+            border_radius: BorderRadius::all(Val::Px(12.0)),
             ..default()
         })
         .with_children(|p| {
             p.spawn(TextBundle::from_section(
-                "Checkers — dark squares only. Build path, then Send.",
+                "Checkers",
                 TextStyle {
-                    font_size: 15.0,
-                    color: Color::WHITE,
+                    font_size: 20.0,
+                    color: HUD_TITLE,
+                    ..default()
+                },
+            ));
+            p.spawn(TextBundle::from_section(
+                "Tap dark squares to build a path, then send your move.",
+                TextStyle {
+                    font_size: 12.5,
+                    color: HUD_MUTED,
+                    ..default()
+                },
+            ));
+            p.spawn(NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(1.0),
+                    margin: UiRect::vertical(Val::Px(2.0)),
+                    ..default()
+                },
+                background_color: BackgroundColor(HUD_DIVIDER),
+                ..default()
+            });
+            p.spawn(TextBundle::from_section(
+                "Message",
+                TextStyle {
+                    font_size: 11.0,
+                    color: HUD_MUTED,
                     ..default()
                 },
             ));
             p.spawn((
                 TextBundle::from_section(
-                    "",
+                    "…",
                     TextStyle {
-                        font_size: 13.0,
-                        color: Color::srgb(0.75, 0.9, 1.0),
+                        font_size: 15.0,
+                        color: Color::srgb(0.78, 0.82, 0.90),
                         ..default()
                     },
                 ),
-                StatusText,
+                HudStatusLine,
+            ));
+            p.spawn(NodeBundle {
+                style: Style {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(28.0),
+                    align_items: AlignItems::FlexStart,
+                    ..default()
+                },
+                ..default()
+            })
+            .with_children(|row| {
+                row.spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(4.0),
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|col| {
+                    col.spawn(TextBundle::from_section(
+                        "You play as",
+                        label_style.clone(),
+                    ));
+                    col.spawn((
+                        TextBundle::from_section("?", value_style.clone()),
+                        HudYouRole,
+                    ));
+                });
+                row.spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(4.0),
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|col| {
+                    col.spawn(TextBundle::from_section(
+                        "Current turn",
+                        label_style.clone(),
+                    ));
+                    col.spawn((
+                        TextBundle::from_section("?", value_style.clone()),
+                        HudTurnRole,
+                    ));
+                });
+            });
+            p.spawn((
+                TextBundle::from_sections([
+                    TextSection::new("Path\n", label_style.clone()),
+                    TextSection::new(
+                        "—",
+                        TextStyle {
+                            font_size: 14.0,
+                            color: HUD_PATH,
+                            ..default()
+                        },
+                    ),
+                ]),
+                HudPathLine,
             ));
             p.spawn(NodeBundle {
                 style: Style {
                     flex_direction: FlexDirection::Row,
                     column_gap: Val::Px(10.0),
                     align_items: AlignItems::Center,
+                    margin: UiRect::top(Val::Px(6.0)),
                     ..default()
                 },
                 ..default()
             })
-            .with_children(|p| {
-                p.spawn((
-                    ButtonBundle {
-                        style: Style {
-                            padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
+            .with_children(|btn_row| {
+                btn_row
+                    .spawn((
+                        ButtonBundle {
+                            style: Style {
+                                padding: UiRect::axes(Val::Px(18.0), Val::Px(10.0)),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BackgroundColor(HUD_BTN_SEND),
+                            border_radius: BorderRadius::all(Val::Px(8.0)),
                             ..default()
                         },
-                        background_color: Color::srgb(0.2, 0.5, 0.28).into(),
-                        ..default()
-                    },
-                    SendBtn,
-                ))
-                .with_children(|c| {
-                    c.spawn(TextBundle::from_section(
-                        "Send move",
-                        TextStyle {
-                            font_size: 14.0,
-                            color: Color::WHITE,
+                        SendBtn,
+                    ))
+                    .with_children(|c| {
+                        c.spawn(TextBundle::from_section(
+                            "Send move",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: HUD_TITLE,
+                                ..default()
+                            },
+                        ));
+                    });
+                btn_row
+                    .spawn((
+                        ButtonBundle {
+                            style: Style {
+                                padding: UiRect::axes(Val::Px(18.0), Val::Px(10.0)),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            background_color: BackgroundColor(HUD_BTN_CLEAR),
+                            border_radius: BorderRadius::all(Val::Px(8.0)),
                             ..default()
                         },
-                    ));
-                });
-                p.spawn((
-                    ButtonBundle {
-                        style: Style {
-                            padding: UiRect::axes(Val::Px(14.0), Val::Px(8.0)),
-                            ..default()
-                        },
-                        background_color: Color::srgb(0.5, 0.25, 0.2).into(),
-                        ..default()
-                    },
-                    ClearBtn,
-                ))
-                .with_children(|c| {
-                    c.spawn(TextBundle::from_section(
-                        "Clear path",
-                        TextStyle {
-                            font_size: 14.0,
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    ));
-                });
+                        ClearBtn,
+                    ))
+                    .with_children(|c| {
+                        c.spawn(TextBundle::from_section(
+                            "Clear path",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: HUD_TITLE,
+                                ..default()
+                            },
+                        ));
+                    });
             });
         });
 }
@@ -459,7 +641,6 @@ fn board_click(
     mouse: Res<ButtonInput<MouseButton>>,
     q_window: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
-    q_cell: Query<(&GlobalTransform, &Sprite, &BoardCell)>,
     mut model: ResMut<NetModel>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
@@ -479,33 +660,27 @@ fn board_click(
     };
     let world = ray.origin.truncate();
 
-    let mut clicked_on_board = false;
-    for (tf, sprite, cell) in q_cell.iter() {
-        let center = tf.translation().truncate();
-        let half = sprite.custom_size.unwrap_or(Vec2::ONE) * 0.5;
-        let d = world - center;
-        if d.x.abs() <= half.x && d.y.abs() <= half.y {
-            clicked_on_board = true;
-        }
-        if d.x.abs() <= half.x && d.y.abs() <= half.y && (cell.row + cell.col) % 2 == 1 {
-            let clicked = Cell {
-                row: cell.row,
-                col: cell.col,
-            };
-            if let Some(snap) = model.snapshot.as_ref() {
-                let allowed = legal_next_cells(&snap.state, snap.player, &model.path);
-                if !allowed.contains(&clicked) {
-                    model.status = "That square is not a legal next step".into();
-                    break;
-                }
-            }
-            model.path.push(clicked);
-            break;
+    let seat = model
+        .snapshot
+        .as_ref()
+        .map(|s| s.player)
+        .unwrap_or(Player::Light);
+    let Some(clicked) = world_to_logical_cell(world, seat) else {
+        return;
+    };
+
+    if (clicked.row + clicked.col) % 2 == 0 {
+        return;
+    }
+    if let Some(snap) = model.snapshot.as_ref() {
+        let allowed = legal_next_cells(&snap.state, snap.player, &model.path);
+        if !allowed.contains(&clicked) {
+            model.status = "That square is not a legal next step".into();
+            return;
         }
     }
-    if !clicked_on_board {
-        model.path.clear();
-    }
+    model.path.push(clicked);
+    refresh_status_after_path_edit(&mut model);
 }
 
 fn button_send(
@@ -552,6 +727,7 @@ fn button_clear(
     for i in interaction.iter() {
         if *i == Interaction::Pressed {
             model.path.clear();
+            refresh_status_after_path_edit(&mut model);
         }
     }
 }
@@ -781,30 +957,121 @@ fn sync_built_path_visual(
     }
 }
 
-fn update_status_text(model: Res<NetModel>, mut q: Query<&mut Text, With<StatusText>>) {
-    let path_s = model
-        .path
-        .iter()
-        .map(|c| format!("({},{})", c.row, c.col))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let turn = model
-        .snapshot
-        .as_ref()
-        .map(|s| format!("{:?}", s.state.current_player))
-        .unwrap_or_else(|| "?".into());
+fn hud_status_color(status: &str) -> Color {
+    let lower = status.to_lowercase();
+    if status.starts_with("Game over") {
+        Color::srgb(0.92, 0.72, 0.48)
+    } else if lower.contains("not a legal")
+        || lower.contains("needs at least")
+        || lower.contains("no game state")
+        || lower.contains("no socket")
+        || lower.contains("failed")
+        || lower.contains("error")
+        || lower.contains("illegal")
+        || lower.contains("missing")
+    {
+        Color::srgb(0.94, 0.52, 0.48)
+    } else if lower.contains("move sent")
+        || lower == "in game"
+        || lower.contains("connected")
+    {
+        Color::srgb(0.48, 0.88, 0.65)
+    } else {
+        Color::srgb(0.78, 0.82, 0.90)
+    }
+}
+
+fn hud_player_color(label: &str) -> Color {
+    match label {
+        "Dark" => Color::srgb(0.74, 0.70, 0.88),
+        "Light" => Color::srgb(0.98, 0.95, 0.78),
+        _ => Color::srgb(0.85, 0.82, 0.78),
+    }
+}
+
+fn update_hud(
+    model: Res<NetModel>,
+    mut q_status: Query<
+        &mut Text,
+        (
+            With<HudStatusLine>,
+            Without<HudYouRole>,
+            Without<HudTurnRole>,
+            Without<HudPathLine>,
+        ),
+    >,
+    mut q_you: Query<
+        &mut Text,
+        (
+            With<HudYouRole>,
+            Without<HudStatusLine>,
+            Without<HudTurnRole>,
+            Without<HudPathLine>,
+        ),
+    >,
+    mut q_turn: Query<
+        &mut Text,
+        (
+            With<HudTurnRole>,
+            Without<HudStatusLine>,
+            Without<HudYouRole>,
+            Without<HudPathLine>,
+        ),
+    >,
+    mut q_path: Query<
+        &mut Text,
+        (
+            With<HudPathLine>,
+            Without<HudStatusLine>,
+            Without<HudYouRole>,
+            Without<HudTurnRole>,
+        ),
+    >,
+) {
     let you = model
         .snapshot
         .as_ref()
         .map(|s| format!("{:?}", s.player))
         .unwrap_or_else(|| "?".into());
-    let line = format!(
-        "{} | You: {} | Turn: {} | Path: {}",
-        model.status, you, turn, path_s
-    );
-    for mut t in q.iter_mut() {
+    let turn = model
+        .snapshot
+        .as_ref()
+        .map(|s| format!("{:?}", s.state.current_player))
+        .unwrap_or_else(|| "?".into());
+
+    let path_s = model
+        .path
+        .iter()
+        .map(|c| format!("({}, {})", c.row, c.col))
+        .collect::<Vec<_>>()
+        .join(" → ");
+    let path_display = if path_s.is_empty() {
+        "—".into()
+    } else {
+        path_s
+    };
+
+    for mut t in q_status.iter_mut() {
         if let Some(s) = t.sections.first_mut() {
-            s.value = line.clone();
+            s.value = model.status.clone();
+            s.style.color = hud_status_color(&model.status);
+        }
+    }
+    for mut t in q_you.iter_mut() {
+        if let Some(s) = t.sections.first_mut() {
+            s.value = you.clone();
+            s.style.color = hud_player_color(you.as_str());
+        }
+    }
+    for mut t in q_turn.iter_mut() {
+        if let Some(s) = t.sections.first_mut() {
+            s.value = turn.clone();
+            s.style.color = hud_player_color(turn.as_str());
+        }
+    }
+    for mut t in q_path.iter_mut() {
+        if t.sections.len() >= 2 {
+            t.sections[1].value = path_display.clone();
         }
     }
 }
