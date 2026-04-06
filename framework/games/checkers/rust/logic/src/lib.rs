@@ -21,6 +21,8 @@
 //!   start a maximum-capture path with a man; only king-led max captures are legal among captures.
 //! - **Flying king captures**: along a diagonal jump, any number of empty squares may sit before the jumped
 //!   enemy and before the landing square.
+//! - **Crown ends the turn**: if a **man** promotes to king by landing on the far rank **during a capture
+//!   sequence**, that turn stops immediately (no further jumps as a king in the same move).
 //!
 //! ## Game over
 //! - Side to move has **no legal moves**, or **no pieces** → opponent wins.
@@ -216,7 +218,7 @@ impl GamePlayerStateTrait<Checkers> for PlayerState {
             return Err("Move path needs at least start and end cell".into());
         }
         let path = MovePath(action.0.clone());
-        if !legal_moves(&self.state, self.player).contains(&path) {
+        if !is_legal_move(&self.state, self.player, &path) {
             return Err("Illegal move".into());
         }
         Ok(())
@@ -310,6 +312,15 @@ fn forward_dir(owner: Player) -> i8 {
     }
 }
 
+/// Row index where this owner's men promote (Dark: 7, Light: 0).
+#[inline]
+fn promotion_rank_row(owner: Player) -> u8 {
+    match owner {
+        Player::Dark => 7,
+        Player::Light => 0,
+    }
+}
+
 /// Single-step deltas for men (non-capture): one step diagonally forward.
 fn man_step_deltas(owner: Player) -> [(i8, i8); 2] {
     let f = forward_dir(owner);
@@ -366,10 +377,8 @@ fn maybe_promote(mut p: Piece, at: Cell) -> Piece {
     if p.kind != PieceKind::Man {
         return p;
     }
-    match p.owner {
-        Player::Dark if at.row == 7 => p.kind = PieceKind::King,
-        Player::Light if at.row == 0 => p.kind = PieceKind::King,
-        _ => {}
+    if at.row == promotion_rank_row(p.owner) {
+        p.kind = PieceKind::King;
     }
     p
 }
@@ -480,15 +489,16 @@ fn apply_turn_for_player(board: &mut Board, path: &MovePath, player: Player) {
     }
 }
 
+/// Apply a path that is already rule-validated. Malformed paths (empty start square, too short) are ignored.
 fn apply_path_on_board(board: &mut Board, path: &MovePath) {
     let cells = &path.0;
     if cells.len() < 2 {
         return;
     }
     let start = cells[0];
-    let mut moving = board.cells[start.idx()]
-        .take()
-        .expect("validated path");
+    let Some(mut moving) = board.cells[start.idx()].take() else {
+        return;
+    };
     let mut cur = start;
     for w in cells.windows(2) {
         let b = w[1];
@@ -502,18 +512,16 @@ fn apply_path_on_board(board: &mut Board, path: &MovePath) {
 
 fn promote_men(board: &mut Board) {
     for col in 0..8u8 {
-        let c = Cell { row: 7, col };
-        if let Some(Some(mut p)) = board.get(c) {
-            if p.owner == Player::Dark && p.kind == PieceKind::Man {
-                p.kind = PieceKind::King;
-                board.set(c, Some(p));
-            }
-        }
-        let c2 = Cell { row: 0, col };
-        if let Some(Some(mut p)) = board.get(c2) {
-            if p.owner == Player::Light && p.kind == PieceKind::Man {
-                p.kind = PieceKind::King;
-                board.set(c2, Some(p));
+        for owner in [Player::Dark, Player::Light] {
+            let c = Cell {
+                row: promotion_rank_row(owner),
+                col,
+            };
+            if let Some(Some(mut p)) = board.get(c) {
+                if p.owner == owner && p.kind == PieceKind::Man {
+                    p.kind = PieceKind::King;
+                    board.set(c, Some(p));
+                }
             }
         }
     }
@@ -762,6 +770,12 @@ pub fn legal_moves(state: &State, player: Player) -> Vec<MovePath> {
     out
 }
 
+/// `true` when it is `player`'s turn and `path` appears in [`legal_moves`].
+#[inline]
+pub fn is_legal_move(state: &State, player: Player, path: &MovePath) -> bool {
+    player == state.current_player && legal_moves(state, player).contains(path)
+}
+
 /// Cells that may be chosen as the next step while building a path: empty prefix means
 /// legal move starts; otherwise extends a legal prefix (multi-jump chains).
 pub fn legal_next_cells(state: &State, player: Player, prefix: &[Cell]) -> Vec<Cell> {
@@ -875,6 +889,30 @@ impl GameCore for Checkers {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn piece_man(owner: Player) -> Piece {
+        Piece {
+            owner,
+            kind: PieceKind::Man,
+        }
+    }
+
+    fn piece_king(owner: Player) -> Piece {
+        Piece {
+            owner,
+            kind: PieceKind::King,
+        }
+    }
+
+    fn custom_state(current: Player, setup: impl FnOnce(&mut Board)) -> State {
+        let mut board = Board::test_empty();
+        setup(&mut board);
+        State {
+            config: Config,
+            board,
+            current_player: current,
+        }
+    }
 
     #[test]
     fn initial_dark_to_move() {
@@ -1091,5 +1129,198 @@ mod tests {
     fn player_outcome_json() {
         let win: game::PlayerEvent<Checkers> = game::PlayerEvent::GameOver(PlayerOutcome::Win);
         assert_eq!(serde_json::to_string(&win).unwrap(), r#"{"GameOver":"Win"}"#);
+    }
+
+    #[test]
+    fn apply_path_on_board_no_panic_when_start_empty() {
+        let mut b = Board::test_empty();
+        apply_path_on_board(
+            &mut b,
+            &MovePath(vec![
+                Cell { row: 2, col: 1 },
+                Cell { row: 3, col: 2 },
+            ]),
+        );
+        assert!(b.get(Cell { row: 2, col: 1 }).unwrap().is_none());
+    }
+
+    #[test]
+    fn path_is_non_capture_true_for_opening_man_slide() {
+        let s = Checkers::init(&Config);
+        let m = legal_moves(&s, Player::Dark)
+            .into_iter()
+            .find(|p| p.0.len() == 2)
+            .expect("opening simple move");
+        assert!(
+            path_is_non_capture(&s.board, &m.0),
+            "one-step man move should not capture"
+        );
+    }
+
+    #[test]
+    fn maybe_promote_man_only_on_far_rank() {
+        let m = piece_man(Player::Dark);
+        assert_eq!(maybe_promote(m, Cell { row: 6, col: 1 }).kind, PieceKind::Man);
+        assert_eq!(maybe_promote(m, Cell { row: 7, col: 0 }).kind, PieceKind::King);
+        let l = piece_man(Player::Light);
+        assert_eq!(maybe_promote(l, Cell { row: 1, col: 2 }).kind, PieceKind::Man);
+        assert_eq!(maybe_promote(l, Cell { row: 0, col: 1 }).kind, PieceKind::King);
+    }
+
+    #[test]
+    fn sub_max_capture_not_legal_when_longer_chain_exists() {
+        let s = custom_state(Player::Dark, |b| {
+            // Double jump from (2,1): (3,2) and (5,4) enemies, lands (4,3) then (6,5).
+            b.test_put(Cell { row: 2, col: 1 }, Some(piece_man(Player::Dark)));
+            b.test_put(Cell { row: 3, col: 2 }, Some(piece_man(Player::Light)));
+            b.test_put(Cell { row: 5, col: 4 }, Some(piece_man(Player::Light)));
+            // Single jump from (0,1): only one capture available.
+            b.test_put(Cell { row: 0, col: 1 }, Some(piece_man(Player::Dark)));
+            b.test_put(Cell { row: 1, col: 2 }, Some(piece_man(Player::Light)));
+        });
+        let sub = MovePath(vec![
+            Cell { row: 0, col: 1 },
+            Cell { row: 2, col: 3 },
+        ]);
+        assert!(
+            !legal_moves(&s, Player::Dark).contains(&sub),
+            "1-capture move should be illegal when 2-capture exists: {:?}",
+            legal_moves(&s, Player::Dark)
+        );
+        let full = MovePath(vec![
+            Cell { row: 2, col: 1 },
+            Cell { row: 4, col: 3 },
+            Cell { row: 6, col: 5 },
+        ]);
+        assert!(
+            legal_moves(&s, Player::Dark).contains(&full),
+            "2-capture chain should be legal; moves={:?}",
+            legal_moves(&s, Player::Dark)
+        );
+    }
+
+    #[test]
+    fn king_led_max_capture_excludes_man_start_when_both_reach_max() {
+        // King: double capture along (-1,-1). Man: double capture forward (dark +row) on another diagonal.
+        let s = custom_state(Player::Dark, |b| {
+            b.test_put(Cell { row: 4, col: 5 }, Some(piece_king(Player::Dark)));
+            b.test_put(Cell { row: 3, col: 4 }, Some(piece_man(Player::Light)));
+            b.test_put(Cell { row: 1, col: 2 }, Some(piece_man(Player::Light)));
+            b.test_put(Cell { row: 3, col: 2 }, Some(piece_man(Player::Dark)));
+            b.test_put(Cell { row: 4, col: 3 }, Some(piece_man(Player::Light)));
+            b.test_put(Cell { row: 6, col: 5 }, Some(piece_man(Player::Light)));
+        });
+        let king_path = MovePath(vec![
+            Cell { row: 4, col: 5 },
+            Cell { row: 2, col: 3 },
+            Cell { row: 0, col: 1 },
+        ]);
+        let man_path = MovePath(vec![
+            Cell { row: 3, col: 2 },
+            Cell { row: 5, col: 4 },
+            Cell { row: 7, col: 6 },
+        ]);
+        let moves = legal_moves(&s, Player::Dark);
+        assert!(
+            moves.contains(&king_path),
+            "king double capture should be legal; moves={moves:?}"
+        );
+        assert!(
+            !moves.contains(&man_path),
+            "man-led max capture should be excluded when king can also max; moves={moves:?}"
+        );
+    }
+
+    #[test]
+    fn king_can_chain_two_jumps_in_one_turn_when_already_king() {
+        let s = custom_state(Player::Dark, |b| {
+            b.test_put(Cell { row: 4, col: 5 }, Some(piece_king(Player::Dark)));
+            b.test_put(Cell { row: 3, col: 4 }, Some(piece_man(Player::Light)));
+            b.test_put(Cell { row: 1, col: 2 }, Some(piece_man(Player::Light)));
+        });
+        let p = MovePath(vec![
+            Cell { row: 4, col: 5 },
+            Cell { row: 2, col: 3 },
+            Cell { row: 0, col: 1 },
+        ]);
+        assert!(legal_moves(&s, Player::Dark).contains(&p));
+    }
+
+    #[test]
+    fn legal_next_cells_follows_multijump_prefix() {
+        let s = custom_state(Player::Dark, |b| {
+            b.test_put(Cell { row: 2, col: 1 }, Some(piece_man(Player::Dark)));
+            b.test_put(Cell { row: 3, col: 2 }, Some(piece_man(Player::Light)));
+            b.test_put(Cell { row: 5, col: 4 }, Some(piece_man(Player::Light)));
+        });
+        let first = Cell { row: 2, col: 1 };
+        let mid = Cell { row: 4, col: 3 };
+        let next = legal_next_cells(&s, Player::Dark, &[first]);
+        assert!(
+            next.contains(&mid),
+            "after first jump, next landing should be legal; got {next:?}"
+        );
+        let after_mid = legal_next_cells(&s, Player::Dark, &[first, mid]);
+        let end = Cell { row: 6, col: 5 };
+        assert!(
+            after_mid.contains(&end),
+            "after two-step prefix, terminal should be offered; got {after_mid:?}"
+        );
+    }
+
+    #[test]
+    fn cell_from_idx_roundtrip() {
+        for i in 0..64 {
+            let c = Cell::from_idx(i).unwrap();
+            assert_eq!(c.idx(), i);
+        }
+        assert!(Cell::from_idx(64).is_none());
+    }
+
+    #[test]
+    fn game_over_when_side_to_move_has_no_legal_moves() {
+        let s = custom_state(Player::Light, |b| {
+            b.test_put(Cell { row: 1, col: 2 }, Some(piece_man(Player::Light)));
+            b.test_put(Cell { row: 0, col: 1 }, Some(piece_man(Player::Dark)));
+            b.test_put(Cell { row: 0, col: 3 }, Some(piece_man(Player::Dark)));
+        });
+        assert!(legal_moves(&s, Player::Light).is_empty());
+        assert_eq!(
+            Checkers::check_game_over(&s),
+            Some(GameOutcome::Win(Player::Dark))
+        );
+    }
+
+    #[test]
+    fn non_capture_while_capture_exists_removes_moved_man_that_could_capture() {
+        // Dark can jump (2,3)->(4,5) over (3,4); plays non-capture (2,3)->(1,2) instead.
+        let mut board = Board::test_empty();
+        board.test_put(Cell { row: 2, col: 3 }, Some(piece_man(Player::Dark)));
+        board.test_put(Cell { row: 3, col: 4 }, Some(piece_man(Player::Light)));
+        board.test_put(Cell { row: 1, col: 2 }, None);
+        let slide = MovePath(vec![
+            Cell { row: 2, col: 3 },
+            Cell { row: 1, col: 2 },
+        ]);
+        assert!(path_is_non_capture(&board, &slide.0));
+        apply_turn_for_player(&mut board, &slide, Player::Dark);
+        assert!(
+            board.get(Cell { row: 1, col: 2 }).unwrap().is_none(),
+            "mover that skipped capture should be removed from landing square"
+        );
+    }
+
+    #[test]
+    fn validate_move_rejects_path_too_short() {
+        let s = Checkers::init(&Config);
+        let ps = PlayerState {
+            player: Player::Dark,
+            state: s,
+        };
+        let bad = MovePath(vec![Cell { row: 2, col: 1 }]);
+        assert_eq!(
+            ps.validate_move_for_send(&bad).unwrap_err(),
+            "Move path needs at least start and end cell"
+        );
     }
 }
