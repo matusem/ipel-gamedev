@@ -165,6 +165,17 @@ impl Board {
     }
 }
 
+#[cfg(test)]
+impl Board {
+    fn test_empty() -> Self {
+        Self::empty()
+    }
+
+    fn test_put(&mut self, c: Cell, p: Option<Piece>) {
+        self.set(c, p);
+    }
+}
+
 fn is_dark(c: Cell) -> bool {
     (c.row + c.col) % 2 == 1
 }
@@ -637,6 +648,9 @@ fn single_jumps_from(
 }
 
 /// DFS all terminal capture chains from `from` / `piece` on `work`; each terminal path includes full cell sequence.
+///
+/// If a **man** crowns (promotes to king) on a capture landing, the turn ends immediately — no further
+/// jumps in the same move (common English draughts / classroom rules).
 fn dfs_capture_from(
     work: &[Option<Piece>; 64],
     from: Cell,
@@ -655,6 +669,14 @@ fn dfs_capture_from(
         let at_land = next_board[land.idx()].expect("landed");
         let mut p = path.clone();
         p.push(land);
+        let crowned_this_jump =
+            piece.kind == PieceKind::Man && at_land.kind == PieceKind::King;
+        if crowned_this_jump {
+            if path_capture_count(&p) > 0 {
+                out.push(MovePath(p));
+            }
+            continue;
+        }
         dfs_capture_from(&next_board, land, at_land, p, out);
     }
 }
@@ -1000,6 +1022,54 @@ mod tests {
         let s = Checkers::init(&Config);
         assert!(!legal_next_cells(&s, Player::Dark, &[]).is_empty());
         assert!(legal_next_cells(&s, Player::Light, &[]).is_empty());
+    }
+
+    /// After crowning on a capture, the same turn must not continue with king jumps.
+    #[test]
+    fn crown_on_capture_ends_turn_no_further_jumps() {
+        let mut board = Board::test_empty();
+        let start = Cell { row: 5, col: 0 };
+        board.test_put(
+            start,
+            Some(Piece {
+                owner: Player::Dark,
+                kind: PieceKind::Man,
+            }),
+        );
+        board.test_put(
+            Cell { row: 6, col: 1 },
+            Some(Piece {
+                owner: Player::Light,
+                kind: PieceKind::Man,
+            }),
+        );
+        board.test_put(
+            Cell { row: 6, col: 3 },
+            Some(Piece {
+                owner: Player::Light,
+                kind: PieceKind::Man,
+            }),
+        );
+        let state = State {
+            config: Config,
+            board,
+            current_player: Player::Dark,
+        };
+        let moves = legal_moves(&state, Player::Dark);
+        let longer: Vec<_> = moves
+            .iter()
+            .filter(|m| m.0.first().copied() == Some(start) && m.0.len() > 2)
+            .collect();
+        assert!(
+            longer.is_empty(),
+            "expected no multi-step path from starter after crown; got {:?}",
+            longer
+        );
+        let one_jump = MovePath(vec![start, Cell { row: 7, col: 2 }]);
+        assert!(
+            moves.contains(&one_jump),
+            "single capture onto promotion rank should be legal; moves={moves:?}"
+        );
     }
 
     #[test]

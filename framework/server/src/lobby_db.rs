@@ -38,6 +38,7 @@ pub struct LobbySeat {
     pub player_identity: String,
     pub claimed_by_user_id: Option<Uuid>,
     pub claimed_display_name: Option<String>,
+    pub ready: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -126,7 +127,7 @@ pub async fn get_lobby(pool: &SqlitePool, lobby_id: Uuid) -> Result<Option<Lobby
     };
     let config: Option<String> = r.get(4);
     let seat_rows = sqlx::query(
-        r#"SELECT s.seat_index, s.player_identity, s.claimed_by_user_id, u.display_name
+        r#"SELECT s.seat_index, s.player_identity, s.claimed_by_user_id, u.display_name, s.ready
            FROM lobby_seats s
            LEFT JOIN users u ON u.id = s.claimed_by_user_id
            WHERE s.lobby_id = ?
@@ -139,11 +140,13 @@ pub async fn get_lobby(pool: &SqlitePool, lobby_id: Uuid) -> Result<Option<Lobby
     for s in seat_rows {
         let claimed: Option<String> = s.get(2);
         let claimed_uuid = claimed.and_then(|c| Uuid::parse_str(&c).ok());
+        let ready_i: i64 = s.get(4);
         seats.push(LobbySeat {
             seat_index: s.get(0),
             player_identity: s.get(1),
             claimed_by_user_id: claimed_uuid,
             claimed_display_name: s.get(3),
+            ready: ready_i != 0,
         });
     }
     Ok(Some(LobbyDetail {
@@ -231,7 +234,7 @@ pub async fn owner_replace_game_type_and_seats(
     .map_err(|e| e.to_string())?;
     for (i, ident) in identities.iter().enumerate() {
         sqlx::query(
-            "INSERT INTO lobby_seats (lobby_id, seat_index, player_identity, claimed_by_user_id) VALUES (?, ?, ?, NULL)",
+            "INSERT INTO lobby_seats (lobby_id, seat_index, player_identity, claimed_by_user_id, ready) VALUES (?, ?, ?, NULL, 0)",
         )
         .bind(lobby_id.to_string())
         .bind(i as i32)
@@ -292,7 +295,7 @@ pub async fn owner_replace_config_and_seats(
         .map_err(|e| e.to_string())?;
     for (i, ident) in identities.iter().enumerate() {
         sqlx::query(
-            "INSERT INTO lobby_seats (lobby_id, seat_index, player_identity, claimed_by_user_id) VALUES (?, ?, ?, NULL)",
+            "INSERT INTO lobby_seats (lobby_id, seat_index, player_identity, claimed_by_user_id, ready) VALUES (?, ?, ?, NULL, 0)",
         )
         .bind(lobby_id.to_string())
         .bind(i as i32)
@@ -326,7 +329,7 @@ pub async fn claim_seat(
         return Ok(true);
     }
     let r = sqlx::query(
-        r#"UPDATE lobby_seats SET claimed_by_user_id = ?
+        r#"UPDATE lobby_seats SET claimed_by_user_id = ?, ready = 0
            WHERE lobby_id = ? AND seat_index = ? AND claimed_by_user_id IS NULL"#,
     )
     .bind(user_id.to_string())
@@ -347,7 +350,7 @@ pub async fn claim_seat(
 
 pub async fn release_user_seats(pool: &SqlitePool, lobby_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE lobby_seats SET claimed_by_user_id = NULL WHERE lobby_id = ? AND claimed_by_user_id = ?",
+        "UPDATE lobby_seats SET claimed_by_user_id = NULL, ready = 0 WHERE lobby_id = ? AND claimed_by_user_id = ?",
     )
     .bind(lobby_id.to_string())
     .bind(user_id.to_string())
@@ -359,6 +362,33 @@ pub async fn release_user_seats(pool: &SqlitePool, lobby_id: Uuid, user_id: Uuid
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Sets `ready` for the seat claimed by `user_id` in this lobby. Returns false if the user has no seat.
+pub async fn set_seat_ready(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+    user_id: Uuid,
+    ready: bool,
+) -> Result<bool, sqlx::Error> {
+    let ready_i: i32 = if ready { 1 } else { 0 };
+    let r = sqlx::query(
+        "UPDATE lobby_seats SET ready = ? WHERE lobby_id = ? AND claimed_by_user_id = ?",
+    )
+    .bind(ready_i)
+    .bind(lobby_id.to_string())
+    .bind(user_id.to_string())
+    .execute(pool)
+    .await?;
+    if r.rows_affected() == 0 {
+        return Ok(false);
+    }
+    sqlx::query("UPDATE pregame_lobbies SET updated_at = ? WHERE id = ?")
+        .bind(now_secs())
+        .bind(lobby_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(true)
 }
 
 pub async fn mark_lobby_in_game(

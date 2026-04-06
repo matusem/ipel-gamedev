@@ -1,5 +1,7 @@
 //! Bevy **WASM** play client for checkers. URL query: `ws`, `id`, `player` (lobby iframe).
-//! Click **dark** squares to append [`Cell`]s to the path, then **Send move** (JSON `MovePath`).
+//! Click **dark** squares to append [`Cell`]s to the path; with 2+ cells a purple circle and a
+//! two-bar mark above the last square confirms and sends the move (same as **Send move**).
+//! Clicks outside the board clear the path (HUD top-left is excluded so **Send** / **Clear** work).
 
 use bevy::prelude::*;
 use bevy::sprite::MaterialMesh2dBundle;
@@ -15,6 +17,15 @@ use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
 const CELL: f32 = 56.0;
+/// Confirm control sits toward +Y from cell center (top of square on screen).
+const PATH_CONFIRM_TOP_OFFSET: f32 = CELL * 0.38;
+const PATH_CONFIRM_HIT_RADIUS: f32 = 18.0;
+
+/// Window-space rect (origin top-left, Y down): clicks here skip “discard path” so HUD buttons work.
+const HUD_PATH_CLEAR_EXCLUSION: Rect = Rect {
+    min: Vec2::new(0.0, 0.0),
+    max: Vec2::new(420.0, 560.0),
+};
 
 /// HUD palette aligned with the wooden board tones.
 const HUD_PANEL_BG: Color = Color::srgb(0.13, 0.11, 0.10);
@@ -102,12 +113,13 @@ fn main() {
             (
                 sync_board_cell_layout,
                 poll_inbox,
-                board_click,
                 sync_pieces,
                 sync_legal_highlights,
                 sync_built_path_visual,
+                sync_path_confirm_overlay,
                 button_send,
                 button_clear,
+                board_click,
                 update_hud,
             ),
         )
@@ -115,6 +127,7 @@ fn main() {
         .init_resource::<LastHighlightSig>()
         .init_resource::<LastPathVizSig>()
         .init_resource::<HighlightEntities>()
+        .init_resource::<PathConfirmState>()
         .run();
 }
 
@@ -151,6 +164,16 @@ struct LegalMoveHint;
 #[derive(Component)]
 struct BuiltPathViz;
 
+#[derive(Component)]
+struct PathConfirmRoot;
+
+/// On-board send control (purple circle + check) above the last path cell.
+#[derive(Resource, Default)]
+struct PathConfirmState {
+    entity: Option<Entity>,
+    cache: Option<(u64, usize, Cell, Player)>,
+}
+
 #[derive(Resource, Default)]
 struct PieceEntities(Vec<Entity>);
 
@@ -178,6 +201,8 @@ struct CheckersVisualAssets {
     legal_material: Handle<ColorMaterial>,
     path_node_mesh: Handle<Mesh>,
     path_node_material: Handle<ColorMaterial>,
+    confirm_bg_mesh: Handle<Mesh>,
+    confirm_bg_material: Handle<ColorMaterial>,
 }
 
 fn setup_visual_assets(
@@ -192,6 +217,8 @@ fn setup_visual_assets(
         legal_material: materials.add(ColorMaterial::from(Color::srgba(0.15, 0.75, 0.45, 0.7))),
         path_node_mesh: meshes.add(Mesh::from(Circle::new(6.0))),
         path_node_material: materials.add(ColorMaterial::from(Color::srgba(1.0, 0.62, 0.12, 0.92))),
+        confirm_bg_mesh: meshes.add(Mesh::from(Circle::new(15.0))),
+        confirm_bg_material: materials.add(ColorMaterial::from(Color::srgb(0.55, 0.28, 0.82))),
     });
 }
 
@@ -286,6 +313,39 @@ use board_geom::{cell_center_world, world_to_logical_cell};
 fn board_cell_world_xy(logical_row: u8, col: u8, seat: Player) -> (f32, f32) {
     let p = cell_center_world(Cell { row: logical_row, col }, seat);
     (p.x, p.y)
+}
+
+#[inline]
+fn path_confirm_anchor(last: Cell, seat: Player) -> Vec2 {
+    cell_center_world(last, seat) + Vec2::new(0.0, PATH_CONFIRM_TOP_OFFSET)
+}
+
+fn send_move_if_ready(model: &mut NetModel, ws: &WsHandle) {
+    if model.path.len() < 2 {
+        model.status = "Path needs at least 2 cells".into();
+        return;
+    }
+    let Some(snap) = model.snapshot.as_ref() else {
+        model.status = "No game state yet".into();
+        return;
+    };
+    let path = MovePath(model.path.clone());
+    if let Err(e) = snap.validate_move_for_send(&path) {
+        model.status = e;
+        return;
+    }
+    let json = match serde_json::to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let g = ws.send.lock().unwrap();
+    if let Some(socket) = g.as_ref() {
+        let _ = socket.send_with_str(&json);
+        model.path.clear();
+        model.status = "Move sent".into();
+    } else {
+        model.status = "No socket".into();
+    }
 }
 
 fn sync_board_cell_layout(
@@ -642,6 +702,7 @@ fn board_click(
     q_window: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     mut model: ResMut<NetModel>,
+    ws: Res<WsHandle>,
 ) {
     if !mouse.just_pressed(MouseButton::Left) {
         return;
@@ -665,7 +726,23 @@ fn board_click(
         .as_ref()
         .map(|s| s.player)
         .unwrap_or(Player::Light);
+
+    if model.path.len() >= 2 {
+        if let Some(snap) = model.snapshot.as_ref() {
+            let last = *model.path.last().expect("len >= 2");
+            let anchor = path_confirm_anchor(last, snap.player);
+            if world.distance(anchor) <= PATH_CONFIRM_HIT_RADIUS {
+                send_move_if_ready(&mut model, &ws);
+                return;
+            }
+        }
+    }
+
     let Some(clicked) = world_to_logical_cell(world, seat) else {
+        if !HUD_PATH_CLEAR_EXCLUSION.contains(cursor) {
+            model.path.clear();
+            refresh_status_after_path_edit(&mut model);
+        }
         return;
     };
 
@@ -692,31 +769,7 @@ fn button_send(
         if *i != Interaction::Pressed {
             continue;
         }
-        if model.path.len() < 2 {
-            model.status = "Path needs at least 2 cells".into();
-            continue;
-        }
-        let Some(snap) = model.snapshot.as_ref() else {
-            model.status = "No game state yet".into();
-            continue;
-        };
-        let path = MovePath(model.path.clone());
-        if let Err(e) = snap.validate_move_for_send(&path) {
-            model.status = e;
-            continue;
-        }
-        let json = match serde_json::to_string(&path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let g = ws.send.lock().unwrap();
-        if let Some(socket) = g.as_ref() {
-            let _ = socket.send_with_str(&json);
-            model.path.clear();
-            model.status = "Move sent".into();
-        } else {
-            model.status = "No socket".into();
-        }
+        send_move_if_ready(&mut model, &ws);
     }
 }
 
@@ -955,6 +1008,80 @@ fn sync_built_path_visual(
             }
         }
     }
+}
+
+fn sync_path_confirm_overlay(
+    mut commands: Commands,
+    model: Res<NetModel>,
+    mut state: ResMut<PathConfirmState>,
+    assets: Res<CheckersVisualAssets>,
+) {
+    let clear = |commands: &mut Commands, state: &mut PathConfirmState| {
+        if let Some(e) = state.entity.take() {
+            commands.entity(e).despawn_recursive();
+        }
+        state.cache = None;
+    };
+
+    let Some(snap) = model.snapshot.as_ref() else {
+        clear(&mut commands, &mut state);
+        return;
+    };
+
+    if model.path.len() < 2 {
+        clear(&mut commands, &mut state);
+        return;
+    }
+
+    let seat = snap.player;
+    let last = *model.path.last().expect("len >= 2");
+    let sig = board_signature(snap);
+    let key = (sig, model.path.len(), last, seat);
+
+    if state.cache == Some(key) && state.entity.is_some() {
+        return;
+    }
+
+    clear(&mut commands, &mut state);
+
+    let anchor = path_confirm_anchor(last, seat);
+    let id = commands
+        .spawn((
+            SpatialBundle::from_transform(Transform::from_xyz(anchor.x, anchor.y, 1.58)),
+            PathConfirmRoot,
+        ))
+        .with_children(|c| {
+            c.spawn(MaterialMesh2dBundle {
+                mesh: assets.confirm_bg_mesh.clone().into(),
+                material: assets.confirm_bg_material.clone(),
+                transform: Transform::from_xyz(0.0, 0.0, 0.0),
+                ..default()
+            });
+            let mark = Color::srgb(0.96, 0.96, 1.0);
+            // Sharp ~90° “L”: vertical stem + horizontal base (corner toward bottom-left of circle).
+            c.spawn(SpriteBundle {
+                sprite: Sprite {
+                    color: mark,
+                    custom_size: Some(Vec2::new(2.4, 6.2)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(-2.35, 0.85, 0.002),
+                ..default()
+            });
+            c.spawn(SpriteBundle {
+                sprite: Sprite {
+                    color: mark,
+                    custom_size: Some(Vec2::new(8.0, 2.4)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(1.45, -2.32, 0.002),
+                ..default()
+            });
+        })
+        .id();
+
+    state.entity = Some(id);
+    state.cache = Some(key);
 }
 
 fn hud_status_color(status: &str) -> Color {

@@ -175,6 +175,7 @@ pub struct LobbySeatGql {
     pub player_identity: String,
     pub claimed_by_user_id: Option<async_graphql::types::ID>,
     pub claimed_display_name: Option<String>,
+    pub ready: bool,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -219,6 +220,7 @@ fn map_seat(s: LobbySeat) -> LobbySeatGql {
         player_identity: s.player_identity,
         claimed_by_user_id: s.claimed_by_user_id.map(|u| u.to_string().into()),
         claimed_display_name: s.claimed_display_name,
+        ready: s.ready,
     }
 }
 
@@ -1073,6 +1075,37 @@ impl MutationRoot {
         lobby_to_gql(pool, detail).await
     }
 
+    async fn set_lobby_seat_ready(
+        &self,
+        ctx: &Context<'_>,
+        lobby_id: async_graphql::types::ID,
+        ready: bool,
+    ) -> Result<LobbyGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        if detail.status != "waiting" && detail.status != "configuring" {
+            return Err(Error::new("cannot change ready status in this lobby state"));
+        }
+        let ok = lobby_db::set_seat_ready(pool, lid, uid, ready)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        if !ok {
+            return Err(Error::new("you must take a seat before setting ready"));
+        }
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
+    }
+
     async fn leave_lobby(&self, ctx: &Context<'_>, lobby_id: async_graphql::types::ID) -> Result<bool> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
@@ -1123,6 +1156,15 @@ impl MutationRoot {
             return Err(Error::new(format!(
                 "all seats must be claimed ({claimed}/{total})"
             )));
+        }
+        if detail
+            .seats
+            .iter()
+            .any(|s| s.claimed_by_user_id.is_some() && !s.ready)
+        {
+            return Err(Error::new(
+                "every seated player must be ready before starting",
+            ));
         }
         let config = detail
             .config

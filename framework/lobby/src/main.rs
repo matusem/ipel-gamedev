@@ -263,6 +263,8 @@ struct LobbySeat {
     claimed_by_user_id: Option<String>,
     #[serde(default)]
     claimed_display_name: Option<String>,
+    #[serde(default)]
+    ready: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -573,7 +575,7 @@ fn start_lobby_room_subscription(
         if !acked {
             return;
         }
-        let q = r#"subscription L($id: ID!) { lobbyUpdated(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName } messages { id userId displayName body createdAt } } }"#;
+        let q = r#"subscription L($id: ID!) { lobbyUpdated(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt } } }"#;
         let sub = serde_json::json!({
             "type": "start",
             "id": "room1",
@@ -601,7 +603,7 @@ fn start_lobby_room_subscription(
                 let mut e = err;
                 move || {
                     spawn(async move {
-                        let q = r#"query L($id: ID!) { lobby(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName } messages { id userId displayName body createdAt } } }"#;
+                        let q = r#"query L($id: ID!) { lobby(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt } } }"#;
                         let vars = serde_json::json!({ "id": lid });
                         #[derive(Deserialize)]
                         #[serde(rename_all = "camelCase")]
@@ -1516,13 +1518,14 @@ fn LobbyRoomBody(
     lobby_for_cols: LobbyDetail,
     gt_list: Vec<GameTypeInfo>,
     uid: Option<String>,
-    mut playing: Signal<Option<PlayOverlay>>,
 ) -> Element {
     let nav = use_navigator();
     let is_owner = uid.as_deref() == Some(lobby_for_cols.owner_user_id.as_str());
     let lobby_id_start = lobby_for_cols.id.clone();
     let lobby_id_cancel = lobby_for_cols.id.clone();
     let lobby_id_chat_panel = lobby_for_cols.id.clone();
+    let lobby_id_mark_ready = lobby_for_cols.id.clone();
+    let lobby_id_mark_unready = lobby_for_cols.id.clone();
     let no_game_yet = lobby_for_cols.game_type.trim().is_empty();
     let selected_gt = gt_list
         .iter()
@@ -1549,32 +1552,17 @@ fn LobbyRoomBody(
         .iter()
         .filter(|s| s.claimed_by_user_id.is_some())
         .count();
+    let ready_count = lobby_for_cols
+        .seats
+        .iter()
+        .filter(|s| s.claimed_by_user_id.is_some() && s.ready)
+        .count();
+    let all_ready = total > 0 && claimed == total && ready_count == claimed;
     let can_start = is_owner
         && total > 0
         && claimed == total
+        && all_ready
         && (lobby_for_cols.status == "waiting" || lobby_for_cols.status == "configuring");
-    let in_game = lobby_for_cols.status == "in_game";
-    let gid = lobby_for_cols.game_instance_id.clone();
-    let play_row: Option<(String, String, String, String)> = if in_game {
-        gid.as_ref().and_then(|game_id| {
-            uid.as_ref().and_then(|u| {
-                lobby_for_cols
-                    .seats
-                    .iter()
-                    .find(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
-                    .map(|seat| {
-                        (
-                            lobby_for_cols.game_type.clone(),
-                            game_id.clone(),
-                            seat.player_identity.clone(),
-                            lobby_for_cols.id.clone(),
-                        )
-                    })
-            })
-        })
-    } else {
-        None
-    };
     let in_staging = lobby_for_cols.status == "waiting" || lobby_for_cols.status == "configuring";
     let user_in_seat = uid.as_ref().is_some_and(|u| {
         lobby_for_cols
@@ -1582,6 +1570,16 @@ fn LobbyRoomBody(
             .iter()
             .any(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
     });
+    let my_seat_ready = uid
+        .as_ref()
+        .and_then(|u| {
+            lobby_for_cols
+                .seats
+                .iter()
+                .find(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
+        })
+        .map(|s| s.ready)
+        .unwrap_or(false);
     let lobby_id_default_config = lobby_for_cols.id.clone();
     let lobby_finished = lobby_for_cols.status == "finished";
     let game_id_for_results_btn = lobby_for_cols.game_instance_id.clone();
@@ -1714,27 +1712,44 @@ fn LobbyRoomBody(
             }
             div { class: "lobby-col lobby-col-seats",
                 h3 { class: "text-xs font-semibold uppercase tracking-wide text-indigo-300/80 mb-3", "Players" }
-                p { class: "text-xs text-gray-400 mb-3", "{claimed}/{total} seats claimed" }
+                p { class: "text-xs text-gray-400 mb-3",
+                    "{claimed}/{total} seats taken"
+                    if total > 0 && claimed > 0 {
+                        " · "
+                        "{ready_count}/{claimed} ready"
+                    }
+                }
+                if in_staging && total > 0 {
+                    p { class: "text-[11px] text-gray-500 mb-3 leading-relaxed",
+                        "Take a free seat, then mark Ready. The host can start only when every seat is filled and everyone is ready."
+                    }
+                }
                 div { class: "space-y-2 mb-4",
                     for seat in lobby_for_cols.seats.clone() {
                         {
-                            let lid = lobby_for_cols.id.clone();
+                            let lid_join = lobby_for_cols.id.clone();
                             let idx = seat.seat_index;
                             let taken = seat.claimed_by_user_id.is_some();
                             let label = seat
                                 .claimed_display_name
                                 .clone()
                                 .unwrap_or_else(|| "free".into());
+                            let seat_ready = seat.ready;
                             rsx! {
-                                div { class: "flex items-center gap-2 text-sm rounded-lg border border-gray-700/50 bg-gray-950/40 px-2 py-1.5",
+                                div { class: "flex flex-wrap items-center gap-x-2 gap-y-1 text-sm rounded-lg border border-gray-700/50 bg-gray-950/40 px-2 py-1.5",
                                     span { class: "text-gray-400 w-24 truncate font-mono text-xs", "{seat.player_identity}" }
                                     if taken {
                                         span { class: "text-gray-200", "{label}" }
+                                        if seat_ready {
+                                            span { class: "text-emerald-400 text-xs font-medium", "· Ready" }
+                                        } else {
+                                            span { class: "text-amber-400/90 text-xs font-medium", "· Not ready" }
+                                        }
                                     } else {
                                         button {
                                             class: "px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white",
                                             onclick: move |_| {
-                                                let lid = lid.clone();
+                                                let lid = lid_join.clone();
                                                 spawn(async move {
                                                     let q = "mutation J($id: ID!, $i: Int!) { joinLobby(lobbyId: $id, seatIndex: $i) { id } }";
                                                     let vars = serde_json::json!({ "id": lid, "i": idx });
@@ -1747,10 +1762,43 @@ fn LobbyRoomBody(
                                                     }
                                                 });
                                             },
-                                            "Join"
+                                            "Take seat"
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                if user_in_seat && in_staging {
+                    div { class: "mb-4 rounded-xl border border-gray-700/60 bg-gray-950/50 px-3 py-3",
+                        p { class: "text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-2", "Your readiness" }
+                        div { class: "flex flex-wrap gap-2",
+                            button {
+                                class: "px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold text-white shadow-sm disabled:opacity-40 disabled:shadow-none",
+                                disabled: my_seat_ready,
+                                onclick: move |_| {
+                                    let lid = lobby_id_mark_ready.clone();
+                                    spawn(async move {
+                                        let q = "mutation R($id: ID!, $r: Boolean!) { setLobbySeatReady(lobbyId: $id, ready: $r) { id } }";
+                                        let vars = serde_json::json!({ "id": lid, "r": true });
+                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                    });
+                                },
+                                "Ready"
+                            }
+                            button {
+                                class: "px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-xs font-medium text-gray-100 disabled:opacity-40",
+                                disabled: !my_seat_ready,
+                                onclick: move |_| {
+                                    let lid = lobby_id_mark_unready.clone();
+                                    spawn(async move {
+                                        let q = "mutation R($id: ID!, $r: Boolean!) { setLobbySeatReady(lobbyId: $id, ready: $r) { id } }";
+                                        let vars = serde_json::json!({ "id": lid, "r": false });
+                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                    });
+                                },
+                                "Not ready"
                             }
                         }
                     }
@@ -1803,20 +1851,6 @@ fn LobbyRoomBody(
                                 });
                             },
                             "Leave seat"
-                        }
-                    }
-                    if let Some((gt, gid, pid, lid_ret)) = play_row.clone() {
-                        button {
-                            class: "px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-sm font-semibold text-white shadow-md",
-                            onclick: move |_| {
-                                playing.set(Some(PlayOverlay {
-                                    game_type: gt.clone(),
-                                    game_id: gid.clone(),
-                                    player: pid.clone(),
-                                    return_lobby_id: Some(lid_ret.clone()),
-                                }));
-                            },
-                            "Play"
                         }
                     }
                 }
@@ -1986,7 +2020,7 @@ fn LobbyRoomPage(
             if let Ok(g) = graphql_post::<Gt>(gt_q).await {
                 game_types_f.set(g.game_types);
             }
-            let q = r#"query L($id: ID!) { lobby(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName } messages { id userId displayName body createdAt } } }"#;
+            let q = r#"query L($id: ID!) { lobby(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt } } }"#;
             let vars = serde_json::json!({ "id": lid_fetch });
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
@@ -1998,6 +2032,37 @@ fn LobbyRoomPage(
                 Err(e) => error_msg_f.set(Some(e)),
             }
         });
+    });
+
+    use_effect(move || {
+        let Some(ref l) = detail() else {
+            return;
+        };
+        let user_id = my_user_id();
+        if l.status == "in_game" {
+            if let (Some(uid), Some(gid)) = (user_id.as_ref(), l.game_instance_id.as_ref()) {
+                if let Some(seat) = l
+                    .seats
+                    .iter()
+                    .find(|s| s.claimed_by_user_id.as_deref() == Some(uid.as_str()))
+                {
+                    playing.set(Some(PlayOverlay {
+                        game_type: l.game_type.clone(),
+                        game_id: gid.clone(),
+                        player: seat.player_identity.clone(),
+                        return_lobby_id: Some(l.id.clone()),
+                    }));
+                    return;
+                }
+            }
+        }
+        let overlay_this_lobby = playing()
+            .as_ref()
+            .and_then(|p| p.return_lobby_id.as_deref())
+            == Some(l.id.as_str());
+        if overlay_this_lobby && l.status != "in_game" {
+            playing.set(None);
+        }
     });
 
     let d = detail();
@@ -2036,7 +2101,6 @@ fn LobbyRoomPage(
                     lobby_for_cols: lob.clone(),
                     gt_list: gt_list.clone(),
                     uid: uid.clone(),
-                    playing,
                 }
             }
         }
