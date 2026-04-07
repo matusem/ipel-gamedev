@@ -78,6 +78,7 @@ pub struct GameTypeGql {
     pub description: String,
     pub config_ui_path: Option<String>,
     pub result_ui_path: Option<String>,
+    pub about_ui_path: Option<String>,
     pub config_schema_json: Option<String>,
 }
 
@@ -107,6 +108,7 @@ pub struct ValidationReportGql {
     pub required_index_html: bool,
     pub required_config_html: bool,
     pub required_result_html: bool,
+    pub required_about_html: bool,
     pub diagnostics: Vec<ValidationDiagnosticGql>,
 }
 
@@ -256,6 +258,7 @@ fn map_validation_report(report: ValidationReport) -> ValidationReportGql {
         required_index_html: report.required_index_html,
         required_config_html: report.required_config_html,
         required_result_html: report.required_result_html,
+        required_about_html: report.required_about_html,
         diagnostics: report
             .diagnostics
             .into_iter()
@@ -343,6 +346,7 @@ impl QueryRoot {
                 description: gt.manifest.description.clone(),
                 config_ui_path: gt.config_ui_path.clone(),
                 result_ui_path: gt.result_ui_path.clone(),
+                about_ui_path: gt.about_ui_path.clone(),
                 config_schema_json: gt
                     .manifest
                     .config_schema
@@ -692,6 +696,7 @@ impl MutationRoot {
                     required_index_html: false,
                     required_config_html: false,
                     required_result_html: false,
+                    required_about_html: false,
                     diagnostics: vec![crate::game_upload::ValidationDiagnostic {
                         severity: "error".to_string(),
                         code: "E_UPLOAD_VALIDATION_FAILED".to_string(),

@@ -26,6 +26,7 @@ pub struct ValidationReport {
     pub required_index_html: bool,
     pub required_config_html: bool,
     pub required_result_html: bool,
+    pub required_about_html: bool,
     pub diagnostics: Vec<ValidationDiagnostic>,
 }
 
@@ -52,7 +53,13 @@ fn diag(
     }
 }
 
-fn summarize(diagnostics: Vec<ValidationDiagnostic>, req_index: bool, req_config: bool, req_result: bool) -> ValidationReport {
+fn summarize(
+    diagnostics: Vec<ValidationDiagnostic>,
+    req_index: bool,
+    req_config: bool,
+    req_result: bool,
+    req_about: bool,
+) -> ValidationReport {
     let errors = diagnostics.iter().filter(|d| d.severity == "error").count();
     let warnings = diagnostics
         .iter()
@@ -67,6 +74,7 @@ fn summarize(diagnostics: Vec<ValidationDiagnostic>, req_index: bool, req_config
         required_index_html: req_index,
         required_config_html: req_config,
         required_result_html: req_result,
+        required_about_html: req_about,
         diagnostics,
     }
 }
@@ -141,7 +149,7 @@ pub async fn validate_and_stage_zip_bytes(
             None,
             Some("Upload a .zip archive with game files."),
         ));
-        return Err(serde_json::to_string(&summarize(diagnostics, false, false, false)).unwrap_or_else(|_| "invalid zip".to_string()));
+        return Err(serde_json::to_string(&summarize(diagnostics, false, false, false, false)).unwrap_or_else(|_| "invalid zip".to_string()));
     }
 
     let mut archive = ZipArchive::new(Cursor::new(zip_bytes))
@@ -222,6 +230,7 @@ pub async fn validate_and_stage_zip_bytes(
     let index_path = client_dir.join("index.html");
     let config_path = client_dir.join("config.html");
     let result_path = client_dir.join("result.html");
+    let about_path = client_dir.join("about.html");
 
     if !manifest_path.is_file() {
         diagnostics.push(diag(
@@ -253,6 +262,7 @@ pub async fn validate_and_stage_zip_bytes(
     let has_index = index_path.is_file();
     let has_config = config_path.is_file();
     let has_result = result_path.is_file();
+    let has_about = about_path.is_file();
     if !has_index {
         diagnostics.push(diag(
             "error",
@@ -277,6 +287,15 @@ pub async fn validate_and_stage_zip_bytes(
             "E_CLIENT_RESULT_MISSING",
             "client/result.html is required",
             Some("client/result.html"),
+            None,
+        ));
+    }
+    if !has_about {
+        diagnostics.push(diag(
+            "error",
+            "E_CLIENT_ABOUT_MISSING",
+            "client/about.html is required",
+            Some("client/about.html"),
             None,
         ));
     }
@@ -356,7 +375,7 @@ pub async fn validate_and_stage_zip_bytes(
     }
 
     let Some(manifest_ref) = manifest.as_ref() else {
-        let report = summarize(diagnostics, has_index, has_config, has_result);
+        let report = summarize(diagnostics, has_index, has_config, has_result, has_about);
         if !report.ok {
             return Err(
                 serde_json::to_string(&report).unwrap_or_else(|_| "{\"ok\":false,\"errors\":1}".to_string())
@@ -380,7 +399,7 @@ pub async fn validate_and_stage_zip_bytes(
         }
     }
 
-    let report = summarize(diagnostics, has_index, has_config, has_result);
+    let report = summarize(diagnostics, has_index, has_config, has_result, has_about);
     if !report.ok {
         return Err(
             serde_json::to_string(&report).unwrap_or_else(|_| "{\"ok\":false,\"errors\":1}".to_string())
@@ -448,6 +467,7 @@ mod tests {
             true,
             false,
             true,
+            false,
         );
         assert!(!report.ok);
         assert_eq!(report.errors, 1);
@@ -456,5 +476,6 @@ mod tests {
         assert!(report.required_index_html);
         assert!(!report.required_config_html);
         assert!(report.required_result_html);
+        assert!(!report.required_about_html);
     }
 }

@@ -60,7 +60,7 @@ function Invoke-CheckersZipBuild {
         Copy-Item (Join-Path $GameDir "target\wasm32-wasip1\release\checkers_component.wasm") (Join-Path $Stage "logic.wasm")
         Copy-Item (Join-Path $GameDir "client") (Join-Path $Stage "client") -Recurse
 
-        foreach ($f in @("index.html", "config.html", "result.html")) {
+        foreach ($f in @("index.html", "config.html", "result.html", "about.html")) {
             if (-not (Test-Path (Join-Path $Stage "client\$f"))) {
                 throw "Missing client\$f"
             }

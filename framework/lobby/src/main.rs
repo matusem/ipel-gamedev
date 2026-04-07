@@ -199,6 +199,8 @@ struct GameTypeInfo {
     #[serde(default)]
     config_ui_path: Option<String>,
     #[serde(default)]
+    about_ui_path: Option<String>,
+    #[serde(default)]
     config_schema_json: Option<String>,
 }
 
@@ -991,7 +993,7 @@ fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Option<S
                 recent_finished_games: Vec<RecentFinishedRow>,
             }
             let q = r#"query {
-                gameTypes { name displayName version minPlayers maxPlayers description configUiPath configSchemaJson }
+                gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson }
                 gameInstances { gameId gameType playerIdentities connectedPlayers }
                 lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }
                 recentFinishedGames(limit: 12) { gameId gameType finishedAt playerScoresJson }
@@ -1306,9 +1308,16 @@ fn game_type_description(types: &[GameTypeInfo], stored_name: &str) -> Option<St
     })
 }
 
+fn game_type_about_url(gt: &GameTypeInfo) -> Option<String> {
+    gt.about_ui_path
+        .as_ref()
+        .map(|path| format!("/games/{}/{}", gt.name, path))
+}
+
 #[component]
 fn GameTypeCatalogCard(gt: GameTypeInfo) -> Element {
     let desc = gt.description.trim();
+    let about_url = game_type_about_url(&gt);
     rsx! {
         div { class: "rounded-xl border border-emerald-500/20 bg-gray-950/50 p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 shadow-md",
             div { class: "min-w-0 flex-1",
@@ -1319,8 +1328,19 @@ fn GameTypeCatalogCard(gt: GameTypeInfo) -> Element {
                     p { class: "text-sm text-gray-300 mt-2 leading-relaxed", "{desc}" }
                 }
             }
-            div { class: "shrink-0 self-start rounded-lg border border-gray-600/80 bg-gray-800/80 px-3 py-1.5 text-xs text-gray-400",
-                "Join a lobby to play"
+            div { class: "shrink-0 self-start flex items-center gap-2",
+                if let Some(url) = about_url {
+                    a {
+                        class: "rounded-lg border border-indigo-500/50 bg-indigo-950/60 hover:bg-indigo-900/60 px-3 py-1.5 text-xs font-semibold text-indigo-100",
+                        href: "{url}",
+                        target: "_blank",
+                        rel: "noopener noreferrer",
+                        "Info"
+                    }
+                }
+                div { class: "rounded-lg border border-gray-600/80 bg-gray-800/80 px-3 py-1.5 text-xs text-gray-400",
+                    "Join a lobby to play"
+                }
             }
         }
     }
@@ -1634,39 +1654,51 @@ fn LobbyRoomBody(
                         {
                             let active = !no_game_yet && gt.name == lobby_for_cols.game_type;
                             let desc = gt.description.trim();
+                            let about_url = game_type_about_url(&gt);
                             let lid_set = lobby_for_cols.id.clone();
                             let gtn = gt.name.clone();
                             rsx! {
-                                button {
-                                    class: if active { "lobby-type-btn active" } else { "lobby-type-btn" },
-                                    disabled: !is_owner,
-                                    onclick: move |_| {
-                                        if !is_owner { return; }
-                                        let lid = lid_set.clone();
-                                        let gtn = gtn.clone();
-                                        spawn(async move {
-                                            let q = "mutation S($id: ID!, $t: String!, $f: Boolean!) { setLobbyGameType(lobbyId: $id, gameType: $t, force: $f) { id } }";
-                                            let vars = serde_json::json!({ "id": lid, "t": gtn, "f": false });
-                                            let r = graphql_exec::<Value>(q, Some(vars)).await;
-                                            if r.is_err() {
-                                                let force = web_sys::window()
-                                                    .map(|w| {
-                                                        w.confirm_with_message(
-                                                            "Changing type resets seats if claimed. Continue?",
-                                                        )
-                                                        .unwrap_or(false)
-                                                    })
-                                                    .unwrap_or(false);
-                                                if force {
-                                                    let vars = serde_json::json!({ "id": lid, "t": gtn, "f": true });
-                                                    let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                div { class: "space-y-2",
+                                    button {
+                                        class: if active { "lobby-type-btn active" } else { "lobby-type-btn" },
+                                        disabled: !is_owner,
+                                        onclick: move |_| {
+                                            if !is_owner { return; }
+                                            let lid = lid_set.clone();
+                                            let gtn = gtn.clone();
+                                            spawn(async move {
+                                                let q = "mutation S($id: ID!, $t: String!, $f: Boolean!) { setLobbyGameType(lobbyId: $id, gameType: $t, force: $f) { id } }";
+                                                let vars = serde_json::json!({ "id": lid, "t": gtn, "f": false });
+                                                let r = graphql_exec::<Value>(q, Some(vars)).await;
+                                                if r.is_err() {
+                                                    let force = web_sys::window()
+                                                        .map(|w| {
+                                                            w.confirm_with_message(
+                                                                "Changing type resets seats if claimed. Continue?",
+                                                            )
+                                                            .unwrap_or(false)
+                                                        })
+                                                        .unwrap_or(false);
+                                                    if force {
+                                                        let vars = serde_json::json!({ "id": lid, "t": gtn, "f": true });
+                                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                                    }
                                                 }
-                                            }
-                                        });
-                                    },
-                                    span { class: "font-medium", "{gt.display_name}" }
-                                    if !desc.is_empty() {
-                                        span { class: "mt-1 text-xs text-gray-400 leading-snug line-clamp-4", "{desc}" }
+                                            });
+                                        },
+                                        span { class: "font-medium", "{gt.display_name}" }
+                                        if !desc.is_empty() {
+                                            span { class: "mt-1 text-xs text-gray-400 leading-snug line-clamp-4", "{desc}" }
+                                        }
+                                    }
+                                    if let Some(url) = about_url {
+                                        a {
+                                            class: "inline-flex rounded-md border border-indigo-500/40 bg-indigo-950/45 px-2 py-1 text-[11px] text-indigo-100 hover:bg-indigo-900/50",
+                                            href: "{url}",
+                                            target: "_blank",
+                                            rel: "noopener noreferrer",
+                                            "Open game info and rules"
+                                        }
                                     }
                                 }
                             }
@@ -2016,7 +2048,7 @@ fn LobbyRoomPage(
             struct Gt {
                 game_types: Vec<GameTypeInfo>,
             }
-            let gt_q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath configSchemaJson } }"#;
+            let gt_q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson } }"#;
             if let Ok(g) = graphql_post::<Gt>(gt_q).await {
                 game_types_f.set(g.game_types);
             }
@@ -2179,6 +2211,7 @@ struct UploadReport {
     required_index_html: bool,
     required_config_html: bool,
     required_result_html: bool,
+    required_about_html: bool,
     diagnostics: Vec<UploadDiag>,
 }
 
@@ -2560,7 +2593,7 @@ fn DeveloperUploadsPage() -> Element {
                     div { class: "rounded-xl border border-indigo-500/30 bg-indigo-950/50 px-4 py-3 text-xs text-indigo-100/90 max-w-xs",
                         p { class: "font-semibold text-indigo-200 mb-1", "Expected layout" }
                         p { class: "font-mono text-[11px] leading-relaxed text-indigo-100/70",
-                            "manifest.json · logic.wasm · client/index|config|result.html"
+                            "manifest.json · logic.wasm · client/index|config|result|about.html"
                         }
                     }
                 }
@@ -2684,7 +2717,7 @@ fn DeveloperUploadsPage() -> Element {
                                         struct UploadResp {
                                             report: UploadReport,
                                         }
-                                        let q = "mutation Upload($f: String!, $z: String!) { uploadGameZip(filename: $f, zipBase64: $z) { report { ok errors warnings infos requiredIndexHtml requiredConfigHtml requiredResultHtml diagnostics { severity code message path hint } } } }";
+                                        let q = "mutation Upload($f: String!, $z: String!) { uploadGameZip(filename: $f, zipBase64: $z) { report { ok errors warnings infos requiredIndexHtml requiredConfigHtml requiredResultHtml requiredAboutHtml diagnostics { severity code message path hint } } } }";
                                         let vars = serde_json::json!({ "f": n, "z": payload.trim() });
                                         match graphql_exec::<R>(q, Some(vars)).await {
                                             Ok(v) => {
@@ -2739,7 +2772,7 @@ fn DeveloperUploadsPage() -> Element {
 
                             div { class: "px-6 py-5 border-b border-gray-700/60 bg-gray-950/40",
                                 p { class: "text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3", "Required client files" }
-                                div { class: "grid sm:grid-cols-3 gap-3",
+                                div { class: "grid sm:grid-cols-4 gap-3",
                                     div { class: upload_file_check_class(rep.required_index_html),
                                         span { class: "text-lg", if rep.required_index_html { "✓" } else { "✕" } }
                                         div {
@@ -2759,6 +2792,13 @@ fn DeveloperUploadsPage() -> Element {
                                         div {
                                             p { class: "font-mono text-xs font-semibold", "client/result.html" }
                                             p { class: "text-[11px] opacity-80", "Post-game screen" }
+                                        }
+                                    }
+                                    div { class: upload_file_check_class(rep.required_about_html),
+                                        span { class: "text-lg", if rep.required_about_html { "✓" } else { "✕" } }
+                                        div {
+                                            p { class: "font-mono text-xs font-semibold", "client/about.html" }
+                                            p { class: "text-[11px] opacity-80", "Game info and rules" }
                                         }
                                     }
                                 }

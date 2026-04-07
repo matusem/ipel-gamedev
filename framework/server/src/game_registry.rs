@@ -18,6 +18,9 @@ pub struct GameManifest {
     /// Relative path under `client/` for the post-game result iframe (default checks `result.html`).
     #[serde(default)]
     pub result_entry: Option<String>,
+    /// Relative path under `client/` for the game info/rules screen (default checks `about.html`).
+    #[serde(default)]
+    pub about_entry: Option<String>,
     /// JSON Schema for the `config` string posted by the lobby config UI (JSON instance).
     #[serde(default)]
     pub config_schema: Option<Value>,
@@ -31,6 +34,8 @@ pub struct GameType {
     pub config_ui_path: Option<String>,
     /// Relative path under `client/` for `/games/{name}/{path}` result screen iframe when present.
     pub result_ui_path: Option<String>,
+    /// Relative path under `client/` for `/games/{name}/{path}` about/info screen when present.
+    pub about_ui_path: Option<String>,
 }
 
 #[derive(Clone)]
@@ -116,11 +121,22 @@ impl GameRegistry {
                 None
             };
 
+            let about_candidate = manifest
+                .about_entry
+                .clone()
+                .unwrap_or_else(|| "about.html".to_string());
+            let about_ui_path = if client_dir.join(&about_candidate).is_file() {
+                Some(about_candidate)
+            } else {
+                None
+            };
+
             game_types.push(GameType {
                 manifest,
                 client_dir,
                 config_ui_path,
                 result_ui_path,
+                about_ui_path,
             });
         }
 

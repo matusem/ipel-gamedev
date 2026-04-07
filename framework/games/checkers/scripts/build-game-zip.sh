@@ -44,7 +44,7 @@ cp "$GAME_DIR/manifest.json" "$STAGE/"
 cp "$LOGIC_SRC" "$STAGE/logic.wasm"
 cp -r "$GAME_DIR/client" "$STAGE/client"
 
-for f in index.html config.html result.html; do
+for f in index.html config.html result.html about.html; do
   if [[ ! -f "$STAGE/client/$f" ]]; then
     echo "error: missing client/$f" >&2
     exit 1
