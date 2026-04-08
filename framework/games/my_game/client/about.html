@@ -1,6 +1,75 @@
-<!doctype html>
-<html>
-  <body>
-    <h1>About page</h1>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About this game</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #111827;
+      color: #e5e7eb;
+      line-height: 1.55;
+    }
+    main {
+      max-width: 40rem;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #f9fafb;
+      margin: 0 0 0.5rem;
+    }
+    h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #f3f4f6;
+      margin: 1.5rem 0 0.5rem;
+    }
+    p { margin: 0 0 0.75rem; color: #9ca3af; }
+    ul { margin: 0 0 0.75rem; padding-left: 1.25rem; color: #d1d5db; }
+    li { margin-bottom: 0.35rem; }
+    code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.9em;
+      background: #1f2937;
+      padding: 0.1em 0.35em;
+      border-radius: 0.25rem;
+      color: #a5b4fc;
+    }
+    .hint {
+      font-size: 0.875rem;
+      border-left: 3px solid #4f46e5;
+      padding-left: 0.75rem;
+      margin-top: 1.25rem;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Your game</h1>
+    <p>
+      This page is shown in the lobby's <strong style="color: #e5e7eb">About</strong> panel. Replace this
+      HTML with your rules, credits, and how to play.
+    </p>
+
+    <h2>Rules (edit me)</h2>
+    <ul>
+      <li>Describe the goal of the game.</li>
+      <li>List what a player can do on their turn.</li>
+      <li>Note win, loss, and draw conditions.</li>
+      <li>Mention anything special (timers, teams, hidden information).</li>
+    </ul>
+
+    <p class="hint">
+      Update <code>manifest.json</code> for the short description, player counts, and display name served to
+      the lobby. Keep this file as <code>client/about.html</code> in your game package.
+    </p>
+  </main>
+</body>
 </html>

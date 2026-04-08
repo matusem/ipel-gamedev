@@ -1,6 +1,187 @@
-<!doctype html>
-<html>
-  <body>
-    <h1>Config page</h1>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game configuration</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 1rem;
+      font-family: system-ui, sans-serif;
+      background: #030712;
+      color: #e5e7eb;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .wrap { max-width: 36rem; }
+    h1 { font-size: 1.125rem; font-weight: 700; margin: 0 0 0.5rem; color: #f9fafb; }
+    p.help { margin: 0 0 0.75rem; color: #9ca3af; }
+    label { display: block; font-weight: 600; color: #d1d5db; margin-bottom: 0.35rem; font-size: 0.8rem; }
+    textarea {
+      width: 100%;
+      min-height: 10rem;
+      padding: 0.6rem 0.75rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      background: #111827;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+      border-radius: 0.5rem;
+      resize: vertical;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+    }
+    button {
+      margin-top: 0.75rem;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 0.375rem;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #3b82f6; }
+    #err { color: #f87171; min-height: 1.25em; margin-top: 0.5rem; }
+    #ok { color: #6ee7b7; min-height: 1.25em; margin-top: 0.35rem; font-size: 0.8rem; }
+    details {
+      margin-top: 1rem;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+    details pre {
+      margin: 0.5rem 0 0;
+      padding: 0.6rem;
+      background: #020617;
+      border: 1px solid #1f2937;
+      border-radius: 0.375rem;
+      overflow-x: auto;
+      color: #cbd5e1;
+      max-height: 12rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>New game settings</h1>
+    <p class="help">
+      The lobby sends a <strong style="color: #e5e7eb">JSON Schema</strong> and the current saved config when
+      this panel loads. Edit the JSON below and click the button to send a <strong style="color: #e5e7eb">preview</strong>
+      to the lobby (shown in the parent page). The host saves it with <strong style="color: #e5e7eb">Apply configuration</strong>.
+    </p>
+    <label for="cfg">Configuration JSON</label>
+    <textarea id="cfg" spellcheck="false" aria-describedby="err">null</textarea>
+    <button type="button" id="apply">Send preview to lobby</button>
+    <div id="err" aria-live="polite"></div>
+    <div id="ok" aria-live="polite"></div>
+    <details id="schemaWrap" hidden>
+      <summary>JSON Schema (reference)</summary>
+      <pre id="schemaPre"></pre>
+    </details>
+  </div>
+  <script>
+    (function () {
+      var SCHEMA = "ipel-game-config-schema";
+      var STATE = "ipel-game-config-state";
+      var OUT = "ipel-game-config";
+      var RESULT = "ipel-game-config-result";
+
+      function gameFromPath() {
+        var parts = window.location.pathname.split("/").filter(function (s) {
+          return s.length > 0;
+        });
+        if (parts.length >= 2 && parts[0] === "games") return parts[1];
+        return null;
+      }
+
+      function configToEditorText(config) {
+        if (config === null || config === undefined) return "null";
+        if (typeof config === "string") return config;
+        try {
+          return JSON.stringify(config, null, 2);
+        } catch (e) {
+          return String(config);
+        }
+      }
+
+      var game = gameFromPath();
+      var ta = document.getElementById("cfg");
+      var errEl = document.getElementById("err");
+      var okEl = document.getElementById("ok");
+      var schemaWrap = document.getElementById("schemaWrap");
+      var schemaPre = document.getElementById("schemaPre");
+
+      window.addEventListener("message", function (ev) {
+        if (ev.origin !== window.location.origin) return;
+        var d = ev.data;
+        if (!d || typeof d !== "object") return;
+
+        if (d.source === RESULT) {
+          if (typeof d.game === "string" && game !== null && d.game !== game) return;
+          if (d.ok) {
+            errEl.textContent = "";
+            okEl.textContent = "Preview accepted by lobby validation.";
+          } else {
+            okEl.textContent = "";
+            var msg =
+              d.errors && d.errors.length ? d.errors.join("; ") : "Config rejected.";
+            errEl.textContent = msg;
+          }
+          return;
+        }
+
+        if (d.source === SCHEMA) {
+          if (typeof d.game === "string") game = d.game;
+          if (d.schema !== undefined) {
+            try {
+              schemaPre.textContent = JSON.stringify(d.schema, null, 2);
+            } catch (e) {
+              schemaPre.textContent = String(d.schema);
+            }
+            schemaWrap.hidden = false;
+          }
+          return;
+        }
+
+        if (d.source === STATE) {
+          if (typeof d.game === "string") game = d.game;
+          ta.value = configToEditorText(d.config);
+          errEl.textContent = "";
+          okEl.textContent = "";
+        }
+      });
+
+      document.getElementById("apply").addEventListener("click", function () {
+        errEl.textContent = "";
+        okEl.textContent = "";
+        if (!game) {
+          errEl.textContent =
+            "Could not determine game id (expected URL like /games/your_game/.../config.html).";
+          return;
+        }
+        var raw = ta.value.trim();
+        var parsed;
+        try {
+          parsed = raw.length ? JSON.parse(raw) : null;
+        } catch (e) {
+          errEl.textContent = "Invalid JSON: " + (e.message || String(e));
+          return;
+        }
+        var payload =
+          typeof parsed === "string" ? parsed : JSON.stringify(parsed);
+        window.parent.postMessage(
+          { source: OUT, game: game, config: payload },
+          window.location.origin
+        );
+      });
+    })();
+  </script>
+</body>
 </html>
