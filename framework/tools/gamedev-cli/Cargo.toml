@@ -10,12 +10,13 @@ clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 crossterm = "0.29"
 dirs = "6"
-ratatui = "0.29"
+ratatui = { version = "0.30", features = ["crossterm"] }
+ratatui-interact = "0.5"
+tui-input = { version = "0.15", default-features = false, features = ["ratatui-crossterm"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 toml = "0.9"
 pathdiff = "0.2"
-uuid = { version = "1", features = ["v4"] }
 zip = "4"

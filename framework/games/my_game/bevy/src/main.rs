@@ -1,6 +1,7 @@
 //! Bevy WASM play client for tic-tac-toe (framework protocol, same idea as checkers `web`).
 //! URL query: `ws`, `id`, `player` (injected by the lobby iframe). Click an empty cell on your turn to move.
 
+use bevy::log::{Level, LogPlugin};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use game::PlayerState as GamePlayerStateTrait;
@@ -93,18 +94,33 @@ fn main() {
         .insert_resource(BoardLayout::default())
         .insert_resource(MarkEntities::default())
         .insert_resource(LastMarkSig::default())
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Tic-Tac-Toe".into(),
-                resolution: (640., 560.).into(),
-                #[cfg(target_arch = "wasm32")]
-                canvas: Some("#bevy-canvas".into()),
-                #[cfg(target_arch = "wasm32")]
-                fit_canvas_to_parent: true,
+        .add_plugins({
+            let plugins = DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Game".into(),
+                    resolution: (640., 560.).into(),
+                    #[cfg(target_arch = "wasm32")]
+                    canvas: Some("#bevy-canvas".into()),
+                    #[cfg(target_arch = "wasm32")]
+                    fit_canvas_to_parent: true,
+                    ..default()
+                }),
                 ..default()
-            }),
-            ..default()
-        }))
+            });
+            #[cfg(target_arch = "wasm32")]
+            {
+                // Avoid noisy INFO (winit window, adapter, OIT) and JS console spam in the iframe.
+                plugins.set(LogPlugin {
+                    level: Level::WARN,
+                    filter: "warn".into(),
+                    ..Default::default()
+                })
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                plugins
+            }
+        })
         .add_systems(Startup, setup_scene)
         .add_systems(
             Update,
@@ -517,11 +533,13 @@ fn board_click(
 
 fn update_hud(
     model: Res<NetModel>,
-    mut q_status: Query<&mut Text, With<HudStatus>>,
-    mut q_you: Query<&mut Text, With<HudYou>>,
-    mut q_turn: Query<&mut Text, With<HudTurn>>,
+    mut hud: ParamSet<(
+        Query<&mut Text, With<HudStatus>>,
+        Query<&mut Text, With<HudYou>>,
+        Query<&mut Text, With<HudTurn>>,
+    )>,
 ) {
-    for mut t in &mut q_status {
+    for mut t in hud.p0().iter_mut() {
         **t = model.status.clone();
     }
     let (you_s, turn_s) = model.snapshot.as_ref().map_or(("?".into(), "?".into()), |s| {
@@ -530,10 +548,10 @@ fn update_hud(
             format!("{:?}", s.state.current_player),
         )
     });
-    for mut t in &mut q_you {
+    for mut t in hud.p1().iter_mut() {
         **t = format!("You: {}", you_s);
     }
-    for mut t in &mut q_turn {
+    for mut t in hud.p2().iter_mut() {
         **t = format!("Turn: {}", turn_s);
     }
 }
