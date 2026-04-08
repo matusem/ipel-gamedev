@@ -20,22 +20,35 @@ use crate::game_registry::GameRegistry;
 use crate::game_service;
 use crate::lobby_db::{self, LobbyDetail, LobbyListNotify, LobbyMessage, LobbySeat, LobbySummary};
 
-/// Authenticated user from `Authorization: Bearer <uuid>` (guest id from `registerUser`).
-#[derive(Clone, Copy, Debug)]
-pub struct RequestUser(pub Option<Uuid>);
+/// Authenticated principal from `Authorization: Bearer <uuid|publish_token>`.
+#[derive(Clone, Debug)]
+pub struct RequestUser(pub Option<String>);
 #[derive(Clone)]
 pub struct GamesDir(pub PathBuf);
 #[derive(Clone)]
 pub struct DraftsDir(pub PathBuf);
 
-fn require_user(ctx: &Context<'_>) -> Result<Uuid> {
-    let RequestUser(u) = ctx.data::<RequestUser>()?;
-    u.ok_or_else(|| Error::new("login required: send Authorization: Bearer <userId>"))
+async fn require_user(ctx: &Context<'_>) -> Result<Uuid> {
+    let RequestUser(raw) = ctx.data::<RequestUser>()?;
+    let Some(raw) = raw.as_ref() else {
+        return Err(Error::new("login required: send Authorization: Bearer <userId>"));
+    };
+    if let Ok(uid) = Uuid::parse_str(raw) {
+        return Ok(uid);
+    }
+    let pool = ctx.data::<SqlitePool>()?;
+    if let Some(tok) = db::resolve_publish_token(pool, raw)
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?
+    {
+        return Ok(tok.user_id);
+    }
+    Err(Error::new("invalid or expired bearer token"))
 }
 
 /// Bearer user must exist in `users` (avoids SQLite FK 787 when localStorage id is stale after DB reset).
 async fn require_registered_user(ctx: &Context<'_>) -> Result<Uuid> {
-    let uid = require_user(ctx)?;
+    let uid = require_user(ctx).await?;
     let pool = ctx.data::<SqlitePool>()?;
     if db::get_user(pool, uid)
         .await
@@ -66,6 +79,13 @@ pub struct UserGql {
     pub id: async_graphql::types::ID,
     pub display_name: String,
     pub created_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct PublishTokenGql {
+    pub token: String,
+    pub user_id: async_graphql::types::ID,
+    pub expires_at: i64,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -517,6 +537,23 @@ impl MutationRoot {
             id: id.to_string().into(),
             display_name: name,
             created_at: created,
+        })
+    }
+
+    async fn create_publish_token(
+        &self,
+        ctx: &Context<'_>,
+        ttl_days: Option<i32>,
+    ) -> Result<PublishTokenGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let (token, expires_at) = db::create_publish_token(pool, uid, ttl_days.unwrap_or(7) as i64)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(PublishTokenGql {
+            token,
+            user_id: uid.to_string().into(),
+            expires_at,
         })
     }
 

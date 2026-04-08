@@ -1,0 +1,49 @@
+[package]
+name = "my_game_bevy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.15", default-features = false, features = [
+    "default_font",
+    "bevy_asset",
+    "bevy_core_pipeline",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_winit",
+    "png",
+    "webgl2",
+] }
+my_game_logic = { path = "../logic" }
+game = { path = "../../../game" }
+console_error_panic_hook = "0.1"
+js-sys = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_urlencoded = "0.7"
+urlencoding = "2.1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+web-sys = { version = "0.3", features = [
+    "console",
+    "ErrorEvent",
+    "Location",
+    "MessageEvent",
+    "WebSocket",
+    "Window",
+] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+web-sys = { version = "0.3", features = [
+    "console",
+    "ErrorEvent",
+    "Location",
+    "MessageEvent",
+    "WebSocket",
+    "Window",
+] }

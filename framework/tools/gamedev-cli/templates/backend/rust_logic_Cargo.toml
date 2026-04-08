@@ -1,0 +1,12 @@
+[package]
+name = "__CRATE_NAME__"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+game = { path = "__GAME_PATH__" }
+serde = { version = "1", features = ["derive"] }
+shared-types = { package = "__SHARED_TYPES_NAME__", path = "../shared-types" }
+
+[dev-dependencies]
+serde_json = "1"

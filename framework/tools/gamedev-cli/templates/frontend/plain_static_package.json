@@ -1,0 +1,8 @@
+{
+  "name": "game-frontend",
+  "private": true,
+  "scripts": {
+    "build": "echo static frontend",
+    "sync:types": "cargo run --manifest-path ../../backend/rust/shared-types/Cargo.toml --features typegen --bin export_ts"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "game-frontend",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "sync:types": "cargo run --manifest-path ../../backend/rust/shared-types/Cargo.toml --features typegen --bin export_ts"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0"
+  }
+}

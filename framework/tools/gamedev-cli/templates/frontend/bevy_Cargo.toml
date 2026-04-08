@@ -1,0 +1,8 @@
+[package]
+name = "bevy_frontend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.15"
+shared-types = { path = "../../backend/rust/shared-types" }

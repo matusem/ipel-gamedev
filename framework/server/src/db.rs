@@ -2,6 +2,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use sqlx::Row;
 use std::str::FromStr;
 use uuid::Uuid;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone)]
 pub struct GameInstanceStore {
@@ -297,6 +298,62 @@ pub async fn grant_role(pool: &SqlitePool, user_id: Uuid, role: &str) -> Result<
         .execute(pool)
         .await?;
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct PublishTokenRow {
+    pub user_id: Uuid,
+}
+
+fn hash_publish_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+pub async fn create_publish_token(
+    pool: &SqlitePool,
+    user_id: Uuid,
+    ttl_days: i64,
+) -> Result<(String, i64), sqlx::Error> {
+    let now = GameInstanceStore::now_secs();
+    let expires_at = now + (ttl_days.clamp(1, 30) * 24 * 60 * 60);
+    let token = format!("gpt_{}", Uuid::new_v4());
+    let token_hash = hash_publish_token(&token);
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO publish_tokens (id, user_id, token_hash, expires_at, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL)",
+    )
+    .bind(id.to_string())
+    .bind(user_id.to_string())
+    .bind(token_hash)
+    .bind(expires_at)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok((token, expires_at))
+}
+
+pub async fn resolve_publish_token(
+    pool: &SqlitePool,
+    token: &str,
+) -> Result<Option<PublishTokenRow>, sqlx::Error> {
+    let token_hash = hash_publish_token(token);
+    let now = GameInstanceStore::now_secs();
+    let row = sqlx::query(
+        "SELECT user_id, expires_at FROM publish_tokens WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?",
+    )
+    .bind(token_hash)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(|r| {
+        let uid_s: String = r.get(0);
+        let _expires_at: i64 = r.get(1);
+        Some(PublishTokenRow {
+            user_id: Uuid::parse_str(&uid_s).ok()?,
+        })
+    }))
 }
 
 pub async fn insert_upload(

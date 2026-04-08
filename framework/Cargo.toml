@@ -5,5 +5,9 @@ members = [
     "server",
     "game-wasm-host",
     "games/tic_tac_toe/rust/logic",
-    "games/tic_tac_toe/rust/component",
+    "games/tic_tac_toe/rust/component", "tools/gamedev-cli",
+    "sdk/rust/shared-types",
+    "sdk/rust/shared",
+    "sdk/rust/bevy",
+    "sdk/rust/dioxus",
 ]

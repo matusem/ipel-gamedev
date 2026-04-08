@@ -1,0 +1,9 @@
+[package]
+name = "framework-sdk-bevy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.15"
+framework-sdk-rust-shared = { path = "../shared" }
+framework-sdk-shared-types = { path = "../shared-types" }

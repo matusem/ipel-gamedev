@@ -14,6 +14,8 @@ COPY game/ game/
 COPY game-wasm-host/ game-wasm-host/
 COPY server/ server/
 COPY games/tic_tac_toe/rust/ games/tic_tac_toe/rust/
+COPY tools/gamedev-cli/ tools/gamedev-cli/
+COPY sdk/rust/ sdk/rust/
 COPY test.wit ./
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

@@ -172,7 +172,7 @@ fn extract_request_user(req: &HttpRequest) -> RequestUser {
         .strip_prefix("Bearer ")
         .or_else(|| s.strip_prefix("bearer "))
         .unwrap_or(s);
-    RequestUser(Uuid::parse_str(rest.trim()).ok())
+    RequestUser(Some(rest.trim().to_string()))
 }
 
 /// Browser WebSockets cannot set `Authorization`; allow `?token=<uuid>` on `/graphql` WS.
@@ -187,9 +187,7 @@ fn extract_request_user_for_ws(req: &HttpRequest) -> RequestUser {
         let Some(v) = part.strip_prefix("token=") else {
             continue;
         };
-        if let Ok(u) = Uuid::parse_str(v) {
-            return RequestUser(Some(u));
-        }
+        return RequestUser(Some(v.to_string()));
     }
     RequestUser(None)
 }

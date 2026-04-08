@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Game</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; }
+    canvas#bevy-canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+  </style>
+</head>
+<body>
+  <canvas id="bevy-canvas" tabindex="0"></canvas>
+  <script type="module">
+    // winit's web backend throws this Error to yield to the browser event loop (not a real failure).
+    function isWinitWebYield(err) {
+      const msg =
+        err && typeof err.message === "string"
+          ? err.message
+          : err != null
+            ? String(err)
+            : "";
+      return msg.includes("Using exceptions for control flow");
+    }
+
+    import init from "./__BEVY_WASM_BINDGEN_JS__";
+
+    window.addEventListener("unhandledrejection", (ev) => {
+      if (isWinitWebYield(ev.reason)) ev.preventDefault();
+    });
+    window.addEventListener("error", (ev) => {
+      if (ev.error && isWinitWebYield(ev.error)) ev.preventDefault();
+    });
+
+    await init().catch((e) => {
+      if (isWinitWebYield(e)) return;
+      throw e;
+    });
+  </script>
+</body>
+</html>

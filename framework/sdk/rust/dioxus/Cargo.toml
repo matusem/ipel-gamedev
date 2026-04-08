@@ -1,0 +1,9 @@
+[package]
+name = "framework-sdk-dioxus"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dioxus = "0.6"
+framework-sdk-rust-shared = { path = "../shared" }
+framework-sdk-shared-types = { path = "../shared-types" }

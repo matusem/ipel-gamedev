@@ -1,0 +1,12 @@
+[package]
+name = "__SHARED_TYPES_NAME__"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+ts-rs = { version = "10", optional = true }
+
+[features]
+default = []
+typegen = ["dep:ts-rs"]

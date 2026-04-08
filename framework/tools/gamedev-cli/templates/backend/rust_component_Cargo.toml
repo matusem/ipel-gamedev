@@ -1,0 +1,16 @@
+[package]
+name = "__COMPONENT_NAME__"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type=["cdylib"]
+
+[dependencies]
+__LOGIC_NAME__ = { path = "__LOGIC_PATH__" }
+game-wasm-host = { path = "__HOST_PATH__" }
+
+[package.metadata.component]
+package = "component:wasm"
+
+[package.metadata.component.dependencies]
