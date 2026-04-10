@@ -361,7 +361,12 @@ pub async fn validate_and_stage_zip_bytes(
                     "E_WASM_COMPONENT_INVALID",
                     e,
                     Some("logic.wasm"),
-                    Some("Build with cargo-component using the expected WIT world."),
+                    Some(
+                        "The message field lists the step ([1/3] parse, [2/3] link WASI, [3/3] instantiate GameCore), \
+                         file size, and (when applicable) core-module import samples. \
+                         Fix: produce a WebAssembly Component with cargo component build --release. \
+                         Java/TeaVM builds are core Wasm (often WASI); they need a separate component packaging step to upload here.",
+                    ),
                 )),
             },
             Err(e) => diagnostics.push(diag(

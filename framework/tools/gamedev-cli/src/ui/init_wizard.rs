@@ -46,14 +46,14 @@ impl InitWizardState {
     fn backends() -> [&'static str; 4] {
         [
             "rust",
-            "java (not supported yet)",
+            "java",
             "csharp (not supported yet)",
             "cpp (not supported yet)",
         ]
     }
 
     fn backends_disabled() -> [bool; 4] {
-        [false, true, true, true]
+        [false, false, true, true]
     }
 
     fn frontends() -> [&'static str; 4] {

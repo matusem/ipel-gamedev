@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::cli::{BackendKind, FrontendKind, InitArgs, JsTemplate};
+use crate::pack::copy_dir_recursive;
 use crate::project::{self, ProjectConfig};
 
 pub fn cmd_init(args: InitArgs) -> Result<()> {
@@ -65,7 +66,7 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
         scaffold_tests_crate(&root, &cfg)?;
         fs::write(root.join(".gitignore"), include_str!("../../templates/gitignore_dist.txt"))
             .with_context(|| format!("write {}", root.join(".gitignore").display()))?;
-    } else {
+    } else if matches!(cfg.backend, BackendKind::Rust) {
         fs::write(root.join("tests/logic_test.rs"), include_str!("../../templates/tests/logic_test.rs"))
             .with_context(|| format!("write {}", root.join("tests/logic_test.rs").display()))?;
     }
@@ -78,6 +79,8 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
             &cfg,
             matches!(frontend, FrontendKind::Bevy | FrontendKind::Dioxus),
         )?;
+    } else if matches!(cfg.backend, BackendKind::Java) {
+        scaffold_java_backend(&root, &cfg)?;
     }
     match frontend {
         FrontendKind::Js | FrontendKind::Ts => {
@@ -85,7 +88,7 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
                 &root,
                 args.js_template.unwrap_or(JsTemplate::VanillaVite),
                 matches!(frontend, FrontendKind::Ts),
-                matches!(cfg.backend, BackendKind::Rust),
+                matches!(cfg.backend, BackendKind::Rust | BackendKind::Java),
             )?;
         }
         FrontendKind::Bevy => {
@@ -206,6 +209,45 @@ fn scaffold_tests_crate(root: &Path, cfg: &ProjectConfig) -> Result<()> {
         tests_dir.join("src/lib.rs"),
         include_str!("../../templates/tests/rust_tests_lib.rs").replace("__LOGIC_NAME__", &logic_name),
     )?;
+    Ok(())
+}
+
+fn scaffold_java_backend(root: &Path, cfg: &ProjectConfig) -> Result<()> {
+    let fw = project::find_framework_root(root).with_context(|| {
+        "Java backend: could not locate framework root (ancestor with sdk/java/game/settings.gradle.kts). \
+         Create the game under the framework tree, or copy sdk/java manually."
+    })?;
+    let java = root.join("backend/java");
+    let component_dst = java.join("component");
+    fs::create_dir_all(&java)?;
+    let src_tpl = fw.join("sdk/java/component-template");
+    copy_dir_recursive(&src_tpl, &component_dst)
+        .with_context(|| format!("copy Java template from {}", src_tpl.display()))?;
+    let _ = fs::remove_dir_all(component_dst.join("build"));
+    let _ = fs::remove_dir_all(component_dst.join(".gradle"));
+    fs::copy(fw.join("test.wit"), component_dst.join("game-core.wit"))
+        .with_context(|| format!("copy {}", fw.join("test.wit").display()))?;
+    let gradle_kts = fs::read_to_string(component_dst.join("build.gradle.kts"))?;
+    let marker =
+        "val wit = layout.projectDirectory.dir(\"../../..\").file(\"test.wit\").asFile";
+    let replacement = "val wit = layout.projectDirectory.file(\"game-core.wit\").asFile";
+    if !gradle_kts.contains(marker) {
+        anyhow::bail!(
+            "Java template build.gradle.kts is missing the WIT path marker; update scaffold_java_backend"
+        );
+    }
+    let patched = gradle_kts.replace(marker, replacement);
+    fs::write(component_dst.join("build.gradle.kts"), patched)?;
+    let game_sdk = fw.join("sdk/java/game");
+    let rel = pathdiff::diff_paths(&game_sdk, &java)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .to_string_lossy()
+        .replace('\\', "/");
+    let game_name = cfg.name.replace('-', "_");
+    let settings = include_str!("../../templates/backend/java_settings.gradle.kts")
+        .replace("__ROOT_NAME__", &format!("{game_name}-java"))
+        .replace("__SDK_GAME_PATH__", &rel);
+    fs::write(java.join("settings.gradle.kts"), settings)?;
     Ok(())
 }
 

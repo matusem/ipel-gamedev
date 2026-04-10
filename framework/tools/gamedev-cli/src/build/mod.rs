@@ -1,6 +1,9 @@
 //! Build game zip: Rust component, Bevy wasm-bindgen, frontend merge, validation.
 
+mod java_gradle;
 mod validate;
+
+pub(crate) use java_gradle::ensure_java_for_gradle;
 
 use std::fs;
 use std::path::Path;
@@ -11,7 +14,8 @@ use anyhow::{Context, Result, bail};
 use crate::cli::{BackendKind, BuildArgs, FrontendKind};
 use crate::pack::{copy_dir_recursive, create_zip};
 use crate::project::{
-    find_built_component_wasm, load_config, read_package_name, resolve_bevy_dir, resolve_component_dir,
+    find_built_component_wasm, find_built_java_logic_wasm, load_config, read_package_name, resolve_bevy_dir,
+    resolve_component_dir, resolve_java_backend_dir,
 };
 
 pub use validate::{
@@ -49,6 +53,48 @@ pub fn run(args: BuildArgs) -> Result<()> {
             let built_wasm = find_built_component_wasm(&root, &component_dir)?;
             fs::copy(built_wasm, stage.path().join("logic.wasm"))
                 .context("failed to copy built component to logic.wasm")?;
+        }
+        BackendKind::Java => {
+            ensure_java_for_gradle()?;
+            let java_dir = resolve_java_backend_dir(&root);
+            if !java_dir.join("settings.gradle.kts").is_file() {
+                bail!(
+                    "Java backend expected {} (or java/settings.gradle.kts) with Gradle settings",
+                    java_dir.display()
+                );
+            }
+            let gradlew = java_dir.join("gradlew.bat");
+            let gradlew_unix = java_dir.join("gradlew");
+            let mut cmd = if gradlew.is_file() {
+                Command::new(gradlew)
+            } else if gradlew_unix.is_file() {
+                Command::new(gradlew_unix)
+            } else {
+                Command::new("gradle")
+            };
+            cmd.current_dir(&java_dir);
+            let export_task = if java_dir.join("component").join("build.gradle.kts").is_file() {
+                ":component:exportLogicWasm"
+            } else {
+                "exportLogicWasm"
+            };
+            let status = cmd
+                .arg(export_task)
+                .args(["--no-daemon", "-q"])
+                .status()
+                .context("failed to run Gradle for Java logic.wasm; install JDK 21+ and Gradle (see sdk/java/README.md)")?;
+            if !status.success() {
+                bail!("Java Gradle build failed (`:component:exportLogicWasm`)");
+            }
+            let built = find_built_java_logic_wasm(&java_dir)?;
+            fs::copy(built, stage.path().join("logic.wasm"))
+                .context("failed to copy Java logic.wasm into stage")?;
+            eprintln!(
+                "warning: Java/Fermyon TeaVM `logic.wasm` is a core Wasm module (WASI + TeaVM runtime \
+                 imports), not a WebAssembly Component from `cargo component build`. Upload validation \
+                 may reject it. Use `backend = \"rust\"` for deployable component zips, or see \
+                 sdk/java/README.md (Deployment / server upload)."
+            );
         }
         _ => bail!("backend adapter not implemented yet"),
     }
@@ -174,30 +220,71 @@ fn merge_frontend_web_build_into_client(root: &Path, stage_root: &Path) -> Resul
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    if !npm_ok {
-        println!("warning: npm not available, skipping frontend web build");
-        return Ok(());
+
+    let mut dist_ready = false;
+    if npm_ok {
+        let install_status = Command::new("npm").arg("install").current_dir(&web_dir).status();
+        if install_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
+            println!("warning: npm install failed, falling back to static frontend/web merge");
+        } else {
+            let build_status = Command::new("npm").arg("run").arg("build").current_dir(&web_dir).status();
+            if build_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
+                println!("warning: npm run build failed, falling back to static frontend/web merge");
+            } else {
+                let dist_dir = web_dir.join("dist");
+                if dist_dir.is_dir() {
+                    copy_dir_recursive(&dist_dir, &stage_root.join("client"))?;
+                    dist_ready = true;
+                } else {
+                    println!(
+                        "warning: frontend/web has no dist/ after build (plain-static script?), falling back to static merge"
+                    );
+                }
+            }
+        }
+    } else {
+        println!("warning: npm not available, merging frontend/web/src into packaged client/");
     }
 
-    let install_status = Command::new("npm").arg("install").current_dir(&web_dir).status();
-    if install_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
-        println!("warning: npm install failed, keeping static client html");
+    if !dist_ready {
+        merge_frontend_web_static_into_staged_client(root, stage_root)?;
+    }
+    Ok(())
+}
+
+/// When there is no Vite `dist/` (no npm, failed install/build, or `echo` placeholder build), copy
+/// `frontend/web/src/main.js` into the staged `client/main.js` and ensure `index.html` loads it via
+/// `import … from "./main.js"` so packaging validation passes.
+fn merge_frontend_web_static_into_staged_client(root: &Path, stage_root: &Path) -> Result<()> {
+    let main_src = root.join("frontend/web/src/main.js");
+    if !main_src.is_file() {
+        println!(
+            "warning: missing frontend/web/src/main.js; add it or install Node and run npm run build in frontend/web"
+        );
         return Ok(());
     }
+    let client_dir = stage_root.join("client");
+    fs::copy(&main_src, client_dir.join("main.js"))
+        .with_context(|| format!("copy {} to staged client/main.js", main_src.display()))?;
+    ensure_client_index_imports_main_js(&client_dir)?;
+    Ok(())
+}
 
-    let build_status = Command::new("npm").arg("run").arg("build").current_dir(&web_dir).status();
-    if build_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
-        println!("warning: npm build failed, keeping static client html");
+fn ensure_client_index_imports_main_js(client_dir: &Path) -> Result<()> {
+    let index_path = client_dir.join("index.html");
+    let html = fs::read_to_string(&index_path).context("read staged client/index.html")?;
+    if html.contains("from \"./main.js\"") || html.contains("from './main.js'") {
         return Ok(());
     }
-
-    let dist_dir = web_dir.join("dist");
-    if !dist_dir.exists() {
-        println!("warning: frontend dist/ missing after build, keeping static client html");
-        return Ok(());
-    }
-
-    copy_dir_recursive(&dist_dir, &stage_root.join("client"))?;
+    let inject = "<script type=\"module\">import * as _ from \"./main.js\";</script>\n";
+    let new_html = if let Some(pos) = html.rfind("</body>") {
+        let mut s = html;
+        s.insert_str(pos, inject);
+        s
+    } else {
+        format!("{html}{inject}")
+    };
+    fs::write(&index_path, new_html).context("write staged client/index.html")?;
     Ok(())
 }
 

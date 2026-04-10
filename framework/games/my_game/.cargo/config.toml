@@ -1,3 +1,0 @@
-# Required for getrandom on wasm32-unknown-unknown (Bevy / wasm-bindgen web builds).
-[target.wasm32-unknown-unknown]
-rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

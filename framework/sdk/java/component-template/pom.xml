@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>dev.ipel.gamedev</groupId>
+  <artifactId>game-logic-component</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+  <description>TeaVM-WASI (com.fermyon) guest for game-core WIT</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <teavm.version>0.2.8</teavm.version>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+  <!-- Pass absolute path to java-game JAR: Gradle uses -Dgame.jar=... -->
+
+  <dependencies>
+    <dependency>
+      <groupId>com.fermyon</groupId>
+      <artifactId>teavm-classlib</artifactId>
+      <version>${teavm.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fermyon</groupId>
+      <artifactId>teavm-interop</artifactId>
+      <version>${teavm.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>dev.ipel.gamedev</groupId>
+      <artifactId>game</artifactId>
+      <version>0.1.0</version>
+      <scope>system</scope>
+      <systemPath>${game.jar}</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <!-- 2.15+ ships Java 21 multi-release classes; Fermyon TeaVM 0.2.x cannot parse major 65 -->
+      <version>2.14.3</version>
+    </dependency>
+    <dependency>
+      <groupId>org.msgpack</groupId>
+      <artifactId>jackson-dataformat-msgpack</artifactId>
+      <version>0.9.8</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>add-wit-bindgen-sources</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>src/generated/java</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>com.fermyon</groupId>
+        <artifactId>teavm-maven-plugin</artifactId>
+        <version>${teavm.version}</version>
+        <executions>
+          <execution>
+            <id>teavm-wasm</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <targetDirectory>${project.build.directory}/generated/wasm/teavm-wasm</targetDirectory>
+              <targetType>WEBASSEMBLY</targetType>
+              <mainClass>wit.worlds.GameCoreImpl</mainClass>
+              <debugInformationGenerated>true</debugInformationGenerated>
+              <minifying>false</minifying>
+              <optimizationLevel>SIMPLE</optimizationLevel>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

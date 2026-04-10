@@ -7,6 +7,7 @@ This directory contains frontend SDK packages for the framework.
 - `rust/bevy`: Bevy-focused adapters built on `rust/shared`.
 - `rust/dioxus`: Dioxus-focused adapters built on `rust/shared`.
 - `js`: JavaScript/TypeScript SDK and generated Rust-derived types.
+- `java`: TeaVM game logic aligned with the `game-core` WIT world ([java/README.md](java/README.md)).
 
 ## Rust to TypeScript type generation
 

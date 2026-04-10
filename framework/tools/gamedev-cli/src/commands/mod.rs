@@ -3,7 +3,7 @@
 use std::fs;
 use std::process::Command;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde_json::json;
 
 use crate::api;
@@ -13,7 +13,7 @@ use crate::cli::{
     BackendKind, BuildArgs, DeployArgs, DraftsArgs, DraftsSubcommands, LoginArgs, ManifestArgs,
     ManifestSubcommands, TestArgs,
 };
-use crate::project::{load_config, resolve_logic_dir};
+use crate::project::{load_config, resolve_java_backend_dir, resolve_logic_dir};
 
 pub fn run_init(args: crate::cli::InitArgs) -> Result<()> {
     crate::scaffold::cmd_init(args)
@@ -147,6 +147,33 @@ pub fn run_test(args: TestArgs) -> Result<()> {
                 .status()?;
             if !status.success() {
                 bail!("tests failed");
+            }
+        }
+        BackendKind::Java => {
+            build::ensure_java_for_gradle()?;
+            let java_dir = resolve_java_backend_dir(&root);
+            if !java_dir.join("settings.gradle.kts").is_file() {
+                bail!("Java backend missing {}", java_dir.join("settings.gradle.kts").display());
+            }
+            let gradlew = java_dir.join("gradlew.bat");
+            let gradlew_unix = java_dir.join("gradlew");
+            let mut cmd = if gradlew.is_file() {
+                Command::new(gradlew)
+            } else if gradlew_unix.is_file() {
+                Command::new(gradlew_unix)
+            } else {
+                Command::new("gradle")
+            };
+            cmd.current_dir(&java_dir);
+            // Game sources live in the included `game` build; the `component` project delegates to Maven.
+            let compile_task = ":game:compileJava";
+            let status = cmd
+                .arg(compile_task)
+                .args(["--no-daemon", "-q"])
+                .status()
+                .context("failed to run Gradle for Java backend")?;
+            if !status.success() {
+                bail!("Java compile failed");
             }
         }
         _ => bail!("backend test adapter not implemented yet"),

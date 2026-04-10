@@ -49,6 +49,54 @@ pub fn resolve_bevy_dir(root: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Directory containing `sdk/java/game/settings.gradle.kts` (framework repo root containing the Java SDK).
+pub fn find_framework_root(from: &Path) -> Option<PathBuf> {
+    let mut dir = Some(from);
+    while let Some(current) = dir {
+        if current.join("sdk/java/game/settings.gradle.kts").is_file() {
+            return Some(current.to_path_buf());
+        }
+        dir = current.parent();
+    }
+    None
+}
+
+pub fn resolve_java_backend_dir(root: &Path) -> PathBuf {
+    let nested = root.join("backend").join("java");
+    if nested.join("settings.gradle.kts").is_file() {
+        return nested;
+    }
+    root.join("java")
+}
+
+pub fn find_built_java_logic_wasm(java_backend: &Path) -> Result<PathBuf> {
+    let component = if java_backend.join("component").join("build.gradle.kts").is_file() {
+        java_backend.join("component")
+    } else {
+        java_backend.to_path_buf()
+    };
+    let candidates = [
+        component.join("build").join("out").join("logic.wasm"),
+        component.join("build").join("generated").join("teavm").join("wasm-gc").join("logic.wasm"),
+        component
+            .join("target")
+            .join("generated")
+            .join("wasm")
+            .join("teavm-wasm")
+            .join("classes.wasm"),
+    ];
+    for p in candidates {
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    bail!(
+        "no logic.wasm found under {}; run Gradle `exportLogicWasm` in {}",
+        component.display(),
+        java_backend.display()
+    );
+}
+
 pub fn find_built_component_wasm(root: &Path, component_dir: &Path) -> Result<PathBuf> {
     let out_dirs = [
         root.join("target").join("wasm32-wasip1").join("release"),
