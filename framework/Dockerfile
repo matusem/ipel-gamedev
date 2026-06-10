@@ -5,8 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    rustup target add wasm32-unknown-unknown \
-    && cargo install dioxus-cli --locked
+    rustup target add wasm32-unknown-unknown wasm32-wasip1 \
+    && cargo install dioxus-cli cargo-component --locked
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
@@ -23,6 +23,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build -p server --release \
     && cp target/release/server /app/server-bin
+
+# Ship tic-tac-toe as the default game bundle
+COPY games/tic_tac_toe/manifest.json /app/games-tic-src/
+COPY games/tic_tac_toe/client/ /app/games-tic-src/client/
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo component build -p tic_tac_toe_component --release \
+    && mkdir -p /app/games-bundle/tic_tac_toe/client \
+    && cp /app/games-tic-src/manifest.json /app/games-bundle/tic_tac_toe/ \
+    && cp -r /app/games-tic-src/client/. /app/games-bundle/tic_tac_toe/client/ \
+    && cp target/wasm32-wasip1/release/tic_tac_toe_component.wasm /app/games-bundle/tic_tac_toe/logic.wasm
 
 COPY packages/game-sdk/ /app/packages/game-sdk/
 WORKDIR /app/packages/game-sdk
@@ -54,6 +66,8 @@ COPY --from=builder /app/server-bin /app/server
 COPY --from=builder /app/client-lib/ /app/lib/
 
 COPY --from=builder /app/lobby-dist/ /app/lobby/
+
+COPY --from=builder /app/games-bundle/tic_tac_toe/ /app/games/tic_tac_toe/
 
 ENV HOST=0.0.0.0
 ENV PORT=8080

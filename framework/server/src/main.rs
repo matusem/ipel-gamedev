@@ -27,6 +27,8 @@ mod graphql_api;
 mod auth_password;
 mod lobby_db;
 mod game_upload;
+mod platform_stats;
+mod game_storefront;
 
 mod game_core {
     use wasmtime::component::bindgen;
@@ -190,6 +192,12 @@ fn extract_request_user_for_ws(req: &HttpRequest) -> RequestUser {
         return RequestUser(Some(v.to_string()));
     }
     RequestUser(None)
+}
+
+async fn health() -> ActixResult<HttpResponse> {
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(r#"{"status":"ok"}"#))
 }
 
 async fn graphql_playground() -> ActixResult<HttpResponse> {
@@ -392,6 +400,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(game_store.clone())
             .app_data(lobby_notify.clone())
             .app_data(schema.clone())
+            .route("/health", web::get().to(health))
             .route("/game", web::get().to(game))
             .route("/games/{game}/{tail:.*}", web::get().to(game_asset))
             .service(

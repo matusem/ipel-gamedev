@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;700;800&amp;family=Space+Grotesk:wght@400;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#6ffbbe",
+                        "on-surface-variant": "#c7c4d8",
+                        "inverse-surface": "#dae2fd",
+                        "secondary": "#89ceff",
+                        "error-container": "#93000a",
+                        "on-surface": "#dae2fd",
+                        "on-primary-container": "#dad7ff",
+                        "on-tertiary-fixed": "#002113",
+                        "outline": "#918fa1",
+                        "surface-tint": "#c3c0ff",
+                        "surface-container-low": "#131b2e",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "inverse-on-surface": "#283044",
+                        "tertiary": "#4edea3",
+                        "background": "#0b1326",
+                        "primary-fixed": "#e2dfff",
+                        "surface-container-high": "#222a3d",
+                        "on-primary-fixed": "#0f0069",
+                        "on-error-container": "#ffdad6",
+                        "on-primary": "#1d00a5",
+                        "on-secondary-container": "#00344e",
+                        "secondary-fixed-dim": "#89ceff",
+                        "on-tertiary": "#003824",
+                        "secondary-container": "#00a2e6",
+                        "inverse-primary": "#4d44e3",
+                        "surface-container-highest": "#2d3449",
+                        "tertiary-container": "#006e4b",
+                        "on-error": "#690005",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "surface-variant": "#2d3449",
+                        "surface-container-lowest": "#060e20",
+                        "outline-variant": "#464555",
+                        "primary-container": "#4f46e5",
+                        "surface-container": "#171f33",
+                        "primary": "#c3c0ff",
+                        "on-secondary-fixed": "#001e2f",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-bright": "#31394d",
+                        "on-tertiary-container": "#67f4b7",
+                        "surface": "#0b1326",
+                        "secondary-fixed": "#c9e6ff",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "on-secondary": "#00344d",
+                        "surface-dim": "#0b1326",
+                        "on-background": "#dae2fd",
+                        "on-secondary-fixed-variant": "#004c6e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "sm": "8px",
+                        "container-max": "1440px",
+                        "xl": "40px",
+                        "unit": "4px",
+                        "lg": "24px",
+                        "md": "16px",
+                        "gutter": "20px"
+                    },
+                    "fontFamily": {
+                        "mono-code": ["Space Grotesk"],
+                        "label-caps": ["Space Grotesk"],
+                        "h2": ["Manrope"],
+                        "h1": ["Manrope"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-sm": ["Inter"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #0b1326;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #464555;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md selection:bg-primary-container selection:text-white">
+<!-- TopNavBar -->
+<header class="sticky top-0 w-full z-50 flex items-center justify-between px-6 h-16 bg-slate-950/90 backdrop-blur-md border-b border-slate-800">
+<div class="flex items-center gap-8">
+<span class="font-manrope text-xl font-extrabold tracking-tighter text-slate-50 uppercase">Nexus Multiplayer</span>
+<nav class="hidden md:flex gap-6">
+<a class="font-manrope text-sm font-medium tracking-tight text-slate-400 hover:text-slate-200 transition-colors" href="#">Discover</a>
+<a class="font-manrope text-sm font-medium tracking-tight text-slate-400 hover:text-slate-200 transition-colors" href="#">Games</a>
+<a class="font-manrope text-sm font-medium tracking-tight text-indigo-500 border-b-2 border-indigo-500 pb-1" href="#">Lobbies</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-slate-400 hover:text-indigo-400 transition-all duration-200 ease-in-out"><span class="material-symbols-outlined">notifications</span></button>
+<button class="p-2 text-slate-400 hover:text-indigo-400 transition-all duration-200 ease-in-out"><span class="material-symbols-outlined">signal_cellular_alt</span></button>
+<button class="p-2 text-slate-400 hover:text-indigo-400 transition-all duration-200 ease-in-out"><span class="material-symbols-outlined">settings</span></button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
+<img alt="User profile" data-alt="A professional headshot of a modern user avatar with minimalist features, rendered in a clean, flat digital art style. The color palette utilizes sophisticated shades of deep indigo and slate, perfectly matching a high-end gaming console's technical interface. The lighting is soft and even, highlighting a sleek and reliable persona." src="https://lh3.googleusercontent.com/aida-public/AB6AXuByyAuO-0ZqcPCR9SEP4C8kQtBs_u1LGh_TqcYrOGWMMbnksbSIGmmfsP_C4RQAkGRfmJ0CyEmLUIZLTTT0TdYIhGGxksg58D0WD1prnzhp8CsaV81HnIb7aNFwuBNjyXK9SGtH2IsrFptfTjXd9bfcxCCssVQKw5Lq7HyR7taM1gf_rFi59TrjrAizrWIhFHfTqeSDzWuYkUWNBO7o5HhmUDVFxkVPjjPemD3tJudrsui5Se3feJrds6r5kPV7uNCQLHtTIWaKGw"/>
+</div>
+</div>
+</header>
+<main class="flex h-[calc(100vh-64px-72px)] overflow-hidden">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-full py-8 w-64 border-r border-slate-800 bg-slate-950 flex-shrink-0">
+<div class="px-6 mb-8">
+<h2 class="text-lg font-black text-slate-50 uppercase tracking-widest font-manrope">Nexus Console</h2>
+<p class="text-xs text-tertiary font-mono-code">System Stable</p>
+</div>
+<nav class="flex-grow">
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-all" href="#"><span class="material-symbols-outlined">explore</span><span class="font-manrope antialiased">Discover</span></a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-all" href="#"><span class="material-symbols-outlined">sports_esports</span><span class="font-manrope antialiased">Games</span></a>
+<a class="bg-indigo-600/10 text-indigo-400 border-r-2 border-indigo-500 px-4 py-3 flex items-center gap-3 active:scale-95 transition-transform duration-150" href="#"><span class="material-symbols-outlined">groups</span><span class="font-manrope antialiased">Lobbies</span></a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-all" href="#"><span class="material-symbols-outlined">terminal</span><span class="font-manrope antialiased">Developer Hub</span></a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-all" href="#"><span class="material-symbols-outlined">account_circle</span><span class="font-manrope antialiased">Profile</span></a>
+</nav>
+<div class="px-4 mt-auto">
+<button class="w-full bg-primary-container text-on-primary-container py-3 rounded-xl font-bold font-manrope uppercase tracking-tight hover:brightness-110 active:scale-95 transition-all">Launch Game</button>
+</div>
+</aside>
+<!-- Main Canvas -->
+<div class="flex-grow flex flex-col md:flex-row overflow-hidden">
+<!-- Staging Area (Player Grid) -->
+<section class="flex-grow p-lg overflow-y-auto custom-scrollbar">
+<div class="max-w-container-max mx-auto">
+<div class="flex items-center justify-between mb-lg">
+<div>
+<h1 class="font-h1 text-h1 text-on-surface">Shadow Protocol: Lobby 402</h1>
+<div class="flex gap-4 mt-sm items-center">
+<span class="flex items-center gap-1 text-tertiary font-label-caps"><span class="w-2 h-2 rounded-full bg-tertiary"></span> US-EAST STABLE</span>
+<span class="text-on-surface-variant text-body-sm font-mono-code">ID: NEX-7781-B</span>
+</div>
+</div>
+<div class="flex gap-sm">
+<button class="flex items-center gap-2 border border-outline-variant px-md py-sm rounded-xl text-body-sm font-label-caps hover:bg-surface-container-high transition-colors"><span class="material-symbols-outlined text-sm">share</span> INVITE</button>
+<button class="flex items-center gap-2 border border-error px-md py-sm rounded-xl text-error text-body-sm font-label-caps hover:bg-error-container transition-colors"><span class="material-symbols-outlined text-sm">logout</span> LEAVE</button>
+</div>
+</div>
+<!-- Seat Map Bento Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md">
+<!-- Player Card 1 (Owner) -->
+<div class="bg-surface-container-low border border-indigo-500/50 p-md rounded-xl flex items-center gap-md relative overflow-hidden">
+<div class="absolute top-0 right-0 bg-indigo-500 text-[10px] font-bold px-3 py-1 text-white">HOST</div>
+<img class="w-16 h-16 rounded-xl bg-surface-variant" data-alt="A stylized digital avatar with short dark hair and a confident expression, wearing a futuristic dark grey hoodie. The artwork is clean, technical, and utilizes a dark-mode friendly palette of navy and charcoal, fitting for a game host profile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBCAqKuhV30FkaHYNhTUbXKHOPWX5IsKw6pnQBVgPN2IowwFjye_GeQG-pfBfIjARe1cd6zTuy6ccFmFZZHJhMzv77Wx2ZnTrGyMf8YuFeryAzRPXypXsDI3ACbvpe28eHIYvVQBJ6o0fCoSIeHk6zoMg7K6WaR8sPv-N5Gkb5jZGQXhUdbBhLc35u4tPP_0-CxvqNCi8C5g8TrIajO411o0bbMEwk25VJ4H2YgOTMldCnFlJipQxxy5vnKIKaDSDgL1HhDo_N5PQ"/>
+<div class="flex-grow">
+<p class="font-h2 text-body-lg text-on-surface mb-xs">AlphaOperator</p>
+<p class="text-body-sm text-tertiary font-mono-code">24ms • Lv. 99</p>
+</div>
+<div class="flex flex-col items-center gap-xs">
+<span class="material-symbols-outlined text-tertiary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-[10px] font-label-caps text-tertiary">READY</span>
+</div>
+</div>
+<!-- Player Card 2 -->
+<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl flex items-center gap-md hover:border-indigo-500/30 transition-colors">
+<img class="w-16 h-16 rounded-xl bg-surface-variant" data-alt="A mysterious digital avatar wearing a high-tech visor and dark metallic headwear, reflecting a minimalist cyberpunk aesthetic. The portrait is rendered with deep blue and slate tones, accented by glowing indigo lines that match the Nexus Multiplayer UI branding." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA1T7I62bldecc2bdaKefkmQzvrINT6M2A-MW199akFt7kpMNf_3Ae0vw_I0ZYyg6YjuLXCE8_AlI2Dp_2ebaxpWXIhgEbiO94NIc6OyQOU_C1sVlzn95uzUGDrG1xaGRjE_Nx_NxlyxKKF_6Yp4wDcEaSc8qvhI-aVa-XsydysduhMbA2zE4eyyslL6uJ-RBITlASJ9lGjllqAVF3wcR30Dphduz1T5_p4NQm6p6do92dT-9lz9g55dzZeC6dfJrjWXgkwNzNzzw"/>
+<div class="flex-grow">
+<p class="font-h2 text-body-lg text-on-surface mb-xs">Ghost_Panda</p>
+<p class="text-body-sm text-on-surface-variant font-mono-code">42ms • Lv. 12</p>
+</div>
+<div class="flex flex-col items-center gap-xs">
+<span class="material-symbols-outlined text-tertiary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-[10px] font-label-caps text-tertiary">READY</span>
+</div>
+</div>
+<!-- Player Card 3 -->
+<div class="bg-surface-container-low border border-outline-variant p-md rounded-xl flex items-center gap-md animate-pulse">
+<div class="w-16 h-16 rounded-xl bg-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant">hourglass_empty</span>
+</div>
+<div class="flex-grow">
+<p class="font-h2 text-body-lg text-on-surface-variant italic">Connecting...</p>
+</div>
+</div>
+<!-- Empty Seat 4 -->
+<div class="border-2 border-dashed border-outline-variant/30 p-md rounded-xl flex items-center justify-center gap-md group hover:border-indigo-500/50 hover:bg-surface-container-low transition-all cursor-pointer">
+<span class="material-symbols-outlined text-outline group-hover:text-indigo-400">person_add</span>
+<span class="font-label-caps text-outline group-hover:text-indigo-400">OPEN SLOT</span>
+</div>
+<!-- Empty Seat 5 -->
+<div class="border-2 border-dashed border-outline-variant/30 p-md rounded-xl flex items-center justify-center gap-md">
+<span class="material-symbols-outlined text-outline/30">lock</span>
+</div>
+<!-- Empty Seat 6 -->
+<div class="border-2 border-dashed border-outline-variant/30 p-md rounded-xl flex items-center justify-center gap-md">
+<span class="material-symbols-outlined text-outline/30">lock</span>
+</div>
+</div>
+<!-- Game Visualization Hero Section -->
+<div class="mt-lg rounded-xl overflow-hidden relative h-64 border border-outline-variant group">
+<div class="absolute inset-0 bg-gradient-to-t from-slate-950 to-transparent z-10"></div>
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="A cinematic wide-angle shot of a high-tech esports stadium at night. The arena is filled with neon indigo and deep violet light beams that slice through the dark atmosphere. The scene is clean, professional, and captures the intense energy of a competitive gaming environment with technical minimalist architectural details." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAo8tv_pupB3foW30KJPCRiEyxnu6lUocJvHwifx4pAumYMFU2U84BwgALW7WsPotpa3BTar_lgHmiqAWlBScoJAFFpr3AmdvIgBkmel9Tpl7JLmUCBbB5xyz1m6-pyIuuayBCxgF5UdbOC8bmYhJ-ampkdI97CTKn0TqAFryirQ4OSQNsNVuSNGbI7lf42Sxy8B4kf-TuRf9qQu6bbyEYs_AaNwyIJFgcMf2ckvBU7QzdRHNZGNZw2MuHehvDswtJvrNcK8EmoJA"/>
+<div class="absolute bottom-md left-md z-20">
+<span class="bg-indigo-600 px-3 py-1 rounded-sm text-[10px] font-black uppercase mb-sm inline-block">Current Map</span>
+<h3 class="text-h2 font-h2 text-white">Sector 7: Data Core</h3>
+<p class="text-body-sm text-slate-300 max-w-lg">Capture the objective in a dense urban environment featuring high verticality and multiple flanking routes.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Panel: Config & Chat -->
+<aside class="w-full md:w-96 border-l border-slate-800 bg-slate-950/50 flex flex-col flex-shrink-0">
+<!-- Configuration Panel -->
+<div class="p-md border-b border-slate-800">
+<div class="flex items-center gap-2 mb-md">
+<span class="material-symbols-outlined text-indigo-400">settings_input_component</span>
+<h4 class="font-label-caps text-on-surface">GAME CONFIGURATION</h4>
+</div>
+<div class="bg-black p-md rounded-lg border border-slate-800 h-48 overflow-y-auto custom-scrollbar">
+<code class="font-mono-code text-mono-code text-tertiary">
+<span class="text-indigo-400">{</span><br/>
+                              <span class="text-secondary">"game_mode"</span>: <span class="text-tertiary-fixed">"competitive"</span>,<br/>
+                              <span class="text-secondary">"map_id"</span>: <span class="text-tertiary-fixed">"sector-07-dc"</span>,<br/>
+                              <span class="text-secondary">"max_players"</span>: <span class="text-white">6</span>,<br/>
+                              <span class="text-secondary">"friendly_fire"</span>: <span class="text-error">false</span>,<br/>
+                              <span class="text-secondary">"respawn_delay"</span>: <span class="text-white">5.0</span><br/>
+<span class="text-indigo-400">}</span>
+</code>
+</div>
+<button class="w-full mt-sm text-body-sm font-label-caps py-2 text-indigo-400 hover:bg-indigo-400/10 transition-colors border border-indigo-400/20 rounded">EDIT SCHEMA</button>
+</div>
+<!-- Chat Panel -->
+<div class="flex-grow flex flex-col overflow-hidden">
+<div class="px-md py-sm border-b border-slate-800 flex justify-between items-center">
+<span class="font-label-caps text-on-surface-variant">LOBBY CHAT</span>
+<span class="text-[10px] text-tertiary font-mono-code">3 ONLINE</span>
+</div>
+<div class="flex-grow overflow-y-auto p-md custom-scrollbar flex flex-col gap-md">
+<div class="flex flex-col">
+<div class="flex justify-between mb-1">
+<span class="font-bold text-xs text-indigo-400">AlphaOperator</span>
+<span class="text-[10px] text-on-surface-variant font-mono-code">14:02</span>
+</div>
+<p class="text-body-sm text-on-surface bg-surface-container px-3 py-2 rounded-lg rounded-tl-none">Welcome everyone. Checking gear settings now.</p>
+</div>
+<div class="flex flex-col items-end">
+<div class="flex justify-between mb-1 w-full">
+<span class="text-[10px] text-on-surface-variant font-mono-code">14:03</span>
+<span class="font-bold text-xs text-secondary">Ghost_Panda</span>
+</div>
+<p class="text-body-sm text-on-surface bg-indigo-600/20 px-3 py-2 rounded-lg rounded-tr-none border border-indigo-600/30">Ready on my end. Map looks good.</p>
+</div>
+<div class="bg-surface-container-highest/50 px-3 py-2 rounded text-[10px] text-center text-on-surface-variant font-label-caps">
+                            SYSTEM: <span class="text-tertiary">STORM_RIDER</span> IS CONNECTING
+                        </div>
+</div>
+<div class="p-md bg-slate-950">
+<div class="relative">
+<input class="w-full bg-surface-container-lowest border border-outline-variant focus:border-indigo-500 focus:ring-0 rounded-xl px-4 py-3 text-body-sm" placeholder="Type message..." type="text"/>
+<button class="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-400 hover:text-indigo-300">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+<!-- Bottom Bar (Start Action) -->
+<footer class="h-[72px] w-full bg-slate-950 border-t border-slate-800 px-lg flex items-center justify-between fixed bottom-0 left-0 z-50">
+<div class="hidden md:flex items-center gap-xl">
+<div class="flex flex-col">
+<span class="text-[10px] font-label-caps text-on-surface-variant">LOBBY STATUS</span>
+<span class="text-body-md font-bold text-on-surface flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+                    WAITING FOR PLAYERS (2/6)
+                </span>
+</div>
+<div class="h-8 w-px bg-slate-800"></div>
+<div class="flex flex-col">
+<span class="text-[10px] font-label-caps text-on-surface-variant">EST. MATCH TIME</span>
+<span class="text-body-md font-mono-code text-on-surface">15:00 MIN</span>
+</div>
+</div>
+<div class="flex gap-md w-full md:w-auto">
+<button class="flex-grow md:flex-none px-xl py-3 rounded-xl border border-outline-variant font-bold font-label-caps text-on-surface hover:bg-surface-container transition-all">
+                CANCEL
+            </button>
+<!-- Start Game Button: Disabled state style but shown as active for UI purpose -->
+<button class="flex-grow md:flex-none px-xl py-3 rounded-xl bg-indigo-600 text-white font-bold font-manrope uppercase tracking-widest shadow-[0_0_20px_rgba(79,70,229,0.4)] hover:brightness-110 active:scale-95 transition-all opacity-50 cursor-not-allowed">
+                START MATCH
+            </button>
+</div>
+</footer>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-[60] flex md:hidden justify-around items-center px-4 py-3 bg-slate-950 border-t border-slate-800 shadow-[0_-4px_12px_rgba(0,0,0,0.5)]">
+<a class="flex flex-col items-center justify-center text-slate-500 p-2 hover:text-indigo-400 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-manrope text-[10px] font-bold uppercase">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-indigo-500 bg-indigo-500/5 rounded-xl p-2 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined">list_alt</span>
+<span class="font-manrope text-[10px] font-bold uppercase">Lobbies</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-500 p-2 hover:text-indigo-400 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined">code</span>
+<span class="font-manrope text-[10px] font-bold uppercase">Dev</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-500 p-2 hover:text-indigo-400 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-manrope text-[10px] font-bold uppercase">Profile</span>
+</a>
+</nav>
+</body></html>

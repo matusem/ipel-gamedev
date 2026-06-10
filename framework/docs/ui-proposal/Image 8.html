@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0b1326;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#6ffbbe",
+                        "on-surface-variant": "#c7c4d8",
+                        "inverse-surface": "#dae2fd",
+                        "secondary": "#89ceff",
+                        "error-container": "#93000a",
+                        "on-surface": "#dae2fd",
+                        "on-primary-container": "#dad7ff",
+                        "on-tertiary-fixed": "#002113",
+                        "outline": "#918fa1",
+                        "surface-tint": "#c3c0ff",
+                        "surface-container-low": "#131b2e",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "inverse-on-surface": "#283044",
+                        "tertiary": "#4edea3",
+                        "background": "#0b1326",
+                        "primary-fixed": "#e2dfff",
+                        "surface-container-high": "#222a3d",
+                        "on-primary-fixed": "#0f0069",
+                        "on-error-container": "#ffdad6",
+                        "on-primary": "#1d00a5",
+                        "on-secondary-container": "#00344e",
+                        "secondary-fixed-dim": "#89ceff",
+                        "on-tertiary": "#003824",
+                        "secondary-container": "#00a2e6",
+                        "inverse-primary": "#4d44e3",
+                        "surface-container-highest": "#2d3449",
+                        "tertiary-container": "#006e4b",
+                        "on-error": "#690005",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "surface-variant": "#2d3449",
+                        "surface-container-lowest": "#060e20",
+                        "outline-variant": "#464555",
+                        "primary-container": "#4f46e5",
+                        "surface-container": "#171f33",
+                        "primary": "#c3c0ff",
+                        "on-secondary-fixed": "#001e2f",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-bright": "#31394d",
+                        "on-tertiary-container": "#67f4b7",
+                        "surface": "#0b1326",
+                        "secondary-fixed": "#c9e6ff",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "on-secondary": "#00344d",
+                        "surface-dim": "#0b1326",
+                        "on-background": "#dae2fd",
+                        "on-secondary-fixed-variant": "#004c6e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "xs": "4px",
+                        "sm": "8px",
+                        "container-max": "1440px",
+                        "xl": "40px",
+                        "unit": "4px",
+                        "lg": "24px",
+                        "md": "16px",
+                        "gutter": "20px"
+                    },
+                    "fontFamily": {
+                        "mono-code": ["Space Grotesk"],
+                        "label-caps": ["Space Grotesk"],
+                        "h2": ["Manrope"],
+                        "h1": ["Manrope"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "mono-code": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "h2": ["32px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "h1": ["40px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="font-body-md text-on-surface bg-background min-h-screen">
+<!-- SideNavBar Anchor -->
+<aside class="hidden md:flex flex-col h-full py-8 fixed left-0 top-0 bg-slate-950 h-screen w-64 border-r border-slate-800 font-manrope antialiased z-50">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-white" data-icon="terminal">terminal</span>
+</div>
+<div>
+<h1 class="text-lg font-black text-slate-50 uppercase tracking-widest">Nexus Console</h1>
+<p class="text-[10px] text-tertiary-fixed font-bold tracking-widest uppercase">System Stable</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="explore">explore</span>
+<span>Discover</span>
+</a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="sports_esports">sports_esports</span>
+<span>Games</span>
+</a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span>Lobbies</span>
+</a>
+<a class="bg-indigo-600/10 text-indigo-400 border-r-2 border-indigo-500 px-4 py-3 flex items-center gap-3 active:scale-95 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span>Developer Hub</span>
+</a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:text-slate-200 hover:bg-slate-900 transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+<span>Profile</span>
+</a>
+</nav>
+<div class="px-4 mt-auto">
+<button class="w-full py-3 bg-primary-container text-white font-bold rounded-xl active:scale-95 transition-transform duration-150 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="rocket_launch">rocket_launch</span>
+                Launch Game
+            </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="md:ml-64 min-h-screen pb-24 md:pb-12">
+<!-- TopNavBar Anchor -->
+<header class="sticky top-0 w-full z-40 flex items-center justify-between px-6 h-16 bg-slate-950/90 backdrop-blur-md border-b border-slate-800">
+<div class="flex items-center gap-4">
+<span class="font-manrope text-sm font-medium tracking-tight text-slate-400">Project / </span>
+<span class="font-manrope text-sm font-bold tracking-tight text-slate-50">Nexus Multiplayer</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden lg:flex items-center gap-4">
+<span class="material-symbols-outlined text-slate-400 hover:text-indigo-400 cursor-pointer" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-slate-400 hover:text-indigo-400 cursor-pointer" data-icon="signal_cellular_alt">signal_cellular_alt</span>
+<span class="material-symbols-outlined text-slate-400 hover:text-indigo-400 cursor-pointer" data-icon="settings">settings</span>
+</div>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-slate-700">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="A futuristic professional avatar portrait of a game developer against a dark cyan and indigo glowing digital grid. The style is highly technical, clean, and modern, using cinematic lighting to emphasize a sense of professional mastery and systematic control in a high-tech studio environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-Bi08Wu6uVd_RZFPxpSyzhuSGahvZ3HUx6UU8wk-WuQITB2gAe-K4BwhcMxT5J1SVBSand6VJ4ur48SVxRuv1a52WFOkQ34IHB-U1aaJSUK1xEZqEUA4AD9XgGUn5AoyIX5EaiwvR3fOmeMvh5MPcnUmuH-D3BsBM2l4unwrx5UnHIIglq_7Kfw1M2_Slf-ga-qBsyBfZpjwAXXvQgq_cHluC0107J1_uSmULRENli9eFORahmCbaLuJo2USkS41pY5soH5ILSw"/>
+</div>
+</div>
+</header>
+<div class="max-w-[1440px] mx-auto p-6 md:p-xl space-y-lg">
+<!-- Dashboard Title -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+<div>
+<h2 class="font-h1 text-h1 text-on-surface">Command Center</h2>
+<p class="font-body-md text-on-surface-variant">Real-time diagnostics and deployment orchestration.</p>
+</div>
+<div class="flex gap-2">
+<div class="px-3 py-1 bg-surface-container-high rounded-full flex items-center gap-2 border border-outline-variant">
+<span class="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_#4edea3]"></span>
+<span class="font-label-caps text-on-surface">API: Operational</span>
+</div>
+</div>
+</div>
+<!-- Overview Cards - Bento Grid Layout -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-md">
+<div class="bg-surface-container-low border border-outline-variant p-lg rounded-xl flex flex-col justify-between">
+<div>
+<p class="font-label-caps text-on-surface-variant mb-2">Total Sessions</p>
+<h3 class="font-h2 text-h2 text-secondary">42,891</h3>
+</div>
+<div class="mt-4 flex items-center gap-2 text-tertiary-fixed text-xs font-bold">
+<span class="material-symbols-outlined text-sm" data-icon="trending_up">trending_up</span>
+                        +12% vs last week
+                    </div>
+</div>
+<div class="bg-surface-container-low border border-outline-variant p-lg rounded-xl flex flex-col justify-between">
+<div>
+<p class="font-label-caps text-on-surface-variant mb-2">Active Versions</p>
+<h3 class="font-h2 text-h2 text-on-surface">v2.4.0 <span class="text-body-sm text-on-surface-variant font-normal">/ v2.3.9</span></h3>
+</div>
+<div class="mt-4 flex items-center gap-2 text-on-surface-variant text-xs">
+<span class="material-symbols-outlined text-sm" data-icon="history">history</span>
+                        Next sync in 4m
+                    </div>
+</div>
+<div class="bg-surface-container-low border border-indigo-500/30 p-lg rounded-xl flex flex-col justify-between relative overflow-hidden">
+<div class="absolute -right-4 -top-4 opacity-10">
+<span class="material-symbols-outlined text-9xl" data-icon="favorite">favorite</span>
+</div>
+<div>
+<p class="font-label-caps text-on-surface-variant mb-2">Health Score</p>
+<h3 class="font-h2 text-h2 text-tertiary">98.2<span class="text-body-sm">%</span></h3>
+</div>
+<div class="mt-4 w-full bg-surface-container-highest h-1 rounded-full overflow-hidden">
+<div class="bg-tertiary h-full w-[98%]"></div>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-lg">
+<!-- Upload Area & Quick-start -->
+<div class="lg:col-span-4 space-y-lg">
+<!-- Upload Area -->
+<div class="bg-surface-container border border-dashed border-outline-variant p-lg rounded-xl group hover:border-primary-container transition-colors text-center">
+<div class="mb-4 inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-container-high text-primary group-hover:bg-primary-container group-hover:text-white transition-all">
+<span class="material-symbols-outlined" data-icon="upload_file">upload_file</span>
+</div>
+<h4 class="font-h2 text-body-lg text-on-surface mb-1">Upload Wasm Package</h4>
+<p class="font-body-sm text-on-surface-variant mb-6">Drag and drop your .wasm build or click to browse files.</p>
+<button class="w-full py-2 bg-primary-container text-on-primary-container font-bold rounded-xl hover:brightness-110 transition-all">
+                            Validate
+                        </button>
+</div>
+<!-- CLI Quick-start -->
+<div class="bg-slate-950 border border-outline-variant rounded-xl overflow-hidden">
+<div class="px-md py-sm bg-surface-container-highest flex items-center justify-between border-b border-outline-variant">
+<span class="font-label-caps text-on-surface-variant uppercase">CLI Quick-start</span>
+<span class="material-symbols-outlined text-sm text-on-surface-variant" data-icon="terminal">terminal</span>
+</div>
+<div class="p-md space-y-4 font-mono-code text-mono-code">
+<div class="space-y-1">
+<p class="text-on-surface-variant text-[10px] uppercase font-bold tracking-wider">Authentication</p>
+<div class="bg-background p-2 rounded border border-slate-800 flex items-center justify-between group">
+<code class="text-tertiary">nexus-cli login</code>
+<span class="material-symbols-outlined text-xs text-slate-500 cursor-pointer group-hover:text-primary transition-colors" data-icon="content_copy">content_copy</span>
+</div>
+</div>
+<div class="space-y-1">
+<p class="text-on-surface-variant text-[10px] uppercase font-bold tracking-wider">API Token</p>
+<div class="bg-background p-2 rounded border border-slate-800 flex items-center justify-between group">
+<code class="text-on-surface-variant">nx_live_••••••••39a1</code>
+<span class="material-symbols-outlined text-xs text-slate-500 cursor-pointer group-hover:text-primary transition-colors" data-icon="content_copy">content_copy</span>
+</div>
+</div>
+<div class="space-y-1">
+<p class="text-on-surface-variant text-[10px] uppercase font-bold tracking-wider">Publish</p>
+<div class="bg-background p-2 rounded border border-slate-800 flex items-center justify-between group">
+<code class="text-secondary">nexus-cli publish ./dist</code>
+<span class="material-symbols-outlined text-xs text-slate-500 cursor-pointer group-hover:text-primary transition-colors" data-icon="content_copy">content_copy</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Recent Uploads Table -->
+<div class="lg:col-span-8">
+<div class="bg-surface-container-low border border-outline-variant rounded-xl overflow-hidden h-full flex flex-col relative"><div class="absolute inset-0 z-20 bg-surface-container-low border-l border-outline-variant shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out" id="validation-report">
+<div class="px-lg py-md border-b border-outline-variant flex items-center justify-between bg-surface-container-high">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-on-surface" data-icon="arrow_back" onclick="this.closest('#validation-report').remove()">arrow_back</span>
+<h4 class="font-h2 text-body-lg text-on-surface">Validation Report: <span class="font-mono-code text-secondary">core_engine_v2.wasm</span></h4>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-on-surface" data-icon="close" onclick="this.closest('#validation-report').remove()">close</span>
+</div>
+<div class="flex-1 overflow-y-auto p-lg space-y-lg">
+<!-- Summary Status Card -->
+<div class="bg-secondary-container/10 border border-secondary/30 p-md rounded-xl flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-secondary/20 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-2xl" data-icon="pending_actions">pending_actions</span>
+</div>
+<div>
+<h5 class="font-h2 text-body-md text-on-surface">Ready for Review</h5>
+<p class="font-body-sm text-on-surface-variant">Package passed core validation with minor compatibility warnings.</p>
+</div>
+</div>
+<!-- Checklist Section -->
+<div class="space-y-4">
+<h6 class="font-label-caps text-on-surface-variant">Manifest Requirements</h6>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+<div class="flex items-center justify-between p-3 bg-surface-container-highest rounded-lg border border-outline-variant">
+<span class="font-body-sm text-on-surface">Metadata Integrity</span>
+<span class="material-symbols-outlined text-tertiary text-sm" data-icon="check_circle">check_circle</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-error-container/10 rounded-lg border border-error/20">
+<span class="font-body-sm text-on-surface">Wasm Component Health</span>
+<span class="material-symbols-outlined text-error text-sm" data-icon="warning">warning</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-highest rounded-lg border border-outline-variant">
+<span class="font-body-sm text-on-surface">Asset Manifest</span>
+<span class="material-symbols-outlined text-tertiary text-sm" data-icon="check_circle">check_circle</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-highest rounded-lg border border-outline-variant">
+<span class="font-body-sm text-on-surface">Security Sandbox Check</span>
+<span class="material-symbols-outlined text-tertiary text-sm" data-icon="check_circle">check_circle</span>
+</div>
+</div>
+<p class="text-[11px] text-error/80 italic">* Warning: Non-standard WIT interface detected in Component Health check.</p>
+</div>
+<!-- Log Viewer -->
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<h6 class="font-label-caps text-on-surface-variant">Validation Logs</h6>
+<span class="text-[10px] font-mono-code text-on-surface-variant">Line 142 of 210</span>
+</div>
+<div class="bg-background p-md rounded-lg border border-outline-variant font-mono-code text-sm overflow-x-auto">
+<div class="flex gap-4">
+<span class="text-outline select-none">141</span>
+<span class="text-on-surface-variant text-opacity-50">[INFO] Validating WIT interface definitions...</span>
+</div>
+<div class="flex gap-4 bg-error/5 border-l-2 border-error -mx-md px-md py-1">
+<span class="text-outline select-none">142</span>
+<span class="text-error"><span class="font-bold">Warning [W042]:</span> Component exports a non-standard host interface 'nexus:storage/v1'. This may limit compatibility with stable host versions.</span>
+</div>
+<div class="flex gap-4">
+<span class="text-outline select-none">143</span>
+<span class="text-on-surface-variant text-opacity-50">[INFO] Completing security sandbox simulation...</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Actions Footer -->
+<div class="p-lg border-t border-outline-variant bg-surface-container flex flex-wrap gap-3">
+<button class="px-4 py-2 bg-primary-container text-white font-bold rounded-lg text-sm hover:brightness-110 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="publish">publish</span>
+            Publish to Draft
+        </button>
+<button class="px-4 py-2 bg-surface-container-high text-on-surface font-bold rounded-lg text-sm border border-outline-variant hover:bg-surface-bright flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="refresh">refresh</span>
+            Re-validate
+        </button>
+<button class="px-4 py-2 text-on-surface-variant font-bold rounded-lg text-sm hover:text-on-surface flex items-center gap-2 ml-auto">
+<span class="material-symbols-outlined text-sm" data-icon="download">download</span>
+            Download Logs
+        </button>
+</div>
+</div>
+<div class="px-lg py-md border-b border-outline-variant flex items-center justify-between">
+<h4 class="font-h2 text-body-lg text-on-surface">Recent Deployments</h4>
+<div class="flex gap-2">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-on-surface" data-icon="filter_list">filter_list</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-on-surface" data-icon="refresh">refresh</span>
+</div>
+</div>
+<div class="flex-1 overflow-x-auto">
+<table class="w-full text-left">
+<thead class="bg-surface-container-high border-b border-outline-variant">
+<tr>
+<th class="px-lg py-3 font-label-caps text-on-surface-variant">Filename</th>
+<th class="px-lg py-3 font-label-caps text-on-surface-variant">Version</th>
+<th class="px-lg py-3 font-label-caps text-on-surface-variant">Status</th>
+<th class="px-lg py-3 font-label-caps text-on-surface-variant">Summary</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<tr class="hover:bg-surface-container-highest/50 transition-colors">
+<td class="px-lg py-4 font-mono-code text-on-surface">core_engine_v2.wasm</td>
+<td class="px-lg py-4 font-body-sm text-on-surface-variant">2.4.0-rc1</td>
+<td class="px-lg py-4">
+<button class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-secondary-container/20 text-secondary text-[10px] font-bold uppercase tracking-wider hover:bg-secondary/20 transition-colors border border-secondary/30">
+<span class="w-1 h-1 rounded-full bg-secondary animate-pulse"></span>
+    Validating
+    <span class="material-symbols-outlined text-[10px]" data-icon="open_in_new">open_in_new</span>
+</button>
+</td>
+<td class="px-lg py-4 font-body-sm text-on-surface-variant">Analysis in progress...</td>
+</tr>
+<tr class="hover:bg-surface-container-highest/50 transition-colors">
+<td class="px-lg py-4 font-mono-code text-on-surface">physics_patch.wasm</td>
+<td class="px-lg py-4 font-body-sm text-on-surface-variant">2.3.9-hotfix</td>
+<td class="px-lg py-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-tertiary-container/20 text-tertiary text-[10px] font-bold uppercase tracking-wider">
+<span class="w-1 h-1 rounded-full bg-tertiary"></span>
+                                                Published
+                                            </span>
+</td>
+<td class="px-lg py-4 font-body-sm text-tertiary">0 Errors / 0 Warnings</td>
+</tr>
+<tr class="hover:bg-surface-container-highest/50 transition-colors">
+<td class="px-lg py-4 font-mono-code text-on-surface">audio_module.wasm</td>
+<td class="px-lg py-4 font-body-sm text-on-surface-variant">2.3.8</td>
+<td class="px-lg py-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">
+<span class="w-1 h-1 rounded-full bg-on-surface-variant"></span>
+                                                Ready
+                                            </span>
+</td>
+<td class="px-lg py-4 font-body-sm text-secondary">0 Errors / 2 Warnings</td>
+</tr>
+<tr class="hover:bg-surface-container-highest/50 transition-colors">
+<td class="px-lg py-4 font-mono-code text-on-surface text-error">auth_v1.wasm</td>
+<td class="px-lg py-4 font-body-sm text-on-surface-variant">2.3.0</td>
+<td class="px-lg py-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-error-container/20 text-error text-[10px] font-bold uppercase tracking-wider">
+<span class="w-1 h-1 rounded-full bg-error"></span>
+                                                Failed
+                                            </span>
+</td>
+<td class="px-lg py-4 font-body-sm text-error">4 Errors / 1 Warning</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-lg mt-auto border-t border-outline-variant bg-surface-container">
+<div class="flex items-center justify-between text-on-surface-variant font-label-caps">
+<span>Showing 4 of 24 deployments</span>
+<div class="flex gap-4">
+<button class="hover:text-primary transition-colors">Previous</button>
+<button class="hover:text-primary transition-colors">Next</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar Anchor -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex md:hidden justify-around items-center px-4 py-3 bg-slate-950 border-t border-slate-800 font-manrope text-[10px] font-bold uppercase shadow-[0_-4px_12px_rgba(0,0,0,0.5)]">
+<a class="flex flex-col items-center justify-center text-slate-500 p-2" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="home">home</span>
+            Home
+        </a>
+<a class="flex flex-col items-center justify-center text-slate-500 p-2" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="list_alt">list_alt</span>
+            Lobbies
+        </a>
+<a class="flex flex-col items-center justify-center text-indigo-500 bg-indigo-500/5 rounded-xl p-2 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="code">code</span>
+            Dev
+        </a>
+<a class="flex flex-col items-center justify-center text-slate-500 p-2" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+            Profile
+        </a>
+</nav>
+</body></html>

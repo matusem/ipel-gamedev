@@ -1,0 +1,338 @@
+<html class="dark"><head>
+<meta charset="utf-8"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary": "#003824",
+                        "on-primary-fixed": "#0f0069",
+                        "outline-variant": "#464555",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "on-secondary": "#00344d",
+                        "inverse-on-surface": "#283044",
+                        "on-error-container": "#ffdad6",
+                        "error-container": "#93000a",
+                        "outline": "#918fa1",
+                        "on-surface": "#dae2fd",
+                        "on-secondary-container": "#00344e",
+                        "inverse-primary": "#4d44e3",
+                        "tertiary-container": "#006e4b",
+                        "on-primary-container": "#dad7ff",
+                        "secondary-container": "#00a2e6",
+                        "primary": "#c3c0ff",
+                        "error": "#ffb4ab",
+                        "tertiary-fixed": "#6ffbbe",
+                        "surface-container-lowest": "#060e20",
+                        "surface": "#0b1326",
+                        "on-background": "#dae2fd",
+                        "secondary-fixed-dim": "#89ceff",
+                        "surface-bright": "#31394d",
+                        "surface-container": "#171f33",
+                        "background": "#0b1326",
+                        "primary-container": "#4f46e5",
+                        "on-tertiary-container": "#67f4b7",
+                        "on-surface-variant": "#c7c4d8",
+                        "on-primary": "#1d00a5",
+                        "surface-container-high": "#222a3d",
+                        "surface-container-highest": "#2d3449",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "on-tertiary-fixed": "#002113",
+                        "on-secondary-fixed-variant": "#004c6e",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "surface-container-low": "#131b2e",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-dim": "#0b1326",
+                        "secondary-fixed": "#c9e6ff",
+                        "primary-fixed": "#e2dfff",
+                        "surface-tint": "#c3c0ff",
+                        "surface-variant": "#2d3449",
+                        "tertiary": "#4edea3",
+                        "secondary": "#89ceff",
+                        "on-error": "#690005",
+                        "on-secondary-fixed": "#001e2f",
+                        "inverse-surface": "#dae2fd"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "lg": "24px",
+                        "xs": "4px",
+                        "unit": "4px",
+                        "md": "16px",
+                        "xl": "40px",
+                        "gutter": "20px",
+                        "sm": "8px",
+                        "container-max": "1440px"
+                    },
+                    "fontFamily": {
+                        "mono-code": ["Space Grotesk"],
+                        "body-sm": ["Inter"],
+                        "label-caps": ["Space Grotesk"],
+                        "h1": ["Manrope"],
+                        "body-lg": ["Inter"],
+                        "h2": ["Manrope"],
+                        "body-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "mono-code": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "h1": ["40px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "h2": ["32px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0b1326;
+            color: #dae2fd;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b1326;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2d3449;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md overflow-x-hidden">
+<!-- TopNavBar for Mobile & Branding -->
+<header class="sticky top-0 w-full z-50 flex items-center justify-between px-6 h-16 bg-slate-950/90 backdrop-blur-md border-b border-slate-800">
+<div class="flex items-center gap-4">
+<span class="text-xl font-bold tracking-tighter text-slate-50 font-h1">Nexus Multiplayer</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-slate-400 hover:text-indigo-400 transition-all"><span class="material-symbols-outlined">notifications</span></button>
+<button class="p-2 text-slate-400 hover:text-indigo-400 transition-all"><span class="material-symbols-outlined">settings</span></button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional close-up portrait of a digital developer with a neutral expression, set against a dark, tech-inspired background with soft indigo backlighting. The aesthetic is clean and modern, mirroring a high-end corporate workstation environment with high-key sharp focus and deep slate shadows." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBIsqLOryUsQNoL-h_w72XAEx_5n5BSkcQSWF7fJG1nPET6UvMJEJZRErztETRmMqFlx2yJmn2shEltdi5zRmxVPEStYncoXjgW-eCzqls56nvtNZ_gkekB9vsLjlsbueiNndtgRoSEzkpcj9rwCuuKipFHxgQ9ksz5wAOt-g1TSFH1w7ClEj9Hh5N3i1aCsnKCutscZ8eAvqjXWNwh8ZY9ZaHDswZjGB902WC3jbcFoCKkVhwqYDjTJV2JEwRqdnug_mi4lfP2yw"/>
+</div>
+</div>
+</header>
+<div class="flex min-h-[calc(100vh-64px)]">
+<!-- SideNavBar -->
+<aside class="hidden md:flex flex-col h-full py-8 fixed left-0 top-16 w-64 bg-slate-950 border-r border-slate-800 font-manrope antialiased">
+<div class="px-6 mb-8">
+<span class="text-lg font-black text-slate-50 uppercase tracking-widest block">Nexus Console</span>
+<span class="text-[10px] text-tertiary font-bold uppercase tracking-widest opacity-80">System Stable</span>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="text-slate-400 px-6 py-3 flex items-center gap-3 hover:text-slate-200 transition-all" href="#">
+<span class="material-symbols-outlined">explore</span>
+<span class="font-medium">Discover</span>
+</a>
+<a class="text-slate-400 px-6 py-3 flex items-center gap-3 hover:text-slate-200 transition-all" href="#">
+<span class="material-symbols-outlined">sports_esports</span>
+<span class="font-medium">Games</span>
+</a>
+<a class="text-slate-400 px-6 py-3 flex items-center gap-3 hover:text-slate-200 transition-all" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-medium">Lobbies</span>
+</a>
+<a class="text-slate-400 px-6 py-3 flex items-center gap-3 hover:text-slate-200 transition-all" href="#">
+<span class="material-symbols-outlined">terminal</span>
+<span class="font-medium">Developer Hub</span>
+</a>
+<a class="bg-indigo-600/10 text-indigo-400 border-r-2 border-indigo-500 px-6 py-3 flex items-center gap-3 transition-all" href="#">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-medium">Profile</span>
+</a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full py-3 bg-primary-container text-on-primary-container font-bold rounded-lg text-sm transition-transform active:scale-95">
+                    Launch Game
+                </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 md:ml-64 p-6 lg:p-12 max-w-[1440px] mx-auto w-full">
+<header class="mb-10">
+<h1 class="font-h1 text-h1 text-slate-50 mb-2">Account Settings</h1>
+<p class="text-on-surface-variant font-body-md">Manage your technical profile, API access, and reputation status.</p>
+</header>
+<!-- Settings Tabs -->
+<div class="flex gap-8 border-b border-slate-800 mb-10 overflow-x-auto scrollbar-hide">
+<button class="pb-4 text-indigo-500 border-b-2 border-indigo-500 font-label-caps whitespace-nowrap">Profile</button>
+<button class="pb-4 text-slate-400 hover:text-slate-200 font-label-caps transition-colors whitespace-nowrap">Security</button>
+<button class="pb-4 text-slate-400 hover:text-slate-200 font-label-caps transition-colors whitespace-nowrap">API Tokens</button>
+<button class="pb-4 text-slate-400 hover:text-slate-200 font-label-caps transition-colors whitespace-nowrap">Notifications</button>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+<!-- Left Column: Reputation & Details -->
+<div class="lg:col-span-8 space-y-8">
+<!-- Reputation Progress Section -->
+<section class="bg-surface-container rounded-xl border border-outline-variant p-lg">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h3 class="font-h2 text-body-lg font-bold text-slate-50 mb-1">Path to Next Rank</h3>
+<p class="text-body-sm text-on-surface-variant">Elevate your standing in the Nexus ecosystem.</p>
+</div>
+<div class="px-3 py-1 bg-tertiary/10 border border-tertiary/20 rounded-full flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span class="text-[10px] font-bold text-tertiary uppercase tracking-widest">Veteran II</span>
+</div>
+</div>
+<div class="space-y-6">
+<div class="relative w-full h-3 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="absolute top-0 left-0 h-full bg-indigo-500 w-[65%] shadow-[0_0_12px_rgba(79,70,229,0.5)]"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant">
+<span class="text-on-surface-variant text-xs font-label-caps block mb-2">Matches Played</span>
+<div class="flex justify-between items-end">
+<span class="text-slate-50 font-bold text-lg">142/200</span>
+<span class="text-indigo-400 text-xs font-bold">71%</span>
+</div>
+</div>
+<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant">
+<span class="text-on-surface-variant text-xs font-label-caps block mb-2">Upvotes</span>
+<div class="flex justify-between items-end">
+<span class="text-slate-50 font-bold text-lg">89/100</span>
+<span class="text-indigo-400 text-xs font-bold">89%</span>
+</div>
+</div>
+<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant">
+<span class="text-on-surface-variant text-xs font-label-caps block mb-2">Stability Rating</span>
+<div class="flex justify-between items-end">
+<span class="text-slate-50 font-bold text-lg">99.2%</span>
+<span class="text-tertiary text-xs font-bold">STABLE</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Account Details Form -->
+<section class="bg-surface-container rounded-xl border border-outline-variant p-lg">
+<h3 class="font-h2 text-body-lg font-bold text-slate-50 mb-6">Account Details</h3>
+<form class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="space-y-2">
+<label class="block font-label-caps text-on-surface-variant uppercase text-[10px]">Display Name</label>
+<input class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 text-slate-50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all" type="text" value="Nexus_Dev_99"/>
+</div>
+<div class="space-y-2">
+<label class="block font-label-caps text-on-surface-variant uppercase text-[10px]">Primary Email</label>
+<input class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 text-slate-50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all" type="email" value="developer@nexus-multi.io"/>
+</div>
+</div>
+<div class="space-y-2">
+<label class="block font-label-caps text-on-surface-variant uppercase text-[10px]">Biography</label>
+<textarea class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-4 py-3 text-slate-50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all resize-none" rows="4">Core systems developer and competitive RTS enthusiast. Building low-latency network architectures for the next generation of multiplayer games.</textarea>
+</div>
+<div class="flex justify-end pt-4">
+<button class="px-6 py-2.5 bg-primary-container text-on-primary-container font-bold rounded-lg hover:brightness-110 transition-all" type="button">
+                                    Save Changes
+                                </button>
+</div>
+</form>
+</section>
+</div>
+<!-- Right Column: API Tokens & Quick Stats -->
+<div class="lg:col-span-4 space-y-8">
+<!-- API Tokens Section -->
+<section class="bg-surface-container rounded-xl border border-outline-variant overflow-hidden">
+<div class="p-6 border-b border-outline-variant flex justify-between items-center bg-surface-container-high/30">
+<h3 class="font-h2 text-body-md font-bold text-slate-50">API Tokens</h3>
+<button class="text-indigo-400 hover:text-indigo-300 transition-all">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+</button>
+</div>
+<div class="divide-y divide-outline-variant">
+<!-- Token Row 1 -->
+<div class="p-4 flex items-center justify-between hover:bg-slate-900/40 transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-indigo-500/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-indigo-400 text-sm">key</span>
+</div>
+<div>
+<span class="text-slate-50 text-sm font-bold block">CLI_Prod_Key</span>
+<span class="text-[10px] font-mono-code text-on-surface-variant">nexus_sk_...9b42</span>
+</div>
+</div>
+<button class="text-error hover:text-red-400 transition-all font-label-caps text-[10px] uppercase">Revoke</button>
+</div>
+<!-- Token Row 2 -->
+<div class="p-4 flex items-center justify-between hover:bg-slate-900/40 transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-indigo-500/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-indigo-400 text-sm">terminal</span>
+</div>
+<div>
+<span class="text-slate-50 text-sm font-bold block">Dev_Environment</span>
+<span class="text-[10px] font-mono-code text-on-surface-variant">nexus_sk_...2f11</span>
+</div>
+</div>
+<button class="text-error hover:text-red-400 transition-all font-label-caps text-[10px] uppercase">Revoke</button>
+</div>
+</div>
+<div class="p-4 bg-slate-950/50">
+<button class="w-full py-2 border border-indigo-500/30 text-indigo-400 text-xs font-bold rounded-lg hover:bg-indigo-500/5 transition-all">
+                                Generate New Token
+                            </button>
+</div>
+</section>
+<!-- Profile Visualization Card -->
+<section class="bg-surface-container rounded-xl border border-outline-variant overflow-hidden relative group">
+<img class="w-full h-48 object-cover opacity-60 group-hover:scale-105 transition-transform duration-700" data-alt="Abstract technical data visualization showing glowing indigo and teal lines crossing on a deep slate background. The image has a low-contrast, atmospheric depth with soft bokeh circles and a professional workstation feel. It represents high-speed network connectivity and architectural complexity in a minimalist style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCrvLTpq2FGxGlutyIlg6NpkBwLk7Bf4hQJjzAdlw5vrsayua_GCZnoFXzNU9IDG0YD5afKeeDotg9P61WPGoZ5X9SCRe2pDuIo4yaq-YgxTK0xTrdOf-nfSfgPAhwoxOm2jyIBv-TABPSFtSZQlE5NW9HZTeSL7i0Xlzukbanx6MQb7t0hkFOD3jFcPxH3-L7P2xh4tmv5DyBXHXpjE_XyBFPcIq5fvASOP4Z_LMFTsSQSrRDliX1tLnP_3RMGOH662a3AnhFDhA"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container to-transparent"></div>
+<div class="absolute bottom-0 left-0 p-6">
+<span class="text-tertiary text-[10px] font-bold uppercase tracking-widest mb-1 block">Live Status</span>
+<h4 class="text-slate-50 font-bold">Node Connectivity: 100%</h4>
+<p class="text-on-surface-variant text-xs">Verified Developer Tier</p>
+</div>
+</section>
+<!-- Security Banner -->
+<div class="p-4 bg-secondary-container/10 border border-secondary-container/20 rounded-xl">
+<div class="flex gap-4 items-start">
+<span class="material-symbols-outlined text-secondary">security</span>
+<div>
+<h5 class="text-slate-50 text-sm font-bold mb-1">Security Audit</h5>
+<p class="text-on-surface-variant text-[11px] leading-relaxed">Your last login was from London, UK. Ensure 2FA is active for API management.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex md:hidden justify-around items-center px-4 py-3 bg-slate-950 border-t border-slate-800 font-manrope text-[10px] font-bold uppercase">
+<a class="flex flex-col items-center justify-center text-slate-500 p-2" href="#">
+<span class="material-symbols-outlined">home</span>
+<span>Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-500 p-2" href="#">
+<span class="material-symbols-outlined">list_alt</span>
+<span>Lobbies</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-500 p-2" href="#">
+<span class="material-symbols-outlined">code</span>
+<span>Dev</span>
+</a>
+<a class="flex flex-col items-center justify-center text-indigo-500 bg-indigo-500/5 rounded-xl p-2" href="#">
+<span class="material-symbols-outlined">person</span>
+<span>Profile</span>
+</a>
+</nav>
+</body></html>

@@ -14,7 +14,7 @@ impl GameInstanceStore {
         Self { pool }
     }
 
-    fn now_secs() -> i64 {
+    pub fn now_secs() -> i64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -170,6 +170,82 @@ pub async fn list_recent_finished_games(
     Ok(out)
 }
 
+pub async fn list_finished_games_by_type(
+    pool: &SqlitePool,
+    game_type: &str,
+    limit: i64,
+) -> Result<Vec<FinishedGameRow>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"SELECT id, game_type, lobby_id, finished_at, result_json, player_scores_json, seats_snapshot_json
+           FROM game_instances WHERE status = 'finished' AND finished_at IS NOT NULL AND game_type = ?
+           ORDER BY finished_at DESC LIMIT ?"#,
+    )
+    .bind(game_type)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    let mut out = Vec::new();
+    for r in rows {
+        let id_s: String = r.get(0);
+        let Ok(id) = Uuid::parse_str(&id_s) else {
+            continue;
+        };
+        let lobby: Option<String> = r.get(2);
+        let finished: Option<i64> = r.get(3);
+        let result_j: Option<String> = r.get(4);
+        let scores_j: Option<String> = r.get(5);
+        let seats_j: Option<String> = r.get(6);
+        out.push(FinishedGameRow {
+            id,
+            game_type: r.get(1),
+            lobby_id: lobby.and_then(|s| Uuid::parse_str(&s).ok()),
+            finished_at: finished.unwrap_or(0),
+            result_json: result_j.unwrap_or_else(|| "{}".into()),
+            player_scores_json: scores_j.unwrap_or_else(|| "{}".into()),
+            seats_snapshot_json: seats_j.unwrap_or_else(|| "[]".into()),
+        });
+    }
+    Ok(out)
+}
+
+pub async fn count_finished_games_since(pool: &SqlitePool, since_ts: i64) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM game_instances WHERE status = 'finished' AND finished_at >= ?",
+    )
+    .bind(since_ts)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn list_published_deployments(pool: &SqlitePool, limit: i64) -> Result<Vec<GameDraftRow>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE status = 'published' ORDER BY published_at DESC LIMIT ?",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().filter_map(map_draft_row).collect())
+}
+
+pub async fn count_published_drafts_for_user(pool: &SqlitePool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM game_drafts WHERE owner_user_id = ? AND status = 'published'",
+    )
+    .bind(user_id.to_string())
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn count_user_finished_matches(pool: &SqlitePool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    let needle = user_id.to_string();
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM game_instances WHERE status = 'finished' AND seats_snapshot_json LIKE ?",
+    )
+    .bind(format!("%{needle}%"))
+    .fetch_one(pool)
+    .await
+}
+
 pub async fn register_user(
     pool: &SqlitePool,
     display_name: &str,
@@ -311,27 +387,82 @@ fn hash_publish_token(token: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+#[derive(Debug, Clone)]
+pub struct PublishTokenSummaryRow {
+    pub id: Uuid,
+    pub label: Option<String>,
+    pub created_at: i64,
+    pub expires_at: i64,
+}
+
+pub fn mask_publish_token_id(id: &Uuid) -> String {
+    let s = id.to_string();
+    let suffix = s.get(28..).unwrap_or(&s);
+    format!("gpt_••••{suffix}")
+}
+
 pub async fn create_publish_token(
     pool: &SqlitePool,
     user_id: Uuid,
     ttl_days: i64,
-) -> Result<(String, i64), sqlx::Error> {
+    label: Option<&str>,
+) -> Result<(Uuid, String, i64), sqlx::Error> {
     let now = GameInstanceStore::now_secs();
     let expires_at = now + (ttl_days.clamp(1, 30) * 24 * 60 * 60);
     let token = format!("gpt_{}", Uuid::new_v4());
     let token_hash = hash_publish_token(&token);
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO publish_tokens (id, user_id, token_hash, expires_at, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL)",
+        "INSERT INTO publish_tokens (id, user_id, token_hash, expires_at, created_at, revoked_at, label) VALUES (?, ?, ?, ?, ?, NULL, ?)",
     )
     .bind(id.to_string())
     .bind(user_id.to_string())
     .bind(token_hash)
     .bind(expires_at)
     .bind(now)
+    .bind(label)
     .execute(pool)
     .await?;
-    Ok((token, expires_at))
+    Ok((id, token, expires_at))
+}
+
+pub async fn list_publish_tokens_for_user(
+    pool: &SqlitePool,
+    user_id: Uuid,
+) -> Result<Vec<PublishTokenSummaryRow>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT id, label, created_at, expires_at FROM publish_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC",
+    )
+    .bind(user_id.to_string())
+    .fetch_all(pool)
+    .await?;
+    let mut out = Vec::new();
+    for r in rows {
+        let id_s: String = r.get(0);
+        let Ok(id) = Uuid::parse_str(&id_s) else {
+            continue;
+        };
+        out.push(PublishTokenSummaryRow {
+            id,
+            label: r.get(1),
+            created_at: r.get(2),
+            expires_at: r.get(3),
+        });
+    }
+    Ok(out)
+}
+
+pub async fn revoke_publish_token(pool: &SqlitePool, user_id: Uuid, token_id: Uuid) -> Result<bool, sqlx::Error> {
+    let now = GameInstanceStore::now_secs();
+    let res = sqlx::query(
+        "UPDATE publish_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(now)
+    .bind(token_id.to_string())
+    .bind(user_id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected() > 0)
 }
 
 pub async fn resolve_publish_token(

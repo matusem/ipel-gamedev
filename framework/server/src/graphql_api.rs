@@ -19,6 +19,8 @@ use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
 use crate::game_service;
 use crate::lobby_db::{self, LobbyDetail, LobbyListNotify, LobbyMessage, LobbySeat, LobbySummary};
+use crate::platform_stats;
+use crate::game_storefront::{self, AspectRatings};
 
 /// Authenticated principal from `Authorization: Bearer <uuid|publish_token>`.
 #[derive(Clone, Debug)]
@@ -89,6 +91,148 @@ pub struct PublishTokenGql {
 }
 
 #[derive(SimpleObject, Clone)]
+pub struct PublishTokenSummaryGql {
+    pub id: async_graphql::types::ID,
+    pub label: Option<String>,
+    pub masked_key: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GameSessionGql {
+    pub game_id: String,
+    pub game_type: String,
+    pub finished_at: i64,
+    pub winner_display_name: Option<String>,
+    pub participant_count: u32,
+    pub duration_secs: i32,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct LeaderboardEntryGql {
+    pub rank: u32,
+    pub display_name: String,
+    pub total_score: i32,
+    pub wins: u32,
+    pub win_rate_pct: u32,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct DeploymentGql {
+    pub id: async_graphql::types::ID,
+    pub game_name: String,
+    pub display_name: String,
+    pub version: String,
+    pub status: String,
+    pub deployed_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct PlatformStatsGql {
+    pub active_lobbies: i32,
+    pub published_game_types: i32,
+    pub finished_games24h: i32,
+    pub status: String,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct ActivityEventGql {
+    pub actor: String,
+    pub action: String,
+    pub target: String,
+    pub timestamp: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct UserProfileGql {
+    pub display_name: String,
+    pub created_at: i64,
+    pub matches_played: u32,
+    pub games_published: u32,
+    pub wins: u32,
+    pub rep_score: u32,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GameScreenshotGql {
+    pub id: String,
+    pub caption: String,
+    pub gradient: String,
+    #[graphql(name = "imageUrl")]
+    pub image_url: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GamePatchNoteGql {
+    pub version: String,
+    pub date: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct AspectRatingsGql {
+    pub gameplay: f32,
+    pub balance: f32,
+    pub visuals: f32,
+    pub social: f32,
+    pub depth: f32,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GameStorefrontGql {
+    pub game_name: String,
+    pub short_tagline: Option<String>,
+    pub long_description: String,
+    pub screenshots: Vec<GameScreenshotGql>,
+    pub patch_notes: Vec<GamePatchNoteGql>,
+    pub tags: Vec<String>,
+    pub avg_session_mins: i32,
+    pub aspect_ratings: AspectRatingsGql,
+    pub review_count: i32,
+    pub can_edit: bool,
+    pub updated_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GameReviewGql {
+    pub id: async_graphql::types::ID,
+    pub display_name: String,
+    pub body: String,
+    pub aspects: AspectRatingsGql,
+    pub helpful_votes: i32,
+    pub created_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GameCommentGql {
+    pub id: async_graphql::types::ID,
+    pub display_name: String,
+    pub body: String,
+    pub created_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct PlayTimeLeaderboardEntryGql {
+    pub rank: u32,
+    pub display_name: String,
+    pub total_mins: i32,
+    pub sessions: u32,
+}
+
+fn map_aspect_ratings(a: &AspectRatings) -> AspectRatingsGql {
+    AspectRatingsGql {
+        gameplay: a.gameplay,
+        balance: a.balance,
+        visuals: a.visuals,
+        social: a.social,
+        depth: a.depth,
+    }
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct GameTypeGql {
     pub name: String,
     pub display_name: String,
@@ -100,6 +244,7 @@ pub struct GameTypeGql {
     pub result_ui_path: Option<String>,
     pub about_ui_path: Option<String>,
     pub config_schema_json: Option<String>,
+    pub cover_image_url: Option<String>,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -372,6 +517,7 @@ impl QueryRoot {
                     .config_schema
                     .as_ref()
                     .and_then(|v| serde_json::to_string(v).ok()),
+                cover_image_url: crate::game_storefront::default_cover_image(&gt.manifest.name),
             })
             .collect())
     }
@@ -509,6 +655,305 @@ impl QueryRoot {
             .filter(|d| d.owner_user_id == uid)
             .map(map_draft))
     }
+
+    async fn my_publish_tokens(&self, ctx: &Context<'_>) -> Result<Vec<PublishTokenSummaryGql>> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rows = db::list_publish_tokens_for_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| PublishTokenSummaryGql {
+                id: r.id.to_string().into(),
+                label: r.label,
+                masked_key: db::mask_publish_token_id(&r.id),
+                created_at: r.created_at,
+                expires_at: r.expires_at,
+            })
+            .collect())
+    }
+
+    async fn finished_games_by_type(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        limit: Option<i32>,
+    ) -> Result<Vec<GameSessionGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(20).clamp(1, 100) as i64;
+        let rows = db::list_finished_games_by_type(pool, &game_type, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .iter()
+            .map(platform_stats::map_finished_to_session)
+            .map(|s| GameSessionGql {
+                game_id: s.game_id,
+                game_type: s.game_type,
+                finished_at: s.finished_at,
+                winner_display_name: s.winner_display_name,
+                participant_count: s.participant_count,
+                duration_secs: s.duration_secs,
+            })
+            .collect())
+    }
+
+    async fn game_leaderboard(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        limit: Option<i32>,
+    ) -> Result<Vec<LeaderboardEntryGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(10).clamp(1, 50) as i64;
+        let rows = db::list_finished_games_by_type(pool, &game_type, 200)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let entries = platform_stats::compute_leaderboard(&rows, lim as usize);
+        Ok(entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let win_rate = if e.games_played > 0 {
+                    ((e.wins as f64 / e.games_played as f64) * 100.0).round() as u32
+                } else {
+                    0
+                };
+                LeaderboardEntryGql {
+                    rank: (i + 1) as u32,
+                    display_name: e.display_name,
+                    total_score: e.total_score,
+                    wins: e.wins,
+                    win_rate_pct: win_rate,
+                }
+            })
+            .collect())
+    }
+
+    async fn published_deployments(
+        &self,
+        ctx: &Context<'_>,
+        limit: Option<i32>,
+    ) -> Result<Vec<DeploymentGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(20).clamp(1, 100) as i64;
+        let rows = db::list_published_deployments(pool, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|d| {
+                let deployed_at = d.published_at?;
+                Some(DeploymentGql {
+                    id: d.id.to_string().into(),
+                    game_name: d.game_name,
+                    display_name: d.display_name,
+                    version: d.version,
+                    status: "Live".into(),
+                    deployed_at,
+                })
+            })
+            .collect())
+    }
+
+    async fn platform_stats(&self, ctx: &Context<'_>) -> Result<PlatformStatsGql> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let reg = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let lobbies = lobby_db::list_active_lobbies(pool)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let published_game_types = reg
+            .read()
+            .map_err(|_| Error::new("registry lock poisoned"))?
+            .game_types()
+            .len() as i32;
+        let since = GameInstanceStore::now_secs() - 86_400;
+        let finished_games24h = db::count_finished_games_since(pool, since)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))? as i32;
+        Ok(PlatformStatsGql {
+            active_lobbies: lobbies.len() as i32,
+            published_game_types,
+            finished_games24h,
+            status: "ok".into(),
+        })
+    }
+
+    async fn activity_feed(
+        &self,
+        ctx: &Context<'_>,
+        limit: Option<i32>,
+    ) -> Result<Vec<ActivityEventGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(12).clamp(1, 50) as usize;
+        let rows = platform_stats::build_activity_feed(pool, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|e| ActivityEventGql {
+                actor: e.actor,
+                action: e.action,
+                target: e.target,
+                timestamp: e.timestamp,
+            })
+            .collect())
+    }
+
+    async fn my_profile(&self, ctx: &Context<'_>) -> Result<Option<UserProfileGql>> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let stats = platform_stats::build_user_profile(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(stats.map(|s| UserProfileGql {
+            display_name: s.display_name,
+            created_at: s.created_at,
+            matches_played: s.matches_played,
+            games_published: s.games_published,
+            wins: s.wins,
+            rep_score: s.rep_score,
+        }))
+    }
+
+    async fn game_storefront(&self, ctx: &Context<'_>, game_type: String) -> Result<GameStorefrontGql> {
+        let pool = ctx.data::<SqlitePool>()?;
+        let can_edit = if let Ok(uid) = require_registered_user(ctx).await {
+            game_storefront::user_can_edit_storefront(pool, uid, &game_type)
+                .await
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        let sf = game_storefront::ensure_storefront(pool, &game_type)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let aspects = game_storefront::aggregate_aspect_ratings(pool, &game_type)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let reviews = game_storefront::list_reviews(pool, &game_type, 1)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let review_count = game_storefront::list_reviews(pool, &game_type, 500)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .len() as i32;
+        let _ = reviews;
+        Ok(GameStorefrontGql {
+            game_name: sf.game_name,
+            short_tagline: sf.short_tagline,
+            long_description: sf.long_description,
+            screenshots: sf
+                .screenshots
+                .into_iter()
+                .map(|s| GameScreenshotGql {
+                    id: s.id,
+                    caption: s.caption,
+                    gradient: s.gradient,
+                    image_url: s.image_url,
+                })
+                .collect(),
+            patch_notes: sf
+                .patch_notes
+                .into_iter()
+                .map(|p| GamePatchNoteGql {
+                    version: p.version,
+                    date: p.date,
+                    title: p.title,
+                    body: p.body,
+                    tags: p.tags,
+                })
+                .collect(),
+            tags: sf.tags,
+            avg_session_mins: sf.avg_session_mins,
+            aspect_ratings: map_aspect_ratings(&aspects),
+            review_count,
+            can_edit,
+            updated_at: sf.updated_at,
+        })
+    }
+
+    async fn game_reviews(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        limit: Option<i32>,
+    ) -> Result<Vec<GameReviewGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(20).clamp(1, 50) as i64;
+        let rows = game_storefront::list_reviews(pool, &game_type, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| GameReviewGql {
+                id: r.id.to_string().into(),
+                display_name: r.display_name,
+                body: r.body,
+                aspects: map_aspect_ratings(&r.aspects),
+                helpful_votes: r.helpful_votes,
+                created_at: r.created_at,
+            })
+            .collect())
+    }
+
+    async fn game_comments(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        limit: Option<i32>,
+    ) -> Result<Vec<GameCommentGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(30).clamp(1, 100) as i64;
+        let rows = game_storefront::list_comments(pool, &game_type, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|c| GameCommentGql {
+                id: c.id.to_string().into(),
+                display_name: c.display_name,
+                body: c.body,
+                created_at: c.created_at,
+            })
+            .collect())
+    }
+
+    async fn game_play_time_leaderboard(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        limit: Option<i32>,
+    ) -> Result<Vec<PlayTimeLeaderboardEntryGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(10).clamp(1, 50) as i64;
+        let sf = game_storefront::ensure_storefront(pool, &game_type)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let rows = db::list_finished_games_by_type(pool, &game_type, 200)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let entries = game_storefront::compute_playtime_leaderboard(&rows, sf.avg_session_mins, lim as usize);
+        Ok(entries
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| PlayTimeLeaderboardEntryGql {
+                rank: (i + 1) as u32,
+                display_name: e.display_name,
+                total_mins: e.total_mins,
+                sessions: e.sessions,
+            })
+            .collect())
+    }
 }
 
 pub struct MutationRoot;
@@ -544,16 +989,134 @@ impl MutationRoot {
         &self,
         ctx: &Context<'_>,
         ttl_days: Option<i32>,
+        label: Option<String>,
     ) -> Result<PublishTokenGql> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
-        let (token, expires_at) = db::create_publish_token(pool, uid, ttl_days.unwrap_or(7) as i64)
-            .await
-            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let (_id, token, expires_at) = db::create_publish_token(
+            pool,
+            uid,
+            ttl_days.unwrap_or(7) as i64,
+            label.as_deref(),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
         Ok(PublishTokenGql {
             token,
             user_id: uid.to_string().into(),
             expires_at,
+        })
+    }
+
+    async fn revoke_publish_token(
+        &self,
+        ctx: &Context<'_>,
+        token_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let tid = Uuid::parse_str(token_id.as_str()).map_err(|_| Error::new("invalid token id"))?;
+        db::revoke_publish_token(pool, uid, tid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn update_game_storefront(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        short_tagline: Option<String>,
+        long_description: String,
+        screenshots_json: String,
+        patch_notes_json: String,
+        tags_json: String,
+        avg_session_mins: Option<i32>,
+    ) -> Result<bool> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        if !game_storefront::user_can_edit_storefront(pool, uid, &game_type)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+        {
+            return Err(Error::new("you do not own a draft for this game"));
+        }
+        let _ = game_storefront::ensure_storefront(pool, &game_type)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        game_storefront::update_storefront(
+            pool,
+            &game_type,
+            short_tagline,
+            long_description,
+            &screenshots_json,
+            &patch_notes_json,
+            &tags_json,
+            avg_session_mins.unwrap_or(10).clamp(1, 180),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn submit_game_review(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        body: String,
+        gameplay: f32,
+        balance: f32,
+        visuals: f32,
+        social: f32,
+        depth: f32,
+    ) -> Result<GameReviewGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let user = db::get_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("user not found"))?;
+        let aspects = AspectRatings {
+            gameplay: gameplay.clamp(1.0, 5.0),
+            balance: balance.clamp(1.0, 5.0),
+            visuals: visuals.clamp(1.0, 5.0),
+            social: social.clamp(1.0, 5.0),
+            depth: depth.clamp(1.0, 5.0),
+        };
+        let r = game_storefront::submit_review(pool, &game_type, uid, &user.1, body.trim(), &aspects)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(GameReviewGql {
+            id: r.id.to_string().into(),
+            display_name: r.display_name,
+            body: r.body,
+            aspects: map_aspect_ratings(&r.aspects),
+            helpful_votes: r.helpful_votes,
+            created_at: r.created_at,
+        })
+    }
+
+    async fn submit_game_comment(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+        body: String,
+    ) -> Result<GameCommentGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let user = db::get_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("user not found"))?;
+        if body.trim().is_empty() {
+            return Err(Error::new("comment cannot be empty"));
+        }
+        let c = game_storefront::submit_comment(pool, &game_type, uid, &user.1, body.trim())
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(GameCommentGql {
+            id: c.id.to_string().into(),
+            display_name: c.display_name,
+            body: c.body,
+            created_at: c.created_at,
         })
     }
 
