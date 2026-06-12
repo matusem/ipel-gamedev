@@ -1,4 +1,4 @@
-﻿use std::path::PathBuf;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use async_graphql::{Context, Error, Object, Result};
@@ -784,6 +784,29 @@ impl MutationRoot {
         if !ok {
             return Err(Error::new("you must take a seat before setting ready"));
         }
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
+    }
+
+    async fn transfer_lobby_ownership(
+        &self,
+        ctx: &Context<'_>,
+        lobby_id: async_graphql::types::ID,
+        #[graphql(name = "newOwnerUserId")] new_owner_user_id: async_graphql::types::ID,
+    ) -> Result<LobbyGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let new_owner =
+            Uuid::parse_str(new_owner_user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        lobby_db::transfer_lobby_ownership(pool, lid, uid, new_owner)
+            .await
+            .map_err(Error::new)?;
         notify.ping();
         let detail = lobby_db::get_lobby(pool, lid)
             .await

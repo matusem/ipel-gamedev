@@ -1,8 +1,163 @@
-use crate::models::{GamesListData, LobbiesData, LOBBIES_QUERY, USER_ID_KEY};
+use crate::models::{GamesListData, LobbiesData, LobbyDetail, LOBBIES_QUERY, USER_ID_KEY};
 use dioxus::prelude::*;
 use gloo_net::http::{Request, Response};
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::Value;
+
+pub const LOBBY_DETAIL_FIELDS: &str = r#"id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt }"#;
+
+pub fn graphql_error_message(err: &str) -> String {
+    format_errors_from_str(err).unwrap_or_else(|| err.trim().to_string())
+}
+
+fn humanize_graphql_message(msg: &str) -> String {
+    let trimmed = msg.trim();
+    if trimmed.is_empty() {
+        return "Something went wrong".to_string();
+    }
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("cannot claim seat") {
+        return "That seat is unavailable — it's taken, invalid, or you're already seated elsewhere."
+            .to_string();
+    }
+    if lower.starts_with("cannot join lobby") {
+        return trimmed.to_string();
+    }
+    let mut chars = trimmed.chars();
+    let Some(first) = chars.next() else {
+        return trimmed.to_string();
+    };
+    first.to_uppercase().collect::<String>() + chars.as_str()
+}
+
+fn extract_error_messages(value: &Value) -> Vec<String> {
+    match value {
+        Value::Array(arr) => arr
+            .iter()
+            .filter_map(|e| e.get("message").and_then(|m| m.as_str()))
+            .map(humanize_graphql_message)
+            .collect(),
+        Value::Object(obj) => {
+            if let Some(msg) = obj.get("message").and_then(|m| m.as_str()) {
+                return vec![humanize_graphql_message(msg)];
+            }
+            if let Some(errs) = obj.get("errors") {
+                return extract_error_messages(errs);
+            }
+            Vec::new()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn format_errors_value(errs: &Value) -> String {
+    let messages = extract_error_messages(errs);
+    if messages.is_empty() {
+        return "Request failed".to_string();
+    }
+    messages.join("; ")
+}
+
+fn format_errors_from_str(s: &str) -> Option<String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+        let messages = extract_error_messages(&v);
+        if !messages.is_empty() {
+            return Some(messages.join("; "));
+        }
+    }
+    if let Some(json_start) = trimmed.find('[') {
+        if let Ok(v) = serde_json::from_str::<Value>(&trimmed[json_start..]) {
+            let messages = extract_error_messages(&v);
+            if !messages.is_empty() {
+                return Some(messages.join("; "));
+            }
+        }
+    }
+    None
+}
+
+pub fn lobby_mutation_needs_force(err: &str) -> bool {
+    let msg = graphql_error_message(err);
+    msg.contains("seats are claimed") || msg.contains("confirm reset")
+}
+
+pub async fn fetch_lobby_detail(lobby_id: &str) -> Result<Option<LobbyDetail>, String> {
+    let q = format!(
+        "query L($id: ID!) {{ lobby(id: $id) {{ {} }} }}",
+        LOBBY_DETAIL_FIELDS
+    );
+    let vars = serde_json::json!({ "id": lobby_id });
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Ld {
+        lobby: Option<LobbyDetail>,
+    }
+    Ok(graphql_exec::<Ld>(&q, Some(vars)).await?.lobby)
+}
+
+pub async fn set_lobby_game_type(
+    lobby_id: &str,
+    game_type: &str,
+    force: bool,
+) -> Result<LobbyDetail, String> {
+    let q = format!(
+        "mutation S($id: ID!, $t: String!, $f: Boolean!) {{ setLobbyGameType(lobbyId: $id, gameType: $t, force: $f) {{ {} }} }}",
+        LOBBY_DETAIL_FIELDS
+    );
+    let vars = serde_json::json!({ "id": lobby_id, "t": game_type, "f": force });
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SetGt {
+        set_lobby_game_type: LobbyDetail,
+    }
+    Ok(graphql_exec::<SetGt>(&q, Some(vars))
+        .await?
+        .set_lobby_game_type)
+}
+
+pub async fn transfer_lobby_ownership(
+    lobby_id: &str,
+    new_owner_user_id: &str,
+) -> Result<LobbyDetail, String> {
+    let q = format!(
+        "mutation T($id: ID!, $u: ID!) {{ transferLobbyOwnership(lobbyId: $id, newOwnerUserId: $u) {{ {} }} }}",
+        LOBBY_DETAIL_FIELDS
+    );
+    let vars = serde_json::json!({ "id": lobby_id, "u": new_owner_user_id });
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Tr {
+        transfer_lobby_ownership: LobbyDetail,
+    }
+    Ok(graphql_exec::<Tr>(&q, Some(vars))
+        .await?
+        .transfer_lobby_ownership)
+}
+
+/// Creates a lobby and, when `game_type` is provided, selects that game and materializes seats.
+pub async fn create_lobby_with_game(game_type: Option<&str>) -> Result<String, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Cr {
+        create_lobby: crate::models::RegisterUserRow,
+    }
+    let q = if game_type.is_some() {
+        "mutation C($gt: String) { createLobby(gameType: $gt) { id } }"
+    } else {
+        "mutation { createLobby { id } }"
+    };
+    let vars = game_type.map(|gt| serde_json::json!({ "gt": gt }));
+    let id = graphql_exec::<Cr>(q, vars).await?.create_lobby.id;
+    if let Some(gt) = game_type.filter(|s| !s.trim().is_empty()) {
+        let _ = set_lobby_game_type(&id, gt, false).await?;
+    }
+    Ok(id)
+}
 
 const DEV_API_HINT: &str =
     "Backend not reachable on :8081. Run scripts/dev-backend.ps1 (or: $env:PORT=8081; cargo run -p server), then retry.";
@@ -17,14 +172,22 @@ async fn parse_graphql_response<T: DeserializeOwned>(resp: Response) -> Result<T
         ));
     }
     if !ok {
-        return Err(format!("API error HTTP {status}: {text}"));
+        if let Ok(v) = serde_json::from_str::<Value>(&text) {
+            if let Some(errs) = v.get("errors") {
+                return Err(format_errors_value(errs));
+            }
+        }
+        return Err(format!(
+            "API error HTTP {status}: {}",
+            graphql_error_message(&text)
+        ));
     }
     let v: Value = serde_json::from_str(&text).map_err(|e| {
         format!("Invalid JSON from API (HTTP {status}): {e}. {DEV_API_HINT}")
     })?;
     if let Some(errs) = v.get("errors").and_then(|x| x.as_array()) {
         if !errs.is_empty() {
-            return Err(serde_json::to_string(errs).unwrap_or_else(|_| "GraphQL errors".into()));
+            return Err(format_errors_value(&Value::Array(errs.clone())));
         }
     }
     let data = v
@@ -156,4 +319,17 @@ pub fn get_ws_base() -> String {
     let host = ws_host();
     let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
     format!("{}//{}/game", ws_protocol, host)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_graphql_error_array_json() {
+        let raw = r#"[{"locations":[{"column":34,"line":1}],"message":"cannot claim seat (taken, invalid index, or you already have another seat in this lobby)","path":["joinLobby"]}]"#;
+        let msg = graphql_error_message(raw);
+        assert!(msg.contains("seat is unavailable"));
+        assert!(!msg.contains("locations"));
+    }
 }

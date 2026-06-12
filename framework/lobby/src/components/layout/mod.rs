@@ -1,7 +1,7 @@
-use crate::api::{graphql_exec, stored_user_id};
+use crate::api::{create_lobby_with_game, stored_user_id};
 use crate::components::ui::{push_toast, Avatar, AvatarSize, Icon, SearchInput, ToastKind, use_toast};
 use crate::api::graphql_post;
-use crate::models::{format_relative_time, NotificationGql, PlatformStats, RegisterUserRow};
+use crate::models::{format_relative_time, NotificationGql, PlatformStats};
 use crate::stub::demo_mode;
 use crate::LobbyRoute;
 use dioxus::prelude::*;
@@ -111,6 +111,7 @@ pub fn AppShell(children: Element) -> Element {
     let unread = unread_count() as usize;
     let user_id = stored_user_id().unwrap_or_else(|| "Player".into());
     let show_fab = active == NavTab::Discover;
+    let lobby_room = matches!(route, LobbyRoute::Lobby { .. });
     let demo_on = demo_mode::is_demo_mode();
     const HEADER_CTRL_H: &str = "h-9";
     const HEADER_ICON_BTN: &str =
@@ -126,14 +127,10 @@ pub fn AppShell(children: Element) -> Element {
         let nav = nav;
         let toast = toast;
         spawn(async move {
-            let q = "mutation { createLobby { id } }";
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Cr { create_lobby: RegisterUserRow }
-            match graphql_exec::<Cr>(q, None).await {
-                Ok(c) => {
+            match create_lobby_with_game(None).await {
+                Ok(id) => {
                     push_toast(toast.show, "Lobby created", ToastKind::Success);
-                    nav.push(LobbyRoute::Lobby { id: c.create_lobby.id });
+                    nav.push(LobbyRoute::Lobby { id });
                 }
                 Err(e) => push_toast(toast.show, e, ToastKind::Error),
             }
@@ -300,9 +297,15 @@ pub fn AppShell(children: Element) -> Element {
                 }
             }
 
-            main { class: "md:ml-64 min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-10 pb-24 md:pb-10",
-                div { class: "max-w-container-max mx-auto",
+            if lobby_room {
+                main { class: "lobby-room-main",
                     {children}
+                }
+            } else {
+                main { class: "md:ml-64 min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-10 pb-24 md:pb-10",
+                    div { class: "max-w-container-max mx-auto",
+                        {children}
+                    }
                 }
             }
 

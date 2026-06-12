@@ -1,7 +1,7 @@
-﻿use crate::api::{graphql_exec, graphql_post, start_lobby_room_subscription, stored_user_id};
+use crate::api::{graphql_exec, graphql_post, set_lobby_game_type, start_lobby_room_subscription, stored_user_id};
 use crate::components::lobby::LobbyRoomBody;
-use crate::components::ui::{EmptyState, ErrorBanner, Skeleton, StatusBadge, status_variant_from_lobby};
-use crate::models::{game_type_description, game_type_display_title, GameTypeInfo, LobbyDetail, PlayOverlay};
+use crate::components::ui::{Avatar, AvatarSize, EmptyState, ErrorBanner, Icon, Skeleton, StatusBadge, status_variant_from_lobby};
+use crate::models::{GameTypeInfo, LobbyDetail, PlayOverlay};
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -16,7 +16,7 @@ pub fn LobbyRoomPage(
     let mut detail: Signal<Option<LobbyDetail>> = use_signal(|| None);
     let mut game_types: Signal<Vec<GameTypeInfo>> = use_signal(Vec::new);
     let mut loading = use_signal(|| true);
-    let my_user_id = use_signal(|| stored_user_id());
+    let mut seats_bootstrapped = use_signal(|| false);
 
     use_hook(move || {
         let lid_fetch = lobby_id.clone();
@@ -30,7 +30,7 @@ pub fn LobbyRoomPage(
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Gt { game_types: Vec<GameTypeInfo> }
-            let gt_q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson } }"#;
+            let gt_q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson coverImageUrl } }"#;
             if let Ok(g) = graphql_post::<Gt>(gt_q).await {
                 game_types_f.set(g.game_types);
             }
@@ -49,7 +49,7 @@ pub fn LobbyRoomPage(
 
     use_effect(move || {
         let Some(ref l) = detail() else { return; };
-        let user_id = my_user_id();
+        let user_id = stored_user_id();
         if l.status == "in_game" {
             if let (Some(uid), Some(gid)) = (user_id.as_ref(), l.game_instance_id.as_ref()) {
                 if let Some(seat) = l.seats.iter().find(|s| s.claimed_by_user_id.as_deref() == Some(uid.as_str())) {
@@ -70,9 +70,34 @@ pub fn LobbyRoomPage(
         }
     });
 
+    use_effect(move || {
+        if seats_bootstrapped() {
+            return;
+        }
+        let Some(ref l) = detail() else { return; };
+        let gt = l.game_type.trim();
+        if gt.is_empty() || !l.seats.is_empty() {
+            return;
+        }
+        let uid = stored_user_id();
+        if uid.as_deref() != Some(l.owner_user_id.as_str()) {
+            return;
+        }
+        seats_bootstrapped.set(true);
+        let lid = l.id.clone();
+        let gt = gt.to_string();
+        let mut detail_f = detail;
+        spawn(async move {
+            if let Ok(updated) = set_lobby_game_type(&lid, &gt, false).await {
+                detail_f.set(Some(updated));
+            }
+        });
+    });
+
     let d = detail();
     let gt_list = game_types();
-    let uid = my_user_id();
+    let uid = stored_user_id();
+    let mut detail_for_body = detail;
 
     rsx! {
         div { class: "lobby-room-wrap",
@@ -80,37 +105,46 @@ pub fn LobbyRoomPage(
                 ErrorBanner { message: err }
             }
             if loading() {
-                div { class: "lobby-room-grid",
-                    for _ in 0..3 {
-                        div { class: "lobby-col",
-                            Skeleton { class: Some("h-48 w-full".into()) }
-                        }
-                    }
+                div { class: "lobby-arena-skeleton mx-6",
+                    Skeleton { class: Some("h-32 w-full rounded-2xl".into()) }
+                    Skeleton { class: Some("h-48 w-full rounded-2xl".into()) }
+                    Skeleton { class: Some("h-64 w-full rounded-2xl".into()) }
                 }
             } else if let Some(ref l) = d {
-                div { class: "section-card flex flex-wrap items-center gap-4 mb-6",
+                header { class: "lobby-command-bar lobby-command-bar-slim",
                     button {
-                        class: "btn-ghost shrink-0",
+                        class: "lobby-command-back",
                         onclick: move |_| { nav.push(LobbyRoute::LobbiesBrowser {}); },
-                        "← Lobbies"
+                        Icon { name: "arrow_back", filled: false }
+                        "Lobbies"
                     }
-                    div { class: "min-w-0 flex-1",
-                        h1 { class: "font-manrope text-h2 text-on-surface",
-                            "{game_type_display_title(&gt_list, &l.game_type)}"
+                    div { class: "lobby-command-host shrink-0 ml-auto",
+                        Avatar {
+                            seed: l.owner_user_id.clone(),
+                            size: AvatarSize::Sm,
+                            image_url: None,
                         }
-                        if let Some(ref sd) = game_type_description(&gt_list, &l.game_type) {
-                            p { class: "text-body-sm text-on-surface-variant mt-1", "{sd}" }
+                        div { class: "min-w-0 hidden sm:block",
+                            p { class: "text-[10px] font-label-caps uppercase text-outline", "Host" }
+                            p { class: "text-body-sm font-medium text-on-surface truncate", "{l.owner_display_name}" }
                         }
                     }
                     StatusBadge {
                         label: l.status.clone(),
-                        variant: status_variant_from_lobby(&l.status, l.seats.iter().filter(|s| s.claimed_by_user_id.is_some()).count() as i32, l.seats.len() as i32),
+                        variant: status_variant_from_lobby(
+                            &l.status,
+                            l.seats.iter().filter(|s| s.claimed_by_user_id.is_some()).count() as i32,
+                            l.seats.len() as i32,
+                        ),
                     }
                 }
                 LobbyRoomBody {
                     lobby_for_cols: l.clone(),
                     gt_list: gt_list.clone(),
                     uid: uid.clone(),
+                    on_detail_updated: EventHandler::new(move |updated: LobbyDetail| {
+                        detail_for_body.set(Some(updated));
+                    }),
                 }
             } else {
                 EmptyState {

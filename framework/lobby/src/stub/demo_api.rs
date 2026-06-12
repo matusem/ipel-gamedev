@@ -2,6 +2,13 @@
 
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+thread_local! {
+    static DEMO_LOBBY_GAME_TYPES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    static DEMO_LOBBY_OWNERS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+}
 
 fn now() -> i64 {
     (js_sys::Date::now() / 1000.0) as i64
@@ -644,9 +651,49 @@ fn deployments() -> Value {
     ])
 }
 
+fn lobby_id_from_vars(variables: &Option<Value>) -> String {
+    variables
+        .as_ref()
+        .and_then(|v| v.get("id").and_then(|x| x.as_str()))
+        .unwrap_or("lob-a1f2")
+        .to_string()
+}
+
+fn demo_owner_for_lobby(id: &str, seats: &Value) -> (String, String) {
+    let owner_id = DEMO_LOBBY_OWNERS
+        .with(|m| m.borrow().get(id).cloned())
+        .unwrap_or_else(|| "u-nova".into());
+    let owner_name = seats
+        .as_array()
+        .and_then(|arr| {
+            arr.iter().find_map(|s| {
+                let uid = s.get("claimedByUserId").and_then(|v| v.as_str())?;
+                if uid == owner_id {
+                    s.get("claimedDisplayName")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| "NovaPilot".into());
+    (owner_id, owner_name)
+}
+
 fn lobby_detail(id: &str) -> Value {
-    let game = if id.contains("b8") || id.contains("e2") { "checkers" } else { "tic_tac_toe" };
-    let seats = if game == "checkers" {
+    let game = DEMO_LOBBY_GAME_TYPES.with(|m| m.borrow().get(id).cloned()).unwrap_or_else(|| {
+        if id == "demo-lobby-new" {
+            String::new()
+        } else if id.contains("b8") || id.contains("e2") {
+            "checkers".into()
+        } else {
+            "tic_tac_toe".into()
+        }
+    });
+    let seats = if game.is_empty() {
+        json!([])
+    } else if game == "checkers" {
         json!([
             { "seatIndex": 0, "playerIdentity": "p1", "claimedByUserId": "u-nova", "claimedDisplayName": "NovaPilot", "ready": true },
             { "seatIndex": 1, "playerIdentity": "p2", "claimedByUserId": "u-cipher", "claimedDisplayName": "CipherFox", "ready": true }
@@ -659,12 +706,13 @@ fn lobby_detail(id: &str) -> Value {
             { "seatIndex": 3, "playerIdentity": "p4", "claimedByUserId": null, "claimedDisplayName": null, "ready": false }
         ])
     };
+    let (owner_id, owner_name) = demo_owner_for_lobby(id, &seats);
     json!({
         "id": id,
-        "ownerUserId": "u-nova",
-        "ownerDisplayName": "NovaPilot",
+        "ownerUserId": owner_id,
+        "ownerDisplayName": owner_name,
         "gameType": game,
-        "configJson": r#"{"boardSize":5,"winLength":4}"#,
+        "configJson": if game.is_empty() { Value::Null } else { json!(r#"{"boardSize":5,"winLength":4}"#) },
         "status": "waiting",
         "gameInstanceId": null,
         "createdAt": ago_mins(10),
@@ -697,7 +745,33 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         } else if q.contains("loginWithPassword") {
             json!({ "loginWithPassword": { "id": "demo-user-nova" } })
         } else if q.contains("createLobby") {
-            json!({ "createLobby": { "id": "demo-lobby-new" } })
+            let id = "demo-lobby-new";
+            let gt = variables
+                .as_ref()
+                .and_then(|v| {
+                    v.get("gt")
+                        .or_else(|| v.get("gameType"))
+                        .and_then(|x| x.as_str())
+                })
+                .unwrap_or("");
+            if !gt.is_empty() {
+                DEMO_LOBBY_GAME_TYPES.with(|m| m.borrow_mut().insert(id.to_string(), gt.to_string()));
+            }
+            json!({ "createLobby": { "id": id } })
+        } else if q.contains("setLobbyGameType") {
+            let id = lobby_id_from_vars(&variables);
+            let gt = game_type_from_vars(&variables);
+            DEMO_LOBBY_GAME_TYPES.with(|m| m.borrow_mut().insert(id.clone(), gt));
+            json!({ "setLobbyGameType": lobby_detail(&id) })
+        } else if q.contains("transferLobbyOwnership") {
+            let id = lobby_id_from_vars(&variables);
+            let new_owner = variables
+                .as_ref()
+                .and_then(|v| v.get("u").and_then(|x| x.as_str()))
+                .unwrap_or("u-byte")
+                .to_string();
+            DEMO_LOBBY_OWNERS.with(|m| m.borrow_mut().insert(id.clone(), new_owner));
+            json!({ "transferLobbyOwnership": lobby_detail(&id) })
         } else if q.contains("submitGameReview") || q.contains("submitGameComment") || q.contains("updateGameStorefront") {
             if q.contains("updateGameStorefront") {
                 json!({ "updateGameStorefront": true })

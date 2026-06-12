@@ -6,6 +6,7 @@ pub enum AvatarSize {
     Md,
     Lg,
     Xl,
+    Hero,
 }
 
 impl AvatarSize {
@@ -15,6 +16,7 @@ impl AvatarSize {
             AvatarSize::Md => "h-10 w-10 text-sm",
             AvatarSize::Lg => "h-14 w-14 text-lg",
             AvatarSize::Xl => "h-20 w-20 text-3xl",
+            AvatarSize::Hero => "h-28 w-28 text-4xl",
         }
     }
 }

@@ -6,7 +6,7 @@ FIXTURE_DIR="$ROOT/server/tests/fixtures/games/tic_tac_toe"
 
 cd "$GAME_DIR/rust/component"
 cargo component build --release
-WASM="target/wasm32-wasip2/release/tic_tac_toe_component.wasm"
+WASM="$ROOT/target/wasm32-wasip1/release/tic_tac_toe_component.wasm"
 test -f "$WASM"
 
 mkdir -p "$FIXTURE_DIR/client"

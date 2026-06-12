@@ -348,6 +348,53 @@ pub async fn claim_seat(
     Ok(true)
 }
 
+/// Current owner passes host controls to a seated player (`new_owner` must have a claimed seat).
+pub async fn transfer_lobby_ownership(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+    current_owner: Uuid,
+    new_owner: Uuid,
+) -> Result<(), String> {
+    if current_owner == new_owner {
+        return Err("cannot transfer ownership to yourself".into());
+    }
+    let detail = get_lobby(pool, lobby_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "lobby not found".to_string())?;
+    if detail.owner_user_id != current_owner {
+        return Err("only the owner can transfer the lobby".into());
+    }
+    if detail.status == "in_game" {
+        return Err("cannot transfer ownership while in game".into());
+    }
+    if detail.status == "cancelled" {
+        return Err("lobby is cancelled".into());
+    }
+    let seated = detail
+        .seats
+        .iter()
+        .any(|s| s.claimed_by_user_id == Some(new_owner));
+    if !seated {
+        return Err("new owner must have a claimed seat in this lobby".into());
+    }
+    let now = now_secs();
+    let r = sqlx::query(
+        "UPDATE pregame_lobbies SET owner_user_id = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
+    )
+    .bind(new_owner.to_string())
+    .bind(now)
+    .bind(lobby_id.to_string())
+    .bind(current_owner.to_string())
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    if r.rows_affected() == 0 {
+        return Err("ownership transfer failed".into());
+    }
+    Ok(())
+}
+
 pub async fn release_user_seats(pool: &SqlitePool, lobby_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE lobby_seats SET claimed_by_user_id = NULL, ready = 0 WHERE lobby_id = ? AND claimed_by_user_id = ?",

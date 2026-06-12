@@ -1,4 +1,4 @@
-use crate::api::{graphql_exec, graphql_post};
+use crate::api::{create_lobby_with_game, graphql_exec, graphql_post};
 use crate::components::game::{MediaGallery, SteamSection, SteamSectionNav, StorefrontEditor};
 use crate::components::ui::*;
 use crate::models::{
@@ -592,14 +592,12 @@ pub fn GameDetailPage(name: String) -> Element {
                                 onclick: move |_| {
                                     creating.set(true);
                                     let toast = toast;
+                                    let game_type = name.clone();
                                     spawn(async move {
-                                        #[derive(Deserialize)]
-                                        #[serde(rename_all = "camelCase")]
-                                        struct Cr { create_lobby: crate::models::RegisterUserRow }
-                                        match graphql_exec::<Cr>("mutation { createLobby { id } }", None).await {
-                                            Ok(c) => {
-                                                push_toast(toast.show, "Lobby created", ToastKind::Success);
-                                                nav.push(LobbyRoute::Lobby { id: c.create_lobby.id });
+                                        match create_lobby_with_game(Some(&game_type)).await {
+                                            Ok(id) => {
+                                                push_toast(toast.show, "Lobby created — game selected", ToastKind::Success);
+                                                nav.push(LobbyRoute::Lobby { id });
                                             }
                                             Err(e) => push_toast(toast.show, e, ToastKind::Error),
                                         }

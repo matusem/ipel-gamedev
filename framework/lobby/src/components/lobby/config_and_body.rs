@@ -1,7 +1,8 @@
 ﻿use crate::api::*;
-use crate::api::config_bridge::*;
-use crate::components::lobby::LobbyChatPanel;
-use crate::components::ui::{push_toast, status_variant_from_lobby, Avatar, AvatarSize, JsonConsole, StatusBadge, use_toast, ToastKind};
+use crate::components::lobby::{
+    LobbyActiveGame, LobbyFloatingChat, LobbyGameModal, LobbyGameRulesModal, LobbyPlayerCard,
+};
+use crate::components::ui::{push_toast, status_variant_from_lobby, Icon, JsonConsole, StatusBadge, use_toast, ToastKind};
 use crate::models::*;
 use crate::stub::{estimated_match_time_stub, game_media};
 use crate::LobbyRoute;
@@ -121,7 +122,11 @@ pub fn LobbyConfigPanel(
 
     rsx! {
         iframe {
-            class: if read_only { "config-iframe pointer-events-none opacity-90" } else { "config-iframe" },
+            class: if read_only {
+                "lobby-config-iframe config-iframe pointer-events-none opacity-90"
+            } else {
+                "lobby-config-iframe config-iframe"
+            },
             src: "{iframe_src}",
             title: "Game config",
             onmounted: move |evt| {
@@ -156,15 +161,18 @@ pub fn LobbyConfigPanel(
                 }
             }
         }
-        p { class: "text-body-sm text-on-surface-variant mt-2",
-            "Preview JSON (from the config panel). Saving is separate — use Apply below."
-        }
-        div { class: "mt-2",
-            JsonConsole { content: preview(), max_height: Some("max-h-48") }
+        details { class: "lobby-config-preview mt-3",
+            summary { class: "lobby-config-preview-toggle",
+                Icon { name: "data_object", filled: false }
+                "Live config preview"
+            }
+            div { class: "mt-2",
+                JsonConsole { content: preview(), max_height: Some("max-h-40") }
+            }
         }
         if !read_only {
             button {
-                class: "btn-primary mt-3",
+                class: "btn-primary lobby-config-apply mt-4 w-full sm:w-auto",
                 onclick: move |_| {
                     let cfg = draft_for_apply.borrow().clone();
                     let lid = lobby_id_apply.clone();
@@ -204,20 +212,185 @@ pub fn LobbyConfigPanel(
 }
 
 #[component]
+pub fn LobbyConfigModal(
+    open: bool,
+    on_close: EventHandler<()>,
+    title: String,
+    lobby_id: String,
+    game_type: String,
+    iframe_src: Option<String>,
+    schema_json: Option<String>,
+    read_only: bool,
+    server_config_json: Option<String>,
+    config_panel_key: String,
+    show_spawn_defaults: bool,
+    lobby_id_spawn: String,
+) -> Element {
+    if !open {
+        return rsx! {};
+    }
+
+    rsx! {
+        div { class: "lobby-game-modal-layer",
+            button {
+                class: "lobby-game-modal-backdrop",
+                onclick: move |_| on_close.call(()),
+            }
+            div {
+                class: "lobby-config-modal",
+                role: "dialog",
+                aria_modal: "true",
+                div { class: "lobby-game-modal-head",
+                    div {
+                        p { class: "lobby-section-kicker", "MATCH SETTINGS" }
+                        h2 { class: "lobby-section-title", "{title}" }
+                    }
+                    button {
+                        class: "lobby-game-modal-close",
+                        onclick: move |_| on_close.call(()),
+                        Icon { name: "close", filled: false }
+                    }
+                }
+                div { class: "lobby-config-modal-body",
+                    if let Some(src) = iframe_src {
+                        div { class: "lobby-config-shell",
+                            LobbyConfigPanel {
+                                key: "{config_panel_key}",
+                                lobby_id: lobby_id.clone(),
+                                game_type: game_type.clone(),
+                                iframe_src: src,
+                                schema_json: schema_json.clone(),
+                                read_only,
+                                server_config_json: server_config_json.clone(),
+                            }
+                        }
+                    } else if show_spawn_defaults {
+                        div { class: "lobby-panel-empty py-6",
+                            p { "This game uses default rules — spawn seats to continue." }
+                            button {
+                                class: "btn-primary mt-3",
+                                onclick: move |_| {
+                                    let lid = lobby_id_spawn.clone();
+                                    spawn(async move {
+                                        let q = "mutation U($id: ID!, $c: String!, $f: Boolean!) { updateLobbyConfig(lobbyId: $id, configJson: $c, force: $f) { id } }";
+                                        let vars = serde_json::json!({ "id": lid, "c": "null", "f": false });
+                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                    });
+                                },
+                                "Spawn seats with defaults"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn LobbySquadFooter(
+    lobby_id: String,
+    ready_count: usize,
+    claimed: usize,
+    total: usize,
+    my_user_id: Option<String>,
+    seats: Vec<LobbySeat>,
+    in_staging: bool,
+) -> Element {
+    if !in_staging || total == 0 {
+        return rsx! {};
+    }
+
+    let toast = use_toast();
+    let my_seat = my_user_id.as_ref().and_then(|u| {
+        seats
+            .iter()
+            .find(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
+    });
+    let user_in_seat = my_seat.is_some();
+    let my_seat_ready = my_seat.is_some_and(|s| s.ready);
+    let lobby_id_ready = lobby_id.clone();
+    let lobby_id_leave = lobby_id.clone();
+
+    let ready_denominator = if claimed > 0 { claimed } else { total };
+
+    rsx! {
+        footer { class: "lobby-squad-footer",
+            span { class: "lobby-squad-footer-stat",
+                Icon { name: "check_circle", filled: true }
+                "{ready_count} / {ready_denominator} ready"
+            }
+            div { class: "lobby-squad-footer-actions",
+                if user_in_seat {
+                    button {
+                        class: if my_seat_ready {
+                            "lobby-squad-footer-btn lobby-squad-footer-ready-on"
+                        } else {
+                            "lobby-squad-footer-btn"
+                        },
+                        onclick: move |_| {
+                            let lid = lobby_id_ready.clone();
+                            let next_ready = !my_seat_ready;
+                            let toast = toast;
+                            spawn(async move {
+                                let q = "mutation R($id: ID!, $r: Boolean!) { setLobbySeatReady(lobbyId: $id, ready: $r) { id } }";
+                                let vars = serde_json::json!({ "id": lid, "r": next_ready });
+                                match graphql_exec::<Value>(q, Some(vars)).await {
+                                    Ok(_) => {
+                                        let msg = if next_ready { "Ready" } else { "Not ready" };
+                                        push_toast(toast.show, msg, ToastKind::Success);
+                                    }
+                                    Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                }
+                            });
+                        },
+                        if my_seat_ready {
+                            Icon { name: "remove_circle", filled: false }
+                            "Not ready"
+                        } else {
+                            Icon { name: "bolt", filled: false }
+                            "Ready up"
+                        }
+                    }
+                    button {
+                        class: "lobby-squad-footer-btn lobby-squad-footer-leave",
+                        onclick: move |_| {
+                            let lid = lobby_id_leave.clone();
+                            let toast = toast;
+                            spawn(async move {
+                                let q = "mutation L($id: ID!) { leaveLobby(lobbyId: $id) }";
+                                let vars = serde_json::json!({ "id": lid });
+                                match graphql_exec::<Value>(q, Some(vars)).await {
+                                    Ok(_) => push_toast(toast.show, "Left seat", ToastKind::Success),
+                                    Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                }
+                            });
+                        },
+                        Icon { name: "event_seat", filled: false }
+                        "Leave seat"
+                    }
+                }
+            }
+            span { class: "lobby-squad-footer-stat",
+                Icon { name: "groups", filled: false }
+                "{claimed} / {total} filled"
+            }
+        }
+    }
+}
+
+#[component]
 pub fn LobbyRoomBody(
     lobby_for_cols: LobbyDetail,
     gt_list: Vec<GameTypeInfo>,
     uid: Option<String>,
+    on_detail_updated: EventHandler<LobbyDetail>,
 ) -> Element {
     let nav = use_navigator();
     let is_owner = uid.as_deref() == Some(lobby_for_cols.owner_user_id.as_str());
-    let lobby_id_start = lobby_for_cols.id.clone();
-    let lobby_id_cancel = lobby_for_cols.id.clone();
     let lobby_id_start_bar = lobby_for_cols.id.clone();
     let lobby_id_cancel_bar = lobby_for_cols.id.clone();
     let lobby_id_chat_panel = lobby_for_cols.id.clone();
-    let lobby_id_mark_ready = lobby_for_cols.id.clone();
-    let lobby_id_mark_unready = lobby_for_cols.id.clone();
     let no_game_yet = lobby_for_cols.game_type.trim().is_empty();
     let selected_gt = gt_list
         .iter()
@@ -256,24 +429,7 @@ pub fn LobbyRoomBody(
         && all_ready
         && (lobby_for_cols.status == "waiting" || lobby_for_cols.status == "configuring");
     let in_staging = lobby_for_cols.status == "waiting" || lobby_for_cols.status == "configuring";
-    let user_in_seat = uid.as_ref().is_some_and(|u| {
-        lobby_for_cols
-            .seats
-            .iter()
-            .any(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
-    });
-    let my_seat_ready = uid
-        .as_ref()
-        .and_then(|u| {
-            lobby_for_cols
-                .seats
-                .iter()
-                .find(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
-        })
-        .map(|s| s.ready)
-        .unwrap_or(false);
     let lobby_id_default_config = lobby_for_cols.id.clone();
-    let lobby_id_leave = lobby_for_cols.id.clone();
     let lobby_finished = lobby_for_cols.status == "finished";
     let game_id_for_results_btn = lobby_for_cols.game_instance_id.clone();
     let lobby_id_reopen_finished = lobby_for_cols.id.clone();
@@ -286,308 +442,221 @@ pub fn LobbyRoomBody(
         claimed as i32,
         total as i32,
     );
+    let mut games_open = use_signal(|| false);
+    let mut config_open = use_signal(|| false);
+    let mut rules_open = use_signal(|| false);
+    let has_config = !no_game_yet && (iframe_src.is_some() || is_owner);
+    let about_url = selected_gt.as_ref().and_then(game_type_about_url);
+    let show_rules = !no_game_yet && about_url.is_some();
+    let config_title = game_type_display_title(&gt_list, &game_name);
+    let rules_title = config_title.clone();
+    let my_seat_position = uid.as_ref().and_then(|u| {
+        lobby_for_cols
+            .seats
+            .iter()
+            .position(|s| s.claimed_by_user_id.as_deref() == Some(u.as_str()))
+    });
+    let (seats_before_me, my_roster_seat, seats_after_me) = if let Some(pos) = my_seat_position {
+        let seats = &lobby_for_cols.seats;
+        (
+            seats[..pos].to_vec(),
+            seats.get(pos).cloned(),
+            seats[pos.saturating_add(1)..].to_vec(),
+        )
+    } else {
+        (Vec::new(), None, Vec::new())
+    };
 
     rsx! {
-        div { class: "pb-24",
-        if !no_game_yet {
-            div { class: "mb-6 page-hero min-h-[120px] rounded-2xl overflow-hidden",
-                div { class: "absolute inset-0 bg-gradient-to-r {media.accent_gradient} z-0" }
-                div { class: "relative z-10 p-5 flex items-center gap-4",
-                    div { class: "game-thumb text-2xl", "{media.icon_emoji}" }
-                    div {
-                        p { class: "text-label-caps font-label-caps text-outline uppercase", "Current game" }
-                        p { class: "font-manrope text-xl font-semibold text-on-surface",
-                            "{game_type_display_title(&gt_list, &game_name)}"
-                        }
+        div { class: "lobby-room-body",
+        div { class: "lobby-stage",
+            div { class: "lobby-stage-bg" }
+
+            if lobby_finished {
+                div { class: "lobby-finished-banner mx-auto max-w-3xl w-full",
+                    Icon { name: "emoji_events", filled: true }
+                    div { class: "min-w-0 flex-1",
+                        p { class: "font-manrope font-semibold text-on-surface", "Match complete" }
                     }
-                }
-            }
-        }
-        if lobby_finished {
-            div { class: "mb-6 section-card border-secondary-container/40 bg-secondary-container/10",
-                p { class: "text-on-surface font-semibold mb-3", "This match is over." }
-                div { class: "flex flex-wrap gap-2",
-                    if let Some(g) = game_id_for_results_btn.clone() {
-                        button {
-                            class: "btn-primary",
-                            onclick: move |_| {
-                                nav.push(LobbyRoute::GameResult { id: g.clone() });
-                            },
-                            "View results"
+                    div { class: "flex flex-wrap gap-2",
+                        if let Some(g) = game_id_for_results_btn.clone() {
+                            button {
+                                class: "btn-primary",
+                                onclick: move |_| { nav.push(LobbyRoute::GameResult { id: g.clone() }); },
+                                "Results"
+                            }
                         }
-                    }
-                    if is_owner {
-                        button {
-                            class: "btn-secondary",
-                            onclick: move |_| {
-                                let lid = lobby_id_reopen_finished.clone();
-                                spawn(async move {
-                                    let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
-                                    let vars = serde_json::json!({ "id": lid });
-                                    let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                });
-                            },
-                            "Play again (reset lobby)"
-                        }
-                    }
-                }
-            }
-        }
-        div { class: "lobby-room-grid",
-            div { class: "lobby-col lobby-col-types",
-                h3 { class: "text-label-caps font-label-caps text-secondary uppercase mb-3", "Game type" }
-                if no_game_yet {
-                    p { class: "text-body-sm text-on-surface-variant mb-3 leading-relaxed",
                         if is_owner {
-                            "Choose a game below. Configuration and player seats appear after you select one."
-                        } else {
-                            "Waiting for the lobby owner to choose a game."
-                        }
-                    }
-                }
-                div { class: "lobby-type-list",
-                    for gt in gt_list.iter().cloned() {
-                        {
-                            let active = !no_game_yet && gt.name == lobby_for_cols.game_type;
-                            let desc = gt.description.trim();
-                            let about_url = game_type_about_url(&gt);
-                            let lid_set = lobby_for_cols.id.clone();
-                            let gtn = gt.name.clone();
-                            rsx! {
-                                div { class: "space-y-2",
-                                    button {
-                                        class: if active { "lobby-type-btn active" } else { "lobby-type-btn" },
-                                        disabled: !is_owner,
-                                        onclick: move |_| {
-                                            if !is_owner { return; }
-                                            let lid = lid_set.clone();
-                                            let gtn = gtn.clone();
-                                            spawn(async move {
-                                                let q = "mutation S($id: ID!, $t: String!, $f: Boolean!) { setLobbyGameType(lobbyId: $id, gameType: $t, force: $f) { id } }";
-                                                let vars = serde_json::json!({ "id": lid, "t": gtn, "f": false });
-                                                let r = graphql_exec::<Value>(q, Some(vars)).await;
-                                                if r.is_err() {
-                                                    let force = web_sys::window()
-                                                        .map(|w| {
-                                                            w.confirm_with_message(
-                                                                "Changing type resets seats if claimed. Continue?",
-                                                            )
-                                                            .unwrap_or(false)
-                                                        })
-                                                        .unwrap_or(false);
-                                                    if force {
-                                                        let vars = serde_json::json!({ "id": lid, "t": gtn, "f": true });
-                                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                                    }
-                                                }
-                                            });
-                                        },
-                                        span { class: "font-medium", "{gt.display_name}" }
-                                        if !desc.is_empty() {
-                                            span { class: "mt-1 text-body-sm text-on-surface-variant leading-snug line-clamp-4", "{desc}" }
-                                        }
-                                    }
-                                    if let Some(url) = about_url {
-                                        a {
-                                            class: "btn-ghost text-[11px] py-1 px-2",
-                                            href: "{url}",
-                                            target: "_blank",
-                                            rel: "noopener noreferrer",
-                                            "Open game info and rules"
-                                        }
-                                    }
-                                }
+                            button {
+                                class: "btn-secondary",
+                                onclick: move |_| {
+                                    let lid = lobby_id_reopen_finished.clone();
+                                    spawn(async move {
+                                        let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
+                                        let vars = serde_json::json!({ "id": lid });
+                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                    });
+                                },
+                                "Play again"
                             }
                         }
                     }
                 }
             }
-            div { class: "lobby-col lobby-col-config",
-                h3 { class: "text-label-caps font-label-caps text-secondary uppercase mb-3", "Configuration" }
-                if no_game_yet {
-                    p { class: "text-on-surface-variant text-body-sm leading-relaxed",
-                        "Select a game in the first column. The config editor loads here when the game provides one."
-                    }
-                } else if let Some(src) = iframe_src {
-                    LobbyConfigPanel {
-                        key: "{config_panel_key}",
-                        lobby_id: lobby_for_cols.id.clone(),
-                        game_type: lobby_for_cols.game_type.clone(),
-                        iframe_src: src,
-                        schema_json: schema_json.clone(),
-                        read_only,
-                        server_config_json: lobby_for_cols.config_json.clone(),
-                    }
-                } else {
-                    p { class: "text-on-surface-variant text-body-sm mb-2",
-                        "This game has no config UI. Initialize seats with default config, or pick another type that has a config editor."
-                    }
-                    if is_owner && lobby_for_cols.seats.is_empty() {
-                        button {
-                            class: "btn-primary",
-                            onclick: move |_| {
-                                let lid = lobby_id_default_config.clone();
-                                spawn(async move {
-                                    let q = "mutation U($id: ID!, $c: String!, $f: Boolean!) { updateLobbyConfig(lobbyId: $id, configJson: $c, force: $f) { id } }";
-                                    let vars = serde_json::json!({ "id": lid, "c": "null", "f": false });
-                                    let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                });
-                            },
-                            "Use default config (create seats)"
-                        }
-                    }
+
+            LobbyGameModal {
+                open: games_open(),
+                on_close: EventHandler::new(move |_| games_open.set(false)),
+                lobby_id: lobby_for_cols.id.clone(),
+                selected_game_type: lobby_for_cols.game_type.clone(),
+                gt_list: gt_list.clone(),
+                is_owner,
+                on_detail_updated,
+            }
+
+            LobbyConfigModal {
+                open: config_open(),
+                on_close: EventHandler::new(move |_| config_open.set(false)),
+                title: config_title.clone(),
+                lobby_id: lobby_for_cols.id.clone(),
+                game_type: lobby_for_cols.game_type.clone(),
+                iframe_src: iframe_src.clone(),
+                schema_json: schema_json.clone(),
+                read_only,
+                server_config_json: lobby_for_cols.config_json.clone(),
+                config_panel_key: config_panel_key.clone(),
+                show_spawn_defaults: is_owner && lobby_for_cols.seats.is_empty(),
+                lobby_id_spawn: lobby_id_default_config.clone(),
+            }
+
+            if let Some(rules_about_url) = about_url.clone() {
+                LobbyGameRulesModal {
+                    open: rules_open(),
+                    on_close: EventHandler::new(move |_| rules_open.set(false)),
+                    title: rules_title.clone(),
+                    about_url: rules_about_url,
                 }
             }
-            div { class: "lobby-col lobby-col-seats",
-                h3 { class: "text-label-caps font-label-caps text-secondary uppercase mb-3", "Players" }
-                p { class: "text-body-sm text-on-surface-variant mb-3",
-                    "{claimed}/{total} seats taken"
-                    if total > 0 && claimed > 0 {
-                        " · "
-                        "{ready_count}/{claimed} ready"
+
+            div { class: "lobby-stage-main",
+                div { class: "lobby-panel-top",
+                    LobbyActiveGame {
+                        selected_game_type: lobby_for_cols.game_type.clone(),
+                        gt_list: gt_list.clone(),
+                        is_owner,
+                        on_open_games: EventHandler::new(move |_| games_open.set(true)),
+                        show_config: has_config,
+                        on_open_config: EventHandler::new(move |_| config_open.set(true)),
+                        show_rules,
+                        on_open_rules: EventHandler::new(move |_| rules_open.set(true)),
                     }
                 }
-                if in_staging && total > 0 {
-                    p { class: "text-body-sm text-outline mb-3 leading-relaxed",
-                        "Take a free seat, then mark Ready. The host can start only when every seat is filled and everyone is ready."
+
+                div { class: "lobby-panel-middle",
+                    if !no_game_yet {
+                        div { class: "lobby-squad-ambient bg-gradient-to-b {media.accent_gradient}" }
                     }
-                }
-                div { class: "space-y-2 mb-4",
-                    for seat in lobby_for_cols.seats.clone() {
-                        {
-                            let lid_join = lobby_for_cols.id.clone();
-                            let idx = seat.seat_index;
-                            let taken = seat.claimed_by_user_id.is_some();
-                            let label = seat
-                                .claimed_display_name
-                                .clone()
-                                .unwrap_or_else(|| "free".into());
-                            let seat_ready = seat.ready;
-                            let seat_class = if taken { "seat-card" } else { "seat-card seat-card-open" };
-                            let avatar_seed = seat.claimed_by_user_id.clone().unwrap_or_else(|| seat.player_identity.clone());
-                            rsx! {
-                                div { class: "{seat_class}",
-                                    Avatar { seed: avatar_seed, size: AvatarSize::Sm, image_url: None }
-                                    div { class: "min-w-0 flex-1",
-                                        span { class: "font-mono-code text-xs text-outline", "{seat.player_identity}" }
-                                        if taken {
-                                            p { class: "text-body-sm text-on-surface font-medium", "{label}" }
-                                            if seat_ready {
-                                                span { class: "text-tertiary text-xs font-label-caps font-label-caps uppercase", "Ready" }
-                                            } else {
-                                                span { class: "text-secondary text-xs font-label-caps font-label-caps uppercase", "Not ready" }
-                                            }
-                                        } else {
-                                            button {
-                                                class: "btn-primary text-xs py-1 px-2",
-                                                onclick: move |_| {
-                                                    let lid = lid_join.clone();
-                                                    let toast = toast;
-                                                    spawn(async move {
-                                                        let q = "mutation J($id: ID!, $i: Int!) { joinLobby(lobbyId: $id, seatIndex: $i) { id } }";
-                                                        let vars = serde_json::json!({ "id": lid, "i": idx });
-                                                        match graphql_exec::<Value>(q, Some(vars)).await {
-                                                            Ok(_) => push_toast(toast.show, "Seat claimed", ToastKind::Success),
-                                                            Err(e) => push_toast(toast.show, e, ToastKind::Error),
-                                                        }
-                                                    });
-                                                },
-                                                "Take seat"
-                                            }
-                                        }
+
+                    if no_game_yet {
+                        div { class: "lobby-roster-empty",
+                            Icon { name: "groups", filled: false }
+                            p { "Pick a game above — your squad forms here." }
+                            if is_owner {
+                                button {
+                                    class: "btn-secondary mt-2",
+                                    onclick: move |_| games_open.set(true),
+                                    "Select game"
+                                }
+                            }
+                        }
+                    } else if total == 0 {
+                        div { class: "lobby-roster-empty",
+                            Icon { name: "tune", filled: false }
+                            p { "Open game config to spawn player slots." }
+                            if has_config {
+                                button {
+                                    class: "btn-secondary mt-2",
+                                    onclick: move |_| config_open.set(true),
+                                    "Open game config"
+                                }
+                            }
+                        }
+                    } else if let Some(me_seat) = my_roster_seat.clone() {
+                        div { class: "lobby-roster-centered",
+                            div { class: "lobby-roster-side lobby-roster-side-left",
+                                for seat in seats_before_me.clone() {
+                                    LobbyPlayerCard {
+                                        key: "{seat.seat_index}",
+                                        seat: seat,
+                                        lobby_id: lobby_for_cols.id.clone(),
+                                        owner_user_id: lobby_for_cols.owner_user_id.clone(),
+                                        my_user_id: uid.clone(),
+                                        viewer_is_owner: is_owner,
+                                        in_staging,
+                                        on_detail_updated,
                                     }
+                                }
+                            }
+                            div { class: "lobby-roster-center-seat",
+                                LobbyPlayerCard {
+                                    key: "{me_seat.seat_index}",
+                                    seat: me_seat,
+                                    lobby_id: lobby_for_cols.id.clone(),
+                                    owner_user_id: lobby_for_cols.owner_user_id.clone(),
+                                    my_user_id: uid.clone(),
+                                    viewer_is_owner: is_owner,
+                                    in_staging,
+                                    on_detail_updated,
+                                }
+                            }
+                            div { class: "lobby-roster-side lobby-roster-side-right",
+                                for seat in seats_after_me.clone() {
+                                    LobbyPlayerCard {
+                                        key: "{seat.seat_index}",
+                                        seat: seat,
+                                        lobby_id: lobby_for_cols.id.clone(),
+                                        owner_user_id: lobby_for_cols.owner_user_id.clone(),
+                                        my_user_id: uid.clone(),
+                                        viewer_is_owner: is_owner,
+                                        in_staging,
+                                        on_detail_updated,
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        div { class: "lobby-roster-hscroll",
+                            for seat in lobby_for_cols.seats.clone() {
+                                LobbyPlayerCard {
+                                    key: "{seat.seat_index}",
+                                    seat: seat,
+                                    lobby_id: lobby_for_cols.id.clone(),
+                                    owner_user_id: lobby_for_cols.owner_user_id.clone(),
+                                    my_user_id: uid.clone(),
+                                    viewer_is_owner: is_owner,
+                                    in_staging,
+                                    on_detail_updated,
                                 }
                             }
                         }
                     }
                 }
-                if user_in_seat && in_staging {
-                    div { class: "mb-4 section-card py-3 px-3",
-                        p { class: "text-label-caps font-label-caps text-outline uppercase mb-2", "Your readiness" }
-                        div { class: "flex flex-wrap gap-2",
-                            button {
-                                class: "btn-primary text-xs",
-                                disabled: my_seat_ready,
-                                onclick: move |_| {
-                                    let lid = lobby_id_mark_ready.clone();
-                                    spawn(async move {
-                                        let q = "mutation R($id: ID!, $r: Boolean!) { setLobbySeatReady(lobbyId: $id, ready: $r) { id } }";
-                                        let vars = serde_json::json!({ "id": lid, "r": true });
-                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                    });
-                                },
-                                "Ready"
-                            }
-                            button {
-                                class: "btn-ghost text-xs",
-                                disabled: !my_seat_ready,
-                                onclick: move |_| {
-                                    let lid = lobby_id_mark_unready.clone();
-                                    spawn(async move {
-                                        let q = "mutation R($id: ID!, $r: Boolean!) { setLobbySeatReady(lobbyId: $id, ready: $r) { id } }";
-                                        let vars = serde_json::json!({ "id": lid, "r": false });
-                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                    });
-                                },
-                                "Not ready"
-                            }
-                        }
-                    }
-                }
-                div { class: "flex flex-wrap gap-2 hidden md:flex",
-                    if is_owner && in_staging {
-                        button {
-                            class: "btn-primary",
-                            disabled: !can_start,
-                            onclick: move |_| {
-                                let lid = lobby_id_start.clone();
-                                let toast = toast;
-                                spawn(async move {
-                                    let q = "mutation St($id: ID!) { startLobby(lobbyId: $id) }";
-                                    let vars = serde_json::json!({ "id": lid });
-                                    match graphql_exec::<Value>(q, Some(vars)).await {
-                                        Ok(_) => push_toast(toast.show, "Game started", ToastKind::Success),
-                                        Err(e) => push_toast(toast.show, e, ToastKind::Error),
-                                    }
-                                });
-                            },
-                            "Start game"
-                        }
-                        button {
-                            class: "btn-ghost text-error border-error/40",
-                            onclick: move |_| {
-                                let lid = lobby_id_cancel.clone();
-                                let nav = nav;
-                                spawn(async move {
-                                    let q = "mutation C($id: ID!) { cancelLobby(lobbyId: $id) }";
-                                    let vars = serde_json::json!({ "id": lid });
-                                    let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                    nav.push(LobbyRoute::Home {});
-                                });
-                            },
-                            "Cancel lobby"
-                        }
-                    }
-                    if user_in_seat && in_staging {
-                        button {
-                            class: "btn-ghost",
-                            onclick: move |_| {
-                                let lid = lobby_id_leave.clone();
-                                spawn(async move {
-                                    let q = "mutation Lv($id: ID!) { leaveLobby(lobbyId: $id) }";
-                                    let vars = serde_json::json!({ "id": lid });
-                                    let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                });
-                            },
-                            "Leave seat"
-                        }
-                    }
-                }
-                LobbyChatPanel {
-                    lobby_id: lobby_id_chat_panel,
-                    messages: lobby_for_cols.messages.clone(),
+
+                LobbySquadFooter {
+                    lobby_id: lobby_for_cols.id.clone(),
+                    ready_count,
+                    claimed,
+                    total,
                     my_user_id: uid.clone(),
+                    seats: lobby_for_cols.seats.clone(),
+                    in_staging,
                 }
+            }
+
+            LobbyFloatingChat {
+                lobby_id: lobby_id_chat_panel,
+                messages: lobby_for_cols.messages.clone(),
+                my_user_id: uid.clone(),
             }
         }
 
@@ -599,10 +668,10 @@ pub fn LobbyRoomBody(
                         "Est. {estimated_match_time_stub()}"
                     }
                 }
-                div { class: "flex gap-2",
+                div { class: "flex flex-wrap items-center gap-2",
                     if is_owner {
                         button {
-                            class: "btn-ghost text-error border-error/40 hidden sm:inline-flex",
+                            class: "btn-ghost text-error border-error/40 text-sm",
                             onclick: move |_| {
                                 let lid = lobby_id_cancel_bar.clone();
                                 let nav = nav;
@@ -610,10 +679,11 @@ pub fn LobbyRoomBody(
                                     let q = "mutation C($id: ID!) { cancelLobby(lobbyId: $id) }";
                                     let vars = serde_json::json!({ "id": lid });
                                     let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                    nav.push(LobbyRoute::Home {});
+                                    let home = LobbyRoute::Home {};
+                                    nav.push(home);
                                 });
                             },
-                            "Cancel"
+                            "Disband"
                         }
                         button {
                             class: "btn-primary shadow-[0_0_20px_rgba(79,70,229,0.4)]",

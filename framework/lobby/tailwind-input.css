@@ -139,41 +139,649 @@
     @apply font-mono-code text-mono-code;
   }
 
-  .lobby-room-grid {
-    @apply grid items-start gap-6;
-    grid-template-columns: 1fr 2fr 1fr;
+  .lobby-command-bar {
+    @apply flex flex-wrap items-center gap-3 sm:gap-4 mb-6 p-4 sm:p-5 rounded-2xl
+      border border-outline-variant/30 bg-surface-container/80 backdrop-blur-md;
   }
 
-  @media (max-width: 900px) {
-    .lobby-room-grid {
-      grid-template-columns: 1fr;
+  .lobby-command-back {
+    @apply inline-flex items-center gap-1.5 btn-ghost text-sm shrink-0;
+  }
+
+  .lobby-command-center {
+    @apply flex-1 min-w-[10rem];
+  }
+
+  .lobby-command-kicker {
+    @apply text-[10px] font-label-caps uppercase tracking-[0.2em] text-secondary mb-0.5;
+  }
+
+  .lobby-command-title {
+    @apply font-manrope text-xl sm:text-2xl font-bold text-on-surface;
+  }
+
+  .lobby-command-sub {
+    @apply text-body-sm text-on-surface-variant mt-0.5;
+  }
+
+  .lobby-command-host {
+    @apply flex items-center gap-2;
+  }
+
+  .lobby-section-kicker {
+    @apply text-[10px] font-label-caps uppercase tracking-[0.18em] text-outline;
+  }
+
+  .lobby-section-title {
+    @apply font-manrope text-lg sm:text-xl font-semibold text-on-surface;
+  }
+
+  .lobby-command-bar-slim {
+    @apply mb-3 py-3 shrink-0 mx-6;
+  }
+
+  .lobby-room-main {
+    @apply overflow-hidden px-0 pt-3 sm:pt-4 pb-0 md:ml-64;
+    height: calc(100dvh - 4rem - 4rem);
+    max-height: calc(100dvh - 4rem - 4rem);
+  }
+
+  @screen md {
+    .lobby-room-main {
+      height: calc(100dvh - 4rem);
+      max-height: calc(100dvh - 4rem);
     }
   }
 
-  .lobby-col {
-    @apply min-w-0 rounded-2xl border border-outline-variant/40 bg-surface-container p-4 sm:p-5;
+  .lobby-room-wrap {
+    @apply flex flex-col h-full min-h-0 overflow-hidden;
   }
 
-  .lobby-type-list {
-    @apply flex flex-col gap-2;
+  .lobby-room-body {
+    @apply flex flex-col flex-1 min-h-0 overflow-hidden;
   }
 
-  .lobby-type-btn {
-    @apply flex w-full flex-col items-stretch cursor-pointer rounded-xl
-      border border-outline-variant bg-surface-container-high py-2.5 px-3
-      text-left text-body-sm text-on-surface transition-colors;
+  .lobby-stage {
+    @apply relative isolate flex flex-col flex-1 min-h-0 overflow-hidden pb-[4.25rem];
   }
 
-  .lobby-type-btn:hover:not(:disabled) {
-    @apply border-outline bg-surface-container-highest;
+  .lobby-stage-bg {
+    @apply pointer-events-none absolute inset-0 -z-10 rounded-3xl;
+    background:
+      radial-gradient(ellipse 90% 55% at 50% 35%, rgba(79, 70, 229, 0.14), transparent),
+      radial-gradient(ellipse 40% 40% at 10% 60%, rgba(16, 185, 129, 0.06), transparent);
   }
 
-  .lobby-type-btn.active {
-    @apply border-primary-container/70 bg-primary-container/15 text-on-surface;
+  .lobby-stage-main {
+    @apply flex flex-col flex-1 min-h-0 overflow-hidden w-full;
   }
 
-  .lobby-type-btn:disabled {
-    @apply cursor-not-allowed opacity-45;
+  .lobby-panel-top {
+    @apply shrink-0 w-full;
+  }
+
+  .lobby-panel-middle {
+    @apply relative flex flex-1 min-h-0 w-full flex flex-col overflow-hidden;
+    --lobby-roster-card-height: min(31rem, calc(96% - 2rem));
+    --lobby-roster-card-width: min(16rem, 72vw);
+  }
+
+  .lobby-arena-skeleton {
+    @apply flex flex-col gap-4;
+  }
+
+  .lobby-game-modal-layer {
+    @apply fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6;
+  }
+
+  .lobby-game-modal-backdrop {
+    @apply absolute inset-0 bg-black/55 backdrop-blur-[3px] cursor-pointer;
+  }
+
+  .lobby-game-modal {
+    @apply relative z-10 flex flex-col w-full max-w-lg max-h-[min(85vh,40rem)]
+      rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/95 backdrop-blur-xl shadow-2xl;
+  }
+
+  .lobby-game-modal-head {
+    @apply flex items-start justify-between gap-3 p-4 sm:p-5 border-b border-outline-variant/30 shrink-0;
+  }
+
+  .lobby-game-modal-close {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg
+      text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors;
+  }
+
+  .lobby-game-modal-wait {
+    @apply flex items-center gap-2 text-body-sm text-on-surface-variant p-6;
+  }
+
+  .lobby-game-modal-list {
+    @apply flex-1 overflow-y-auto p-3 sm:p-4 space-y-2;
+  }
+
+  .lobby-game-modal-item {
+    @apply w-full flex items-center gap-3 p-2.5 rounded-xl border border-outline-variant/30
+      bg-surface-container-low text-left transition-colors
+      hover:border-primary-container/40 hover:bg-surface-container-high
+      disabled:opacity-45 disabled:cursor-not-allowed;
+  }
+
+  .lobby-game-modal-item-active {
+    @apply border-primary-container/60 bg-primary-container/10 shadow-[0_0_16px_rgba(79,70,229,0.2)];
+  }
+
+  .lobby-game-modal-thumb {
+    @apply h-14 w-14 shrink-0 rounded-lg overflow-hidden flex items-center justify-center;
+  }
+
+  .lobby-game-modal-cover {
+    @apply h-full w-full object-cover;
+  }
+
+  .lobby-game-modal-meta {
+    @apply flex-1 space-y-0.5;
+  }
+
+  .lobby-game-modal-name {
+    @apply font-manrope font-semibold text-sm text-on-surface;
+  }
+
+  .lobby-game-modal-desc {
+    @apply text-[11px] text-on-surface-variant line-clamp-2;
+  }
+
+  .lobby-game-modal-players {
+    @apply text-[10px] font-label-caps uppercase text-outline;
+  }
+
+  .lobby-game-bar {
+    @apply flex items-stretch gap-3 w-full px-4 py-2 min-h-[4.75rem] sm:min-h-[5.25rem]
+      border-b border-outline-variant/25 bg-surface-container/40 backdrop-blur-sm;
+  }
+
+  .lobby-game-bar-active {
+    @apply flex flex-1 min-w-0 items-center gap-3 sm:gap-4 self-stretch;
+  }
+
+  .lobby-game-bar-art {
+    @apply h-full aspect-square max-h-full w-auto shrink-0 rounded-xl overflow-hidden
+      flex items-center justify-center text-secondary;
+    min-height: 3.75rem;
+    max-height: 4.75rem;
+  }
+
+  @screen sm {
+    .lobby-game-bar-art {
+      min-height: 4.25rem;
+      max-height: 5.25rem;
+    }
+  }
+
+  .lobby-game-bar-cover {
+    @apply h-full w-full object-cover;
+  }
+
+  .lobby-game-bar-emoji {
+    @apply text-3xl sm:text-4xl leading-none;
+  }
+
+  .lobby-game-bar-text {
+    @apply flex flex-col justify-center gap-0.5 min-w-0 py-1;
+  }
+
+  .lobby-game-bar-title {
+    @apply font-manrope font-bold text-xl sm:text-2xl lg:text-3xl text-on-surface leading-tight;
+  }
+
+  .lobby-game-bar-actions {
+    @apply flex items-center gap-0.5 sm:gap-1 shrink-0 self-center;
+  }
+
+  .lobby-game-bar-action {
+    @apply flex flex-col items-center justify-center gap-1 min-w-[4.25rem] p-2 rounded-xl
+      border border-transparent text-center transition-colors
+      hover:bg-surface-container-high/60 hover:border-outline-variant/30
+      disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-transparent
+      disabled:hover:border-transparent cursor-pointer bg-transparent;
+  }
+
+  .lobby-game-bar-action-disabled {
+    @apply opacity-40 cursor-default pointer-events-none;
+  }
+
+  .lobby-game-bar-action-icon {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg
+      border border-outline-variant/30 text-secondary shrink-0;
+  }
+
+  .lobby-game-bar-action-label {
+    @apply text-[9px] sm:text-[10px] font-label-caps uppercase tracking-wider
+      text-on-surface-variant leading-tight max-w-[5rem] truncate;
+  }
+
+  .lobby-game-rules-modal {
+    @apply relative z-10 flex flex-col w-full max-w-2xl overflow-hidden
+      h-[min(88vh,44rem)] max-h-[min(88vh,44rem)]
+      rounded-2xl border border-outline-variant/40 bg-surface-container-lowest shadow-2xl;
+  }
+
+  .lobby-game-rules-modal-body {
+    @apply flex-1 min-h-0 overflow-hidden bg-surface-container-lowest;
+  }
+
+  .lobby-game-rules-frame {
+    @apply block w-full h-full min-h-0 border-0 bg-surface-container-lowest;
+  }
+
+  .lobby-squad-ambient {
+    @apply absolute inset-0 opacity-20 pointer-events-none;
+  }
+
+  .lobby-roster-hscroll {
+    @apply relative z-10 flex flex-1 min-h-0 h-full w-full items-center gap-4 sm:gap-5
+      justify-center overflow-x-auto overflow-y-visible px-2;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .lobby-roster-hscroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lobby-roster-hscroll-pad {
+    @apply shrink-0;
+    flex: 0 0 0;
+    width: 0;
+    min-width: 0;
+  }
+
+  @screen sm {
+    .lobby-roster-hscroll {
+      gap: 1.25rem;
+    }
+  }
+
+  .lobby-roster-hscroll .lobby-player-card-wrap {
+    @apply shrink-0 flex flex-col self-center;
+    width: var(--lobby-roster-card-width);
+  }
+
+  .lobby-roster-centered {
+    @apply relative z-10 grid flex-1 min-h-0 h-full w-full items-stretch gap-4 sm:gap-5 px-2;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .lobby-roster-side {
+    @apply flex min-h-0 min-w-0 self-stretch items-center gap-4 sm:gap-5 overflow-hidden;
+  }
+
+  .lobby-roster-side-left {
+    @apply justify-end;
+  }
+
+  .lobby-roster-side-right {
+    @apply justify-start;
+  }
+
+  .lobby-roster-center-seat {
+    @apply flex min-h-0 min-w-0 self-stretch items-center justify-center;
+  }
+
+  .lobby-roster-centered .lobby-player-card-wrap {
+    @apply shrink-0 flex flex-col self-center;
+    width: var(--lobby-roster-card-width);
+  }
+
+  @media (max-width: 767px) {
+    .lobby-roster-centered {
+      grid-template-columns: minmax(0, 0.55fr) auto minmax(0, 0.55fr);
+    }
+  }
+
+  .lobby-squad-footer {
+    @apply shrink-0 w-full px-4 py-2.5 min-h-[3.5rem]
+      flex flex-row flex-wrap items-center justify-center gap-2 sm:gap-3
+      border-t border-outline-variant/25 bg-surface-container/50 backdrop-blur-sm;
+  }
+
+  .lobby-squad-footer-stat {
+    @apply inline-flex items-center gap-1.5 h-9 text-sm font-mono-code text-on-surface-variant shrink-0;
+  }
+
+  .lobby-squad-footer-actions {
+    @apply flex items-center justify-center gap-2 h-9 min-h-9 shrink-0;
+  }
+
+  .lobby-squad-footer-stat .material-symbols-outlined {
+    @apply text-base text-outline opacity-75;
+  }
+
+  .lobby-squad-footer-btn {
+    @apply inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-lg
+      border border-outline-variant/40 bg-surface-container/70 text-xs sm:text-sm font-label-caps
+      uppercase tracking-wider text-secondary shrink-0
+      hover:border-secondary/50 hover:bg-surface-container-high transition-colors cursor-pointer;
+  }
+
+  .lobby-squad-footer-ready-on {
+    @apply border-tertiary/55 text-tertiary bg-tertiary/10;
+  }
+
+  .lobby-squad-footer-leave {
+    @apply normal-case tracking-normal font-medium text-on-surface;
+  }
+
+  .lobby-config-modal {
+    @apply relative z-10 flex flex-col w-full max-w-2xl max-h-[min(88vh,44rem)]
+      rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/95 backdrop-blur-xl shadow-2xl;
+  }
+
+  .lobby-config-modal-body {
+    @apply flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 border-t border-outline-variant/20;
+  }
+
+  .lobby-chat-fab {
+    @apply fixed z-40 flex items-center gap-2 max-w-[14rem] pl-3 pr-4 py-2.5 rounded-2xl
+      border border-outline-variant/40 bg-surface-container/95 backdrop-blur-md shadow-xl
+      text-on-surface hover:border-primary-container/50 transition-all;
+    right: 1rem;
+    bottom: 5.5rem;
+  }
+
+  .lobby-chat-fab-label {
+    @apply font-label-caps uppercase text-[10px] tracking-wider text-secondary;
+  }
+
+  .lobby-chat-fab-badge {
+    @apply inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full
+      bg-primary-container text-[10px] font-bold text-on-primary-container px-1;
+  }
+
+  .lobby-chat-fab-preview {
+    @apply hidden lg:block text-xs text-on-surface-variant max-w-[8rem];
+  }
+
+  .lobby-chat-panel {
+    @apply fixed z-40 flex flex-col w-[min(100vw-2rem,22rem)] h-[min(70vh,24rem)]
+      rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/95
+      backdrop-blur-xl shadow-2xl overflow-hidden;
+    right: 1rem;
+    bottom: 5.5rem;
+  }
+
+  .lobby-chat-panel-head {
+    @apply flex items-center justify-between gap-2 px-4 py-3 border-b border-outline-variant/30 shrink-0;
+  }
+
+  .lobby-chat-panel-messages {
+    @apply flex-1 overflow-y-auto p-3 flex flex-col gap-2;
+  }
+
+  .lobby-chat-panel-compose {
+    @apply shrink-0 p-3 border-t border-outline-variant/30 space-y-2;
+  }
+
+  .lobby-finished-banner {
+    @apply flex flex-wrap items-center gap-4 p-4 rounded-2xl
+      border border-secondary-container/40 bg-secondary-container/10;
+  }
+
+  .lobby-game-strip {
+    @apply rounded-2xl border border-outline-variant/30 bg-surface-container/60 p-4 sm:p-5;
+  }
+
+  .lobby-game-strip-head {
+    @apply flex flex-wrap items-end justify-between gap-3 mb-4;
+  }
+
+  .lobby-game-strip-wait {
+    @apply flex items-center gap-2 text-body-sm text-on-surface-variant py-6 justify-center;
+  }
+
+  .lobby-game-strip-scroll {
+    @apply flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory;
+    scrollbar-width: thin;
+  }
+
+  .lobby-game-card-wrap {
+    @apply shrink-0 snap-start flex flex-col gap-1.5;
+    width: 11.5rem;
+  }
+
+  .lobby-game-card {
+    @apply w-full text-left rounded-2xl border border-outline-variant/40
+      bg-surface-container-low overflow-hidden transition-all duration-200
+      hover:border-primary-container/50 hover:-translate-y-0.5
+      disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:translate-y-0;
+  }
+
+  .lobby-game-card-active {
+    @apply border-primary-container shadow-[0_0_28px_rgba(79,70,229,0.35)] scale-[1.02];
+  }
+
+  .lobby-game-card-art {
+    @apply relative h-28 flex items-center justify-center overflow-hidden;
+  }
+
+  .lobby-game-card-cover {
+    @apply absolute inset-0 w-full h-full object-cover opacity-90;
+  }
+
+  .lobby-game-card-emoji {
+    @apply text-4xl drop-shadow-lg relative z-10;
+  }
+
+  .lobby-game-card-active-ring {
+    @apply absolute inset-0 ring-2 ring-inset ring-primary-container/80 pointer-events-none;
+  }
+
+  .lobby-game-card-body {
+    @apply p-3 space-y-1;
+  }
+
+  .lobby-game-card-title {
+    @apply font-manrope font-semibold text-on-surface text-sm leading-tight;
+  }
+
+  .lobby-game-card-desc {
+    @apply text-[11px] text-on-surface-variant line-clamp-2 leading-snug;
+  }
+
+  .lobby-game-card-players {
+    @apply inline-flex items-center gap-1 text-[10px] font-label-caps uppercase text-outline;
+  }
+
+  .lobby-game-card-about {
+    @apply inline-flex items-center gap-1 text-[10px] text-secondary hover:text-primary px-1;
+  }
+
+  .lobby-roster-head {
+    @apply relative z-10 flex flex-wrap items-end justify-between gap-4 mb-6;
+  }
+
+  .lobby-roster-stats {
+    @apply flex flex-wrap gap-3;
+  }
+
+  .lobby-roster-stat {
+    @apply text-body-sm font-mono-code text-on-surface-variant px-3 py-1.5 rounded-lg
+      bg-surface-container-high/80 border border-outline-variant/30;
+  }
+
+  .lobby-roster-stat-ready {
+    @apply text-tertiary border-tertiary/30;
+  }
+
+  .lobby-roster-grid {
+    @apply relative z-10 grid gap-4 justify-center;
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 10.5rem));
+  }
+
+  .lobby-roster-empty {
+    @apply relative z-10 flex flex-col items-center gap-3 text-center text-body-sm
+      text-on-surface-variant py-10 px-4 max-w-md mx-auto;
+  }
+
+  .lobby-roster-hint {
+    @apply relative z-10 text-center text-body-sm text-outline mt-5 max-w-lg mx-auto;
+  }
+
+  .lobby-player-card-wrap {
+    @apply relative flex flex-col w-full min-h-0 overflow-visible;
+    height: var(--lobby-roster-card-height);
+    min-height: var(--lobby-roster-card-height);
+    max-height: var(--lobby-roster-card-height);
+  }
+
+  .lobby-player-card-wrap-me {
+    @apply z-10;
+  }
+
+  .lobby-player-card-wrap-me .lobby-player-card:not(.lobby-player-card-ready),
+  .lobby-player-card-wrap-me .lobby-player-card-join {
+    @apply border-primary-container/70 shadow-[0_0_24px_rgba(79,70,229,0.35)];
+  }
+
+  .lobby-player-card {
+    @apply relative flex flex-1 min-h-0 flex-col text-center rounded-2xl border
+      border-outline-variant/45 bg-surface-container-low/80 backdrop-blur-sm overflow-visible
+      transition-all duration-300 w-full;
+  }
+
+  .lobby-player-card-portrait {
+    @apply flex flex-1 min-h-[10rem] items-center justify-center px-4 pt-5 pb-2;
+  }
+
+  .lobby-player-card-portrait-empty {
+    @apply w-full flex flex-1 min-h-[10rem] items-center justify-center pt-5 pb-2;
+  }
+
+  .lobby-player-card-meta {
+    @apply w-full shrink-0 grid items-center px-3 pb-3 pt-0;
+    grid-template-rows: 1.75rem 1rem 1.25rem auto;
+    row-gap: 0.125rem;
+  }
+
+  .lobby-player-card-host-badge {
+    @apply absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 inline-flex items-center gap-1
+      text-[10px] font-label-caps uppercase tracking-wider px-3 py-1 rounded-full
+      text-on-surface border border-outline-variant/50 bg-surface-container-lowest shadow-md
+      pointer-events-none whitespace-nowrap;
+  }
+
+  .lobby-player-card-name {
+    @apply flex items-center justify-center font-manrope font-bold
+      text-on-surface truncate max-w-full px-1 leading-tight;
+  }
+
+  .lobby-player-card-wrap-me .lobby-player-card-name {
+    @apply text-lg;
+  }
+
+  .lobby-player-card-wrap-other .lobby-player-card-name {
+    @apply text-base;
+  }
+
+  .lobby-player-card-playing-kicker {
+    @apply flex items-center justify-center text-[10px] font-label-caps uppercase
+      tracking-wider text-outline leading-none;
+  }
+
+  .lobby-player-card-slot {
+    @apply flex items-center justify-center font-mono-code text-[11px]
+      text-on-surface-variant uppercase tracking-wider leading-tight;
+  }
+
+  .lobby-player-card-transfer-row {
+    @apply w-full min-h-[1.5rem] flex items-center justify-center;
+  }
+
+  .lobby-player-card-ready {
+    @apply border-tertiary/85 bg-tertiary/10;
+    box-shadow:
+      0 0 28px rgba(52, 211, 153, 0.5),
+      0 0 56px rgba(52, 211, 153, 0.2),
+      inset 0 0 0 1px rgba(52, 211, 153, 0.15);
+  }
+
+  .lobby-player-card-wrap-me .lobby-player-card-ready,
+  .lobby-player-card-wrap-other .lobby-player-card-ready {
+    @apply border-tertiary/85 bg-tertiary/10;
+    box-shadow:
+      0 0 28px rgba(52, 211, 153, 0.5),
+      0 0 56px rgba(52, 211, 153, 0.2),
+      inset 0 0 0 1px rgba(52, 211, 153, 0.15);
+  }
+
+  .lobby-player-card-me {
+    @apply border-primary-container/70 shadow-[0_0_24px_rgba(79,70,229,0.35)];
+  }
+
+  .lobby-player-card-filled {
+    @apply border-outline-variant/50;
+  }
+
+  .lobby-player-card-open {
+    @apply border-dashed border-outline-variant/45 bg-transparent
+      hover:border-primary-container/50 hover:bg-primary-container/5;
+  }
+
+  .lobby-player-card-join {
+    @apply w-full flex flex-1 min-h-0 flex-col cursor-pointer text-inherit p-0
+      rounded-2xl border border-dashed border-outline-variant/45 bg-transparent
+      hover:border-primary-container/50 hover:bg-primary-container/5 transition-all duration-300;
+  }
+
+  .lobby-player-card-plus {
+    @apply text-5xl font-light text-primary-container leading-none;
+  }
+
+  .lobby-player-card-join-label {
+    @apply text-xs font-label-caps uppercase tracking-[0.2em] text-primary;
+  }
+
+  .lobby-player-card-transfer {
+    @apply mt-1 inline-flex items-center gap-1 rounded-lg border border-secondary/35
+      bg-secondary/10 px-2 py-1 text-[9px] font-label-caps uppercase tracking-wider
+      text-secondary transition-colors hover:bg-secondary/20 hover:border-secondary/55
+      cursor-pointer;
+  }
+
+  .lobby-panel-empty {
+    @apply flex flex-col items-center gap-2 text-center text-body-sm
+      text-on-surface-variant py-8 px-3;
+  }
+
+  .lobby-config-shell {
+    @apply rounded-xl border border-primary-container/15 bg-surface-container-lowest/50 p-3 sm:p-4;
+  }
+
+  .lobby-config-iframe {
+    @apply min-h-[14rem] rounded-xl;
+  }
+
+  .lobby-config-preview {
+    @apply text-body-sm text-on-surface-variant;
+  }
+
+  .lobby-config-preview-toggle {
+    @apply cursor-pointer list-none flex items-center gap-2 text-label-caps uppercase text-[10px] text-outline;
+  }
+
+  .lobby-config-apply {
+    @apply shadow-[0_0_16px_rgba(79,70,229,0.25)];
+  }
+
+  .lobby-ready-btn {
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-label-caps uppercase
+      text-xs tracking-wider border border-outline-variant/50 text-on-surface-variant
+      transition-all hover:border-tertiary/50;
+  }
+
+  .lobby-ready-btn-on {
+    @apply border-tertiary/60 text-tertiary bg-tertiary/10;
   }
 
   .lobby-chat-messages {
@@ -295,7 +903,7 @@
   }
 
   .toast {
-    @apply px-4 py-3 rounded-xl border text-body-sm font-medium shadow-raised;
+    @apply px-4 py-3 rounded-xl border text-body-sm font-medium shadow-raised break-words;
     animation: toastIn 0.25s ease-out;
   }
 
@@ -409,7 +1017,8 @@
   .lobby-bottom-bar {
     @apply fixed bottom-0 left-0 right-0 md:left-64 z-40
       flex items-center justify-between gap-4 px-6 py-4
-      bg-surface-container-lowest/95 backdrop-blur-md border-t border-outline-variant/40;
+      bg-surface-container-lowest/95 backdrop-blur-md border-t border-primary-container/20
+      shadow-[0_-8px_32px_rgba(0,0,0,0.35)];
   }
 
   .badge-tile {

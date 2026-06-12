@@ -7,7 +7,7 @@ $FixtureDir = Join-Path $Root "server\tests\fixtures\games\tic_tac_toe"
 Push-Location (Join-Path $GameDir "rust\component")
 try {
     cargo component build --release
-    $Wasm = Join-Path (Get-Location) "target\wasm32-wasip2\release\tic_tac_toe_component.wasm"
+    $Wasm = Join-Path $Root "target\wasm32-wasip1\release\tic_tac_toe_component.wasm"
     if (-not (Test-Path $Wasm)) {
         throw "Missing component output: $Wasm"
     }

@@ -23,6 +23,17 @@ pub fn set_demo_mode(on: bool) {
 pub fn toggle_demo_mode_and_reload() {
     if is_demo_mode() {
         set_demo_mode(false);
+        if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            if storage
+                .get_item(USER_ID_KEY)
+                .ok()
+                .flatten()
+                .as_deref()
+                == Some(DEMO_USER_ID)
+            {
+                let _ = storage.remove_item(USER_ID_KEY);
+            }
+        }
     } else {
         enter_demo_mode();
         return;

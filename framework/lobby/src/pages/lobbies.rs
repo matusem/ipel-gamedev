@@ -21,7 +21,7 @@ pub fn LobbiesBrowserPage() -> Element {
     let mut segment = use_signal(|| 0usize);
     let mut page = use_signal(|| 0usize);
     let toast = use_toast();
-    let shell = use_context::<AppShellContext>();
+    let mut shell = use_context::<AppShellContext>();
 
     use_hook(move || {
         let mut game_types = game_types;

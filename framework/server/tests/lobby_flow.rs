@@ -168,6 +168,72 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
 }
 
 #[tokio::test]
+async fn owner_transfers_lobby_to_seated_guest() {
+    let env = TestEnv::new().await;
+    let owner = env.register_user("Host").await;
+    let guest = env.register_user("Guest").await;
+
+    let create = env
+        .gql(r#"mutation { createLobby { id } }"#, Some(owner))
+        .await;
+    TestEnv::assert_no_errors(&create);
+    let lobby_id = TestEnv::data_path(&create, &["createLobby", "id"])
+        .and_then(TestEnv::value_string)
+        .expect("lobby id");
+    let lid = Uuid::parse_str(&lobby_id).unwrap();
+
+    lobby_db::owner_replace_game_type_and_seats(
+        &env.pool,
+        lid,
+        owner,
+        "tic_tac_toe",
+        &["p1".into(), "p2".into()],
+        false,
+    )
+    .await
+    .expect("seed seats");
+
+    let join = env
+        .gql(
+            &format!(
+                r#"mutation {{ joinLobby(lobbyId: "{lobby_id}", seatIndex: 1) {{ id }} }}"#
+            ),
+            Some(guest),
+        )
+        .await;
+    TestEnv::assert_no_errors(&join);
+
+    let transfer = env
+        .gql(
+            &format!(
+                r#"mutation {{
+                    transferLobbyOwnership(lobbyId: "{lobby_id}", newOwnerUserId: "{guest}") {{
+                        ownerUserId ownerDisplayName
+                    }}
+                }}"#
+            ),
+            Some(owner),
+        )
+        .await;
+    TestEnv::assert_no_errors(&transfer);
+    assert_eq!(
+        TestEnv::data_path(&transfer, &["transferLobbyOwnership", "ownerUserId"])
+            .and_then(TestEnv::value_string)
+            .as_deref(),
+        Some(guest.to_string().as_str())
+    );
+    assert_eq!(
+        TestEnv::data_path(&transfer, &["transferLobbyOwnership", "ownerDisplayName"])
+            .and_then(TestEnv::value_string)
+            .as_deref(),
+        Some("Guest")
+    );
+
+    let detail = lobby_db::get_lobby(&env.pool, lid).await.unwrap().unwrap();
+    assert_eq!(detail.owner_user_id, guest);
+}
+
+#[tokio::test]
 async fn list_lobbies_includes_active_room() {
     let env = TestEnv::new().await;
     let owner = env.register_user("Lister").await;

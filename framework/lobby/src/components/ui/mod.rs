@@ -74,9 +74,10 @@ pub fn status_variant_from_lobby(status: &str, seats_filled: i32, seats_total: i
 
 #[component]
 pub fn ErrorBanner(message: String) -> Element {
+    let text = crate::api::graphql_error_message(&message);
     rsx! {
         div { class: "rounded-xl border border-error/50 bg-error-container/30 px-4 py-3",
-            p { class: "text-body-sm font-medium text-error", "{message}" }
+            p { class: "text-body-sm font-medium text-error break-words", "{text}" }
         }
     }
 }

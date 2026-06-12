@@ -559,7 +559,7 @@ pub trait Guest {
   fn take_action(format: SerializationFormat,game: Game,player_action: PlayerAction,) -> Result<TakeActionResult,GameCoreError>;
 }
 #[doc(hidden)]
-
+#[macro_export]
 macro_rules! __export_world_game_core_cabi{
   ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
 
@@ -631,7 +631,7 @@ macro_rules! __export_game_core_impl {
   $($path_to_types_root)*::__export_world_game_core_cabi!($ty with_types_in $($path_to_types_root)*);
   )
 }
-#[doc(inline)]
+#[doc(hidden)]
 pub(crate) use __export_game_core_impl as export;
 
 #[cfg(target_arch = "wasm32")]

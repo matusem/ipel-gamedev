@@ -263,6 +263,6 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
 #[macro_export]
 macro_rules! export_game_core {
     ($ty:ident) => {
-        $crate::__export_game_core_impl!($ty with_types_in $crate::bindings);
+        $crate::__export_world_game_core_cabi!($ty with_types_in $crate::bindings);
     };
 }

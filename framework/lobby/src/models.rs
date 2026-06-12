@@ -221,7 +221,18 @@ pub fn game_type_description(types: &[GameTypeInfo], stored_name: &str) -> Optio
     })
 }
 
+pub fn game_type_cover_url(gt: &GameTypeInfo) -> Option<String> {
+    gt.cover_image_url
+        .clone()
+        .or_else(|| crate::stub::demo_images::cover_image_url(&gt.name).map(str::to_string))
+}
+
+/// Link to the published game's `about.html` (served by the Actix backend).
+/// Demo mode lists synthetic game types that are not deployed — no server asset exists.
 pub fn game_type_about_url(gt: &GameTypeInfo) -> Option<String> {
+    if crate::stub::demo_mode::is_demo_mode() {
+        return None;
+    }
     gt.about_ui_path
         .as_ref()
         .map(|path| format!("/games/{}/{}", gt.name, path))
