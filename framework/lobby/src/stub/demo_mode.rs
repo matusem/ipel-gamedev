@@ -1,4 +1,4 @@
-use crate::models::USER_ID_KEY;
+use crate::models::{SESSION_TOKEN_KEY, USER_ID_KEY};
 
 pub const DEMO_MODE_KEY: &str = "ipel_demo_mode";
 pub const DEMO_USER_ID: &str = "demo-user-nova";
@@ -32,6 +32,7 @@ pub fn toggle_demo_mode_and_reload() {
                 == Some(DEMO_USER_ID)
             {
                 let _ = storage.remove_item(USER_ID_KEY);
+                let _ = storage.remove_item(SESSION_TOKEN_KEY);
             }
         }
     } else {

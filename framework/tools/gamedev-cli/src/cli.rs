@@ -45,14 +45,22 @@ pub struct BuildArgs {
     pub project_dir: Option<PathBuf>,
     #[arg(long)]
     pub out: Option<PathBuf>,
+    /// Fail the build instead of falling back when npm/frontend steps fail.
+    #[arg(long)]
+    pub strict: bool,
 }
 
 #[derive(Args)]
 pub struct LoginArgs {
     #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
     pub server_url: String,
+    /// Deprecated: raw user UUID for publish-token bootstrap. Prefer `--display-name` + `--password`.
     #[arg(long)]
-    pub user_id: String,
+    pub user_id: Option<String>,
+    #[arg(long)]
+    pub display_name: Option<String>,
+    #[arg(long)]
+    pub password: Option<String>,
 }
 
 #[derive(Args)]
@@ -147,10 +155,24 @@ pub enum FrontendKind {
     Threejs,
 }
 
+impl BackendKind {
+    pub fn is_implemented(self) -> bool {
+        matches!(self, BackendKind::Rust | BackendKind::Java)
+    }
+}
+
+impl FrontendKind {
+    pub fn is_implemented(self) -> bool {
+        matches!(
+            self,
+            FrontendKind::Js | FrontendKind::Ts | FrontendKind::Bevy | FrontendKind::Dioxus
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum JsTemplate {
     VanillaVite,
     PlainStatic,
-    ReactVite,
 }

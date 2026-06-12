@@ -1,7 +1,7 @@
 use crate::db::{self, FinishedGameRow};
 use crate::lobby_db;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -97,13 +97,17 @@ pub fn map_finished_to_session(row: &FinishedGameRow) -> GameSessionSummary {
         .ok()
         .and_then(|v| v.as_array().map(|a| a.len() as u32))
         .unwrap_or(0);
+    let duration_secs = row
+        .started_at
+        .map(|start| (row.finished_at - start).max(0) as i32)
+        .unwrap_or(0);
     GameSessionSummary {
         game_id: row.id.to_string(),
         game_type: row.game_type.clone(),
         finished_at: row.finished_at,
         winner_display_name: winner_from_result(&row.result_json, &id_to_name),
         participant_count,
-        duration_secs: 0,
+        duration_secs,
     }
 }
 
@@ -239,7 +243,8 @@ mod tests {
             id: Uuid::new_v4(),
             game_type: "tic_tac_toe".into(),
             lobby_id: None,
-            finished_at: 1,
+            finished_at: 120,
+            started_at: Some(60),
             result_json: r#"{"version":1,"per_player_outcome":{"p1":"Win","p2":"Loss"}}"#.into(),
             player_scores_json: r#"{"p1":1.0,"p2":0.0}"#.into(),
             seats_snapshot_json: r#"[{"player_identity":"p1","claimed_display_name":"Alice","claimed_by_user_id":null},{"player_identity":"p2","claimed_display_name":"Bob","claimed_by_user_id":null}]"#.into(),
@@ -278,4 +283,113 @@ pub async fn build_user_profile(
         wins,
         rep_score,
     }))
+}
+
+#[derive(Debug, Clone)]
+pub struct MetricsSnapshot {
+    pub active_lobbies: i32,
+    pub published_game_types: i32,
+    pub finished_games24h: i32,
+    pub active_sessions: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct KpiTrendRow {
+    pub label: String,
+    pub value: String,
+    pub delta_pct: String,
+    pub up: bool,
+}
+
+pub async fn record_metrics_snapshot(
+    pool: &SqlitePool,
+    snapshot: &MetricsSnapshot,
+) -> Result<(), sqlx::Error> {
+    let now = db::GameInstanceStore::now_secs();
+    let last: Option<i64> = sqlx::query_scalar(
+        "SELECT captured_at FROM platform_metrics_snapshots ORDER BY captured_at DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+    if last.is_some_and(|t| now - t < 3600) {
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT INTO platform_metrics_snapshots (captured_at, active_lobbies, published_game_types, finished_games24h, active_sessions) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(now)
+    .bind(snapshot.active_lobbies)
+    .bind(snapshot.published_game_types)
+    .bind(snapshot.finished_games24h)
+    .bind(snapshot.active_sessions)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+fn pct_delta(current: i32, previous: i32) -> (String, bool) {
+    if previous <= 0 {
+        return if current > 0 {
+            ("new".into(), true)
+        } else {
+            ("—".into(), true)
+        };
+    }
+    let delta = ((current - previous) as f64 / previous as f64) * 100.0;
+    let up = delta >= 0.0;
+    let sign = if up { "+" } else { "" };
+    (format!("{sign}{delta:.0}%"), up)
+}
+
+pub async fn build_kpi_trends(
+    pool: &SqlitePool,
+    current: &MetricsSnapshot,
+) -> Result<Vec<KpiTrendRow>, sqlx::Error> {
+    let now = db::GameInstanceStore::now_secs();
+    let target = now - 86_400;
+    let row = sqlx::query(
+        "SELECT active_lobbies, published_game_types, finished_games24h, active_sessions FROM platform_metrics_snapshots WHERE captured_at <= ? ORDER BY captured_at DESC LIMIT 1",
+    )
+    .bind(target)
+    .fetch_optional(pool)
+    .await?;
+    let (prev_lobbies, prev_published, prev_finished, prev_sessions) = row
+        .map(|r| {
+            (
+                r.get::<i32, _>(0),
+                r.get::<i32, _>(1),
+                r.get::<i32, _>(2),
+                r.get::<i32, _>(3),
+            )
+        })
+        .unwrap_or((0, 0, 0, 0));
+    let (d0, up0) = pct_delta(current.active_lobbies, prev_lobbies);
+    let (d1, up1) = pct_delta(current.published_game_types, prev_published);
+    let (d2, up2) = pct_delta(current.finished_games24h, prev_finished);
+    Ok(vec![
+        KpiTrendRow {
+            label: "Active lobbies".into(),
+            value: current.active_lobbies.to_string(),
+            delta_pct: d0,
+            up: up0,
+        },
+        KpiTrendRow {
+            label: "Published games".into(),
+            value: current.published_game_types.to_string(),
+            delta_pct: d1,
+            up: up1,
+        },
+        KpiTrendRow {
+            label: "Finished (24h)".into(),
+            value: current.finished_games24h.to_string(),
+            delta_pct: d2,
+            up: up2,
+        },
+    ])
+}
+
+pub fn pro_tip_text() -> String {
+    std::env::var("PLATFORM_PRO_TIP").unwrap_or_else(|_| {
+        "Claim a seat and mark Ready before the host launches — staged lobbies won't start until everyone is set.".into()
+    })
 }

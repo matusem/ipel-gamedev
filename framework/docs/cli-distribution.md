@@ -2,7 +2,7 @@
 
 Notes for hosting download links on the Platform, version checks against production, and optional self-update.
 
-**Status:** planned (not implemented). Today devs run `cargo run -p gamedev-cli` from the framework repo; the lobby Developer page still shows stub commands that do not match the real CLI.
+**Status:** planned (not implemented). Today devs run `cargo run -p gamedev-cli` from the framework repo. The lobby Developer page shows real CLI commands (copy via clipboard) aligned with `gamedev-cli` subcommands; hosted download manifest is still future work.
 
 ---
 
@@ -55,7 +55,7 @@ Production deployment **is** the version source — no separate update server. B
 
 ## 2. Platform download UI
 
-Wire the Developer page (`lobby/src/pages/developer.rs`) to real data instead of `CLI_COMMANDS` stubs in `lobby/src/stub/mod.rs`:
+The Developer page (`lobby/src/pages/developer.rs`) lists real `gamedev-cli` commands with clipboard copy. Remaining work for distribution:
 
 - Detect OS → show primary download button
 - Links for other platforms
@@ -152,7 +152,6 @@ Keep `cargo run -p gamedev-cli` documented for **framework contributors** only.
 
 - Manifest fetch on startup or in `gamedev-cli doctor`
 - Outdated warning banner
-- Fix lobby stub `CLI_COMMANDS` to match real subcommands (`deploy`, `validate`, `drafts publish`, etc.)
 
 ### Phase 3 — Self-update
 
@@ -176,8 +175,7 @@ Keep `cargo run -p gamedev-cli` documented for **framework contributors** only.
 |------|------|
 | CLI crate | `tools/gamedev-cli/` (version `0.1.0` in `Cargo.toml`) |
 | Server routes | `server/src/main.rs` — no `/tools` yet |
-| Developer UI | `lobby/src/pages/developer.rs` |
-| Stub commands (wrong) | `lobby/src/stub/mod.rs` → `CLI_COMMANDS` |
+| Developer UI | `lobby/src/pages/developer.rs` — real CLI commands + clipboard copy |
 | Game upload API | GraphQL `uploadGameZip` (used by `deploy`) |
 | Production target | `docs/requirements.md` — `https://gdd.ics.upjs.sk/` |
 

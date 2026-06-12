@@ -423,7 +423,9 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
                     stack.pop();
                     return Ok(Some(UiCommand::Login(LoginArgs {
                         server_url: s,
-                        user_id: u,
+                        user_id: Some(u),
+                        display_name: None,
+                        password: None,
                     })));
                 }
                 _ => {
@@ -448,6 +450,7 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
                 Ok(Some(UiCommand::Build(BuildArgs {
                     project_dir: None,
                     out: None,
+                    strict: false,
                 })))
             }
             _ => Ok(None),

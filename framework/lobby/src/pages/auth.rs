@@ -1,9 +1,9 @@
 ﻿use crate::api::*;
 use crate::components::ui::{Callout, CalloutVariant, ErrorBanner, Icon};
+use crate::models::{LoginData, RegisterUserData, SignUpData};
 use crate::stub::demo_mode;
-use crate::models::{RegisterUserData, RegisterUserRow, USER_ID_KEY};
 use dioxus::prelude::*;
-use serde::Deserialize;
+
 #[component]
 pub fn AuthGate(on_ready: EventHandler<()>) -> Element {
     let mut guest_name = use_signal(|| "Guest".to_string());
@@ -60,13 +60,12 @@ pub fn AuthGate(on_ready: EventHandler<()>) -> Element {
                         onclick: move |_| {
                             let n = guest_name();
                             spawn(async move {
-                                let q = "mutation G($n: String!) { registerUser(displayName: $n) { id } }";
+                                let q = "mutation G($n: String!) { registerUser(displayName: $n) { sessionToken user { id } } }";
                                 let vars = serde_json::json!({ "n": n });
                                 match graphql_exec_anonymous::<RegisterUserData>(q, Some(vars)).await {
                                     Ok(data) => {
-                                        if let Some(st) = local_storage() {
-                                            let _ = st.set_item(USER_ID_KEY, &data.register_user.id);
-                                        }
+                                        let auth = data.register_user;
+                                        store_auth_session(&auth.session_token, &auth.user.id);
                                         on_ready.call(());
                                     }
                                     Err(e) => err.set(Some(e)),
@@ -92,7 +91,7 @@ pub fn AuthGate(on_ready: EventHandler<()>) -> Element {
                     input {
                         class: "input-field mb-3",
                         r#type: "password",
-                        placeholder: "Password (min 4 chars)",
+                        placeholder: "Password (min 8 chars)",
                         value: "{signup_pass}",
                         oninput: move |e| signup_pass.set(e.value()),
                     }
@@ -102,19 +101,11 @@ pub fn AuthGate(on_ready: EventHandler<()>) -> Element {
                             let n = signup_name();
                             let p = signup_pass();
                             spawn(async move {
-                                let q = "mutation SignUp($n: String!, $p: String!) { signUp(displayName: $n, password: $p) { id } }";
+                                let q = "mutation SignUp($n: String!, $p: String!) { signUp(displayName: $n, password: $p) { sessionToken user { id } } }";
                                 let vars = serde_json::json!({ "n": n, "p": p });
-                                #[derive(Deserialize)]
-                                #[serde(rename_all = "camelCase")]
-                                struct Wrap {
-                                    #[serde(rename = "signUp")]
-                                    row: RegisterUserRow,
-                                }
-                                match graphql_exec_anonymous::<Wrap>(q, Some(vars)).await {
+                                match graphql_exec_anonymous::<SignUpData>(q, Some(vars)).await {
                                     Ok(w) => {
-                                        if let Some(st) = local_storage() {
-                                            let _ = st.set_item(USER_ID_KEY, &w.row.id);
-                                        }
+                                        store_auth_session(&w.sign_up.session_token, &w.sign_up.user.id);
                                         on_ready.call(());
                                     }
                                     Err(e) => err.set(Some(e)),
@@ -150,19 +141,14 @@ pub fn AuthGate(on_ready: EventHandler<()>) -> Element {
                             let n = login_name();
                             let p = login_pass();
                             spawn(async move {
-                                let q = "mutation Login($n: String!, $p: String!) { loginWithPassword(displayName: $n, password: $p) { id } }";
+                                let q = "mutation Login($n: String!, $p: String!) { loginWithPassword(displayName: $n, password: $p) { sessionToken user { id } } }";
                                 let vars = serde_json::json!({ "n": n, "p": p });
-                                #[derive(Deserialize)]
-                                #[serde(rename_all = "camelCase")]
-                                struct LoginWrap {
-                                    #[serde(rename = "loginWithPassword")]
-                                    user: RegisterUserRow,
-                                }
-                                match graphql_exec_anonymous::<LoginWrap>(q, Some(vars)).await {
+                                match graphql_exec_anonymous::<LoginData>(q, Some(vars)).await {
                                     Ok(l) => {
-                                        if let Some(st) = local_storage() {
-                                            let _ = st.set_item(USER_ID_KEY, &l.user.id);
-                                        }
+                                        store_auth_session(
+                                            &l.login_with_password.session_token,
+                                            &l.login_with_password.user.id,
+                                        );
                                         let _ = web_sys::window().unwrap().location().reload();
                                     }
                                     Err(e) => err.set(Some(e)),

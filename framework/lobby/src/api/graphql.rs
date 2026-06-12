@@ -1,4 +1,4 @@
-use crate::models::{GamesListData, LobbiesData, LobbyDetail, LOBBIES_QUERY, USER_ID_KEY};
+use crate::models::{GamesListData, LobbiesData, LobbyDetail, LOBBIES_QUERY, SESSION_TOKEN_KEY, USER_ID_KEY};
 use dioxus::prelude::*;
 use gloo_net::http::{Request, Response};
 use serde::de::DeserializeOwned;
@@ -221,8 +221,8 @@ pub fn graphql_ws_url() -> String {
     let host = ws_host();
     let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
     let mut base = format!("{ws_protocol}//{host}/graphql");
-    if let Some(id) = stored_user_id() {
-        let enc = urlencoding::encode(&id);
+    if let Some(token) = stored_session_token() {
+        let enc = urlencoding::encode(&token);
         base.push_str("?token=");
         base.push_str(enc.as_ref());
     }
@@ -231,6 +231,26 @@ pub fn graphql_ws_url() -> String {
 
 pub fn local_storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok()?
+}
+
+pub fn stored_session_token() -> Option<String> {
+    local_storage()
+        .and_then(|s| s.get_item(SESSION_TOKEN_KEY).ok().flatten())
+        .filter(|x| !x.is_empty())
+}
+
+pub fn store_auth_session(session_token: &str, user_id: &str) {
+    if let Some(st) = local_storage() {
+        let _ = st.set_item(SESSION_TOKEN_KEY, session_token);
+        let _ = st.set_item(USER_ID_KEY, user_id);
+    }
+}
+
+pub fn clear_auth_session() {
+    if let Some(st) = local_storage() {
+        let _ = st.remove_item(SESSION_TOKEN_KEY);
+        let _ = st.remove_item(USER_ID_KEY);
+    }
 }
 
 pub fn stored_user_id() -> Option<String> {
@@ -273,8 +293,8 @@ pub async fn graphql_exec<T: DeserializeOwned>(
     }
     let body_str = body.to_string();
     let mut req = Request::post("/graphql").header("Content-Type", "application/json");
-    if let Some(ref id) = stored_user_id() {
-        req = req.header("Authorization", &format!("Bearer {}", id));
+    if let Some(ref token) = stored_session_token() {
+        req = req.header("Authorization", &format!("Bearer {}", token));
     }
     let resp = req
         .body(body_str)

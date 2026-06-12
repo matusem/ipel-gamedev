@@ -9,7 +9,6 @@ pub use storefront_editor::StorefrontEditor;
 use crate::components::ui::Chip;
 use crate::models::*;
 use crate::stub::demo_images::cover_image_url;
-use crate::stub::{game_stub, ping_status_class};
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 
@@ -74,11 +73,10 @@ pub fn GameCard(
 #[component]
 pub fn TrendingGameCard(gt: GameTypeInfo) -> Element {
     let nav = use_navigator();
-    let stub = game_stub(&gt.name);
     let name = gt.name.clone();
     let cover = resolve_cover(&gt);
-    let ping_class = ping_status_class(stub.ping_ms);
-    let active_dot = if stub.ping_ms < 100 {
+    let active = gt.active_players;
+    let active_dot = if active > 0 {
         "status-dot-online"
     } else {
         "status-dot-full"
@@ -106,16 +104,18 @@ pub fn TrendingGameCard(gt: GameTypeInfo) -> Element {
                 }
                 div { class: "absolute top-3 left-3 bg-surface-container-lowest/80 backdrop-blur px-2 py-1 rounded-md flex items-center gap-1.5 z-10",
                     span { class: "{active_dot}" }
-                    span { class: "text-[10px] font-mono-code text-on-surface", "{stub.active_players} Active" }
+                    span { class: "text-[10px] font-mono-code text-on-surface", "{active} Active" }
                 }
             }
             div { class: "p-4 space-y-3",
                 div { class: "flex justify-between items-start",
                     h3 { class: "font-manrope text-lg font-semibold text-on-surface", "{gt.display_name}" }
-                    span { class: "text-xs font-mono-code {ping_class}", "{stub.ping_ms}ms" }
+                    if gt.avg_session_mins > 0 {
+                        span { class: "text-xs font-mono-code text-outline", "~{gt.avg_session_mins} min" }
+                    }
                 }
                 div { class: "flex gap-2 flex-wrap",
-                    for tag in stub.tags {
+                    for tag in gt.tags.clone() {
                         Chip { label: tag.to_string(), muted: true }
                     }
                 }
@@ -130,7 +130,6 @@ pub fn GameTypeCatalogCard(gt: GameTypeInfo) -> Element {
     let desc = gt.description.trim();
     let about_url = game_type_about_url(&gt);
     let name = gt.name.clone();
-    let stub = game_stub(&gt.name);
     let cover = resolve_cover(&gt);
     rsx! {
         div {
@@ -161,7 +160,7 @@ pub fn GameTypeCatalogCard(gt: GameTypeInfo) -> Element {
                 }
             }
             div { class: "flex items-center gap-2 flex-wrap",
-                for tag in stub.tags {
+                for tag in gt.tags.clone() {
                     Chip { label: tag.to_string(), muted: true }
                 }
                 if let Some(url) = about_url {

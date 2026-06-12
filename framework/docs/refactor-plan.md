@@ -118,25 +118,21 @@ Screen rollout:
 
 - Single GraphQL operation source (codegen)
 - Merge/clarify `@ipel/game-sdk` vs `sdk/js`
-- Hide or implement stub CLI backends (C#, Unity, etc.)
+- CLI: unsupported backend/frontend kinds fail at init/build; `--strict` on build; session login via `--display-name` + `--password`
+- Hide or implement stub CLI backends (C#, Unity, etc.) — **partial**: enum kept for serde; init/build reject unimplemented kinds
 
-### Client stub catalog (UI polish — stays stubbed until GraphQL exists)
+### Client data sources (updated)
 
 | Feature | Status | API |
 |---------|--------|-----|
-| Leaderboard | ✅ Wired | `gameLeaderboard(gameType)` |
-| Session history | ✅ Wired | `finishedGamesByType(gameType)` |
-| Activity feed | ✅ Wired | `activityFeed(limit)` |
-| Profile stats | ✅ Wired | `myProfile` + `myBadges` on profile page |
-| API tokens | ✅ Wired | `myPublishTokens`, `createPublishToken`, `revokePublishToken` |
-| Server ping/status | ✅ Wired | `/health` ping + `platformStats.status` |
-| Deployments | ✅ Wired | `publishedDeployments(limit)` |
-| Platform KPIs | ✅ Wired | `platformStats` (trend deltas still stub) |
-| Game covers / tags | ⬜ Stub | `game_media()`, `game_stub()` — extend manifest |
-| Search | ⬜ Client filter | `SearchContext` — full-text query later |
-| KPI trend deltas | ⬜ Stub | `kpi_trends_stub()` — needs metrics history |
-| Badges | ✅ Wired | `myBadges` — auto-award from profile stats |
-| Notifications | ✅ Wired (partial) | `myNotifications`, `markNotificationRead`, `markAllNotificationsRead` |
+| Game catalog metrics | ✅ Wired | `gameTypes { activePlayers, featured, tags, avgSessionMins, creatorDisplayName }` |
+| KPI trend deltas | ✅ Wired | `platformStats.trends` (snapshot history in DB) |
+| Match duration | ✅ Wired | `finishedGamesByType.durationSecs` from `started_at` |
+| Review helpful votes | ✅ Wired | `markReviewHelpful` mutation |
+| Display name edit | ✅ Wired | `updateDisplayName` mutation |
+| Auth sessions | ✅ Wired | `registerUser` / `signUp` / `loginWithPassword` → `sessionToken` |
+| Demo mode | ✅ Intentional | `stub/demo_api` — offline only |
+| Cosmetic fallbacks | ✅ Intentional | `game_media()`, `demo_images` when cover art missing |
 
 ---
 
@@ -176,11 +172,10 @@ flowchart TB
 
 ---
 
-*Last updated: 2026-06-10 (session 5 — structured logging; Playwright removed from plan)*
+*Last updated: 2026-06-13 (stub replacement — real catalog metrics, KPI trends, session auth)*
 
 ### Next up
 1. Notification subscription (`myNotificationsUpdated`) for live inbox
 2. Full lobby start integration test (requires built `logic.wasm` for tic-tac-toe)
 3. GraphQL codegen + SDK merge (Phase 5)
-4. KPI trend deltas API (replace `kpi_trends_stub`)
-5. Phase 0: lobby in root workspace, `.gitignore` hygiene
+4. Phase 0: lobby in root workspace, `.gitignore` hygiene

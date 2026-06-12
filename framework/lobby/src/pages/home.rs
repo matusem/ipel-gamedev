@@ -2,7 +2,7 @@
 use crate::components::game::TrendingGameCard;
 use crate::components::ui::*;
 use crate::models::*;
-use crate::stub::{kpi_trends_stub, pro_tip_stub};
+use crate::stub::demo_images::cover_image_url;
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -16,7 +16,6 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
     let loading = use_signal(|| true);
     let platform_stats: Signal<Option<PlatformStats>> = use_signal(|| None);
     let activity: Signal<Vec<ActivityEventGql>> = use_signal(Vec::new);
-    let trends = kpi_trends_stub();
 
     use_hook(move || {
         let mut game_types = game_types;
@@ -34,7 +33,11 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
                 lobbies: Vec<LobbySummary>,
             }
             let q = r#"query {
-                gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson coverImageUrl }
+                gameTypes {
+                    name displayName version minPlayers maxPlayers description
+                    configUiPath aboutUiPath configSchemaJson coverImageUrl
+                    activePlayers featured tags creatorDisplayName avgSessionMins
+                }
                 lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }
             }"#;
             match graphql_post::<Boot>(q).await {
@@ -51,7 +54,7 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
             #[serde(rename_all = "camelCase")]
             struct S { platform_stats: PlatformStats }
             if let Ok(s) = graphql_post::<S>(
-                "query { platformStats { activeLobbies publishedGameTypes finishedGames24h status } }",
+                "query { platformStats { activeLobbies publishedGameTypes finishedGames24h activeSessions status trends { label value deltaPct up } proTip } }",
             )
             .await
             {
@@ -72,9 +75,16 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
 
     let featured = game_types()
         .iter()
-        .find(|g| crate::stub::game_stub(&g.name).featured)
+        .find(|g| g.featured)
         .cloned()
         .or_else(|| game_types().first().cloned());
+
+    let trends = platform_stats()
+        .map(|s| s.trends)
+        .unwrap_or_default();
+    let pro_tip = platform_stats()
+        .map(|s| s.pro_tip)
+        .unwrap_or_default();
 
     rsx! {
         div { class: "grid grid-cols-12 gap-8",
@@ -93,13 +103,16 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
             } else {
                 if let Some(feat) = featured {
                     {
-                        let stub = crate::stub::game_stub(&feat.name);
                         let fname = feat.name.clone();
                         let display = feat.display_name.clone();
                         let desc = feat.description.clone();
-                        let gradient = stub.media.accent_gradient;
+                        let long_desc = if desc.is_empty() {
+                            feat.tags.join(" · ")
+                        } else {
+                            desc.clone()
+                        };
                         let cover = feat.cover_image_url.clone()
-                            .or_else(|| crate::stub::demo_images::cover_image_url(&feat.name).map(str::to_string))
+                            .or_else(|| cover_image_url(&feat.name).map(str::to_string))
                             .unwrap_or_default();
                         rsx! {
                             section { class: "col-span-12 page-hero group",
@@ -110,7 +123,7 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
                                         alt: "{display}",
                                     }
                                 }
-                                div { class: "absolute inset-0 bg-gradient-to-br {gradient} z-0 mix-blend-multiply opacity-60" }
+                                div { class: "absolute inset-0 bg-gradient-to-br from-primary-container/40 via-surface-container-low to-background z-0 mix-blend-multiply opacity-60" }
                                 div { class: "absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent z-10" }
                                 div { class: "relative z-20 h-full flex flex-col justify-end p-8 lg:p-12 space-y-6 min-h-[320px] lg:min-h-[420px]",
                                     span { class: "inline-flex items-center gap-2 px-3 py-1 bg-primary-container/20 text-primary border border-primary-container/30 rounded-full font-label-caps text-xs w-fit",
@@ -118,9 +131,7 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
                                         "Featured Game"
                                     }
                                     h1 { class: "font-manrope text-h1 text-4xl lg:text-6xl text-on-surface", "{display}" }
-                                    p { class: "font-body-lg text-on-surface-variant max-w-2xl",
-                                        if desc.is_empty() { "{stub.long_description}" } else { "{desc}" }
-                                    }
+                                    p { class: "font-body-lg text-on-surface-variant max-w-2xl", "{long_desc}" }
                                     div { class: "flex items-center gap-4 flex-wrap",
                                         button {
                                             class: "btn-primary btn-lg active:scale-95 transition-transform",
@@ -190,22 +201,22 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
                             label: "Active lobbies".to_string(),
                             value: platform_stats().map(|s| s.active_lobbies.to_string()).unwrap_or_else(|| lobbies().len().to_string()),
                             icon: Some("groups"),
-                            trend: Some(trends[0].delta_pct.to_string()),
-                            trend_up: trends[0].up,
+                            trend: trends.get(0).map(|t| t.delta_pct.clone()),
+                            trend_up: trends.get(0).map(|t| t.up).unwrap_or(true),
                         }
                         KpiCard {
                             label: "Published games".to_string(),
                             value: platform_stats().map(|s| s.published_game_types.to_string()).unwrap_or_else(|| game_types().len().to_string()),
                             icon: Some("sports_esports"),
-                            trend: Some(trends[1].delta_pct.to_string()),
-                            trend_up: trends[1].up,
+                            trend: trends.get(1).map(|t| t.delta_pct.clone()),
+                            trend_up: trends.get(1).map(|t| t.up).unwrap_or(true),
                         }
                         KpiCard {
                             label: "Finished (24h)".to_string(),
                             value: platform_stats().map(|s| s.finished_games24h.to_string()).unwrap_or_else(|| "—".into()),
                             icon: Some("signal_cellular_alt"),
-                            trend: Some(trends[2].delta_pct.to_string()),
-                            trend_up: trends[2].up,
+                            trend: trends.get(2).map(|t| t.delta_pct.clone()),
+                            trend_up: trends.get(2).map(|t| t.up).unwrap_or(true),
                         }
                     }
                     div { class: "section-card",
@@ -218,7 +229,9 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
                     }
                     div { class: "section-card border-primary-container/20 bg-primary-container/5",
                         h3 { class: "font-manrope font-semibold text-primary text-sm mb-2", "Pro tip" }
-                        p { class: "text-body-sm text-on-surface-variant", "{pro_tip_stub()}" }
+                        p { class: "text-body-sm text-on-surface-variant",
+                            if pro_tip.is_empty() { "Claim a seat and mark Ready before the host launches." } else { "{pro_tip}" }
+                        }
                     }
                     div { class: "section-card",
                         h3 { class: "card-title-sm mb-3", "Recent Lobbies" }

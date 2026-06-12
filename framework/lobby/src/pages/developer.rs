@@ -4,14 +4,20 @@ use crate::components::dev::{
     upload_file_check_class,
 };
 use crate::components::ui::*;
-use crate::models::{format_relative_time, DeploymentRow, GameDraftShort, PlatformStats, UploadReport};
-use crate::stub::{kpi_trends_stub, CLI_COMMANDS};
+use crate::models::{format_relative_time, DeploymentRow, GameDraftShort, KpiTrend, PlatformStats, UploadReport};
 use dioxus::events::{DragData, FormData};
 use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use gloo_events::{EventListener, EventListenerOptions};
 use serde::Deserialize;
 use std::rc::Rc;
+
+const CLI_COMMANDS: &[(&str, &str)] = &[
+    ("Build package", "gamedev build"),
+    ("Validate package", "gamedev validate"),
+    ("Deploy to server", "gamedev deploy --server http://127.0.0.1:8081/graphql"),
+    ("Init new game", "gamedev init"),
+];
 
 #[component]
 pub fn DeveloperUploadsPage() -> Element {
@@ -91,7 +97,7 @@ pub fn DeveloperUploadsPage() -> Element {
             #[serde(rename_all = "camelCase")]
             struct S { platform_stats: PlatformStats }
             if let Ok(s) = graphql_post::<S>(
-                "query { platformStats { activeLobbies publishedGameTypes finishedGames24h status } }",
+                "query { platformStats { activeLobbies publishedGameTypes finishedGames24h status trends { label value deltaPct up } } }",
             )
             .await
             {
@@ -101,14 +107,19 @@ pub fn DeveloperUploadsPage() -> Element {
         refresh_drafts();
     });
 
-    let trends = kpi_trends_stub();
+    let trends: Vec<KpiTrend> = platform_stats()
+        .map(|s| s.trends)
+        .unwrap_or_default();
+    let api_badge = platform_stats()
+        .map(|s| if s.status == "ok" { "API: Operational" } else { "API: Degraded" })
+        .unwrap_or("API: —");
 
     rsx! {
         div { class: "page-stack",
             PageHeader {
                 title: "Developer Command Center".to_string(),
                 subtitle: Some("Package, validate, and publish WASM game builds.".to_string()),
-                badge: Some("API: Operational".to_string()),
+                badge: Some(api_badge.to_string()),
                 children: None,
             }
 
@@ -135,22 +146,22 @@ pub fn DeveloperUploadsPage() -> Element {
                         label: "Active lobbies".to_string(),
                         value: platform_stats().map(|s| s.active_lobbies.to_string()).unwrap_or_else(|| "—".into()),
                         icon: Some("groups"),
-                        trend: Some(trends[0].delta_pct.to_string()),
-                        trend_up: trends[0].up,
+                        trend: trends.get(0).map(|t| t.delta_pct.clone()),
+                        trend_up: trends.get(0).map(|t| t.up).unwrap_or(true),
                     }
                     KpiCard {
                         label: "Published games".to_string(),
                         value: platform_stats().map(|s| s.published_game_types.to_string()).unwrap_or_else(|| "—".into()),
                         icon: Some("deployed_code"),
-                        trend: Some(trends[1].delta_pct.to_string()),
-                        trend_up: trends[1].up,
+                        trend: trends.get(1).map(|t| t.delta_pct.clone()),
+                        trend_up: trends.get(1).map(|t| t.up).unwrap_or(true),
                     }
                     KpiCard {
                         label: "Finished (24h)".to_string(),
                         value: platform_stats().map(|s| s.finished_games24h.to_string()).unwrap_or_else(|| "—".into()),
                         icon: Some("monitoring"),
-                        trend: Some(trends[2].delta_pct.to_string()),
-                        trend_up: trends[2].up,
+                        trend: trends.get(2).map(|t| t.delta_pct.clone()),
+                        trend_up: trends.get(2).map(|t| t.up).unwrap_or(true),
                     }
                 }
 
@@ -333,9 +344,16 @@ pub fn DeveloperUploadsPage() -> Element {
                                     onclick: {
                                         let cmd = cmd.to_string();
                                         move |_| {
-                                            if let Some(w) = web_sys::window() {
-                                                let _ = w.alert_with_message(&format!("Copy: {cmd}"));
-                                            }
+                                            let cmd = cmd.clone();
+                                            spawn(async move {
+                                                if let Some(win) = web_sys::window() {
+                                                    let clipboard = win.navigator().clipboard();
+                                                    let _ = wasm_bindgen_futures::JsFuture::from(
+                                                        clipboard.write_text(&cmd),
+                                                    )
+                                                    .await;
+                                                }
+                                            });
                                         }
                                     },
                                 }
@@ -346,7 +364,6 @@ pub fn DeveloperUploadsPage() -> Element {
 
                 section { class: "section-card overflow-x-auto p-0",
                     h2 { class: "card-title text-lg p-5 pb-0", "Deployments" }
-                    p { class: "text-label-caps font-label-caps text-outline uppercase px-5 pb-4", "Stub data" }
                     table { class: "data-table",
                         thead {
                             tr {

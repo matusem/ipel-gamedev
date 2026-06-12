@@ -1,4 +1,5 @@
 pub mod auth_password;
+pub mod auth_sessions;
 pub mod component_db;
 pub mod db;
 pub mod game_db;

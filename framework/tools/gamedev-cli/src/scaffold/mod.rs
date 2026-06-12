@@ -21,6 +21,12 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
         backend: backend.clone(),
         frontend: frontend.clone(),
     };
+    if !backend.is_implemented() {
+        anyhow::bail!("backend {backend:?} is not implemented; choose rust or java");
+    }
+    if !frontend.is_implemented() {
+        anyhow::bail!("frontend {frontend:?} is not implemented; choose js, ts, bevy, or dioxus");
+    }
 
     fs::write(root.join("gamedev.toml"), toml::to_string_pretty(&cfg)?)
         .with_context(|| format!("write {}", root.join("gamedev.toml").display()))?;
@@ -329,13 +335,15 @@ fn scaffold_rust_backend(root: &Path, cfg: &ProjectConfig, include_rust_frontend
         .replace("__SHARED_TYPES_CRATE__", &shared_types_name.replace('-', "_"));
     fs::write(shared_types_dir.join("src/bin/export_ts.rs"), export_ts)?;
 
-    let logic_cargo = include_str!("../../templates/backend/rust_logic_Cargo.toml")
+    let logic_cargo = include_str!("../../templates/backend/rust_logic_flat_Cargo.toml")
         .replace("__CRATE_NAME__", &format!("{crate_name}_logic"))
-        .replace("__GAME_PATH__", &game_dep_path)
-        .replace("__SHARED_TYPES_NAME__", &shared_types_name);
+        .replace("__GAME_PATH__", &game_dep_path);
     fs::write(logic_dir.join("Cargo.toml"), logic_cargo)?;
 
-    fs::write(logic_dir.join("src/lib.rs"), include_str!("../../templates/backend/rust_logic_lib.rs"))?;
+    fs::write(
+        logic_dir.join("src/lib.rs"),
+        include_str!("../../templates/backend/rust_logic_flat_lib.rs"),
+    )?;
 
     let component_cargo = include_str!("../../templates/backend/rust_component_Cargo.toml")
         .replace("__COMPONENT_NAME__", &format!("{crate_name}_component"))
@@ -382,7 +390,6 @@ fn scaffold_js_frontend(root: &Path, template: JsTemplate, use_ts: bool, rust_ba
     let pkg = match template {
         JsTemplate::VanillaVite => include_str!("../../templates/frontend/vanilla_vite_package.json"),
         JsTemplate::PlainStatic => include_str!("../../templates/frontend/plain_static_package.json"),
-        JsTemplate::ReactVite => include_str!("../../templates/frontend/react_vite_package.json"),
     };
     let pkg = wire_sdk_js_package_json(pkg, &web, root)?;
     fs::write(web.join("package.json"), pkg)?;

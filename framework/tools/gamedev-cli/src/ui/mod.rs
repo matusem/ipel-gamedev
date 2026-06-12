@@ -80,11 +80,14 @@ fn run_fallback() -> Result<UiCommand> {
         }
         2 => UiCommand::Login(LoginArgs {
             server_url: DEFAULT_GRAPHQL_URL.to_string(),
-            user_id: String::new(),
+            user_id: None,
+            display_name: None,
+            password: None,
         }),
         3 => UiCommand::Build(BuildArgs {
             project_dir: None,
             out: None,
+            strict: false,
         }),
         4 => UiCommand::Deploy(DeployArgs {
             project_dir: None,

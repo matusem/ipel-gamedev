@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::auth_password;
+use crate::auth_sessions;
 use crate::component_db::ComponentDb;
 use crate::db::{self, GameInstanceStore};
 use crate::game_db::GameDb;
@@ -22,15 +23,32 @@ use crate::user_engagement;
 
 use super::{
     map_aspect_ratings, map_draft, map_message, map_validation_report, lobby_to_gql,
-    require_developer_user, require_registered_user, DraftsDir, GameCommentGql, GameDraftGql,
-    GameReviewGql, GamesDir, LobbyGql, LobbyMessageGql, PublishTokenGql, UploadGameZipResultGql,
-    UserGql,
+    require_developer_user, require_registered_user, AuthSessionGql, DraftsDir, GameCommentGql,
+    GameDraftGql, GameReviewGql, GamesDir, LobbyGql, LobbyMessageGql, PublishTokenGql,
+    RequestUser, UploadGameZipResultGql, UserGql,
 };
+
+async fn issue_auth_session(pool: &SqlitePool, user: UserGql) -> Result<AuthSessionGql> {
+    let uid = Uuid::parse_str(user.id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+    let token = auth_sessions::create_session(pool, uid)
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
+    Ok(AuthSessionGql {
+        session_token: token,
+        user,
+    })
+}
 pub struct MutationRoot;
 
 #[Object]
 impl MutationRoot {
     async fn grant_myself_developer(&self, ctx: &Context<'_>) -> Result<bool> {
+        let allowed = std::env::var("ADMIN_GRANT_DEVELOPER")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if !allowed {
+            return Err(Error::new("developer self-grant is disabled"));
+        }
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         db::grant_role(pool, uid, "developer")
@@ -51,17 +69,21 @@ impl MutationRoot {
         &self,
         ctx: &Context<'_>,
         display_name: String,
-    ) -> Result<UserGql> {
+    ) -> Result<AuthSessionGql> {
         let pool = ctx.data::<SqlitePool>()?;
         let (id, name, created) = db::register_user(pool, &display_name)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         let _ = user_engagement::welcome_notification(pool, id).await;
-        Ok(UserGql {
-            id: id.to_string().into(),
-            display_name: name,
-            created_at: created,
-        })
+        issue_auth_session(
+            pool,
+            UserGql {
+                id: id.to_string().into(),
+                display_name: name,
+                created_at: created,
+            },
+        )
+        .await
     }
 
     async fn create_publish_token(
@@ -169,8 +191,70 @@ impl MutationRoot {
             body: r.body,
             aspects: map_aspect_ratings(&r.aspects),
             helpful_votes: r.helpful_votes,
+            user_has_voted: false,
             created_at: r.created_at,
         })
+    }
+
+    async fn mark_review_helpful(
+        &self,
+        ctx: &Context<'_>,
+        review_id: async_graphql::types::ID,
+    ) -> Result<GameReviewGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rid = Uuid::parse_str(review_id.as_str()).map_err(|_| Error::new("invalid review id"))?;
+        let r = game_storefront::mark_review_helpful(pool, rid, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let voted = game_storefront::user_voted_review(pool, r.id, uid)
+            .await
+            .unwrap_or(true);
+        Ok(GameReviewGql {
+            id: r.id.to_string().into(),
+            display_name: r.display_name,
+            body: r.body,
+            aspects: map_aspect_ratings(&r.aspects),
+            helpful_votes: r.helpful_votes,
+            user_has_voted: voted,
+            created_at: r.created_at,
+        })
+    }
+
+    async fn update_display_name(
+        &self,
+        ctx: &Context<'_>,
+        display_name: String,
+    ) -> Result<UserGql> {
+        let pool = ctx.data::<SqlitePool>()?;
+        let uid = require_registered_user(ctx).await?;
+        let name = display_name.trim();
+        if name.is_empty() {
+            return Err(Error::new("display name required"));
+        }
+        db::update_user_display_name(pool, uid, name)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let row = db::get_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("user not found"))?;
+        Ok(UserGql {
+            id: row.0.to_string().into(),
+            display_name: row.1,
+            created_at: row.2,
+        })
+    }
+
+    async fn logout(&self, ctx: &Context<'_>) -> Result<bool> {
+        let pool = ctx.data::<SqlitePool>()?;
+        let RequestUser(raw) = ctx.data::<RequestUser>()?;
+        let Some(raw) = raw.as_ref() else {
+            return Ok(false);
+        };
+        auth_sessions::revoke_session(pool, raw)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
     }
 
     async fn submit_game_comment(
@@ -204,32 +288,36 @@ impl MutationRoot {
         ctx: &Context<'_>,
         display_name: String,
         password: String,
-    ) -> Result<UserGql> {
+    ) -> Result<AuthSessionGql> {
         let pool = ctx.data::<SqlitePool>()?;
         let _ = ctx;
         if display_name.trim().is_empty() {
             return Err(Error::new("display name required"));
         }
-        if password.len() < 4 {
-            return Err(Error::new("password too short"));
+        if password.len() < 8 {
+            return Err(Error::new("password must be at least 8 characters"));
         }
         let hash = auth_password::hash_password(&password).map_err(Error::new)?;
         let (id, name, created) = db::sign_up(pool, display_name.trim(), &hash)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
-        Ok(UserGql {
-            id: id.to_string().into(),
-            display_name: name,
-            created_at: created,
-        })
+        issue_auth_session(
+            pool,
+            UserGql {
+                id: id.to_string().into(),
+                display_name: name,
+                created_at: created,
+            },
+        )
+        .await
     }
 
     /// Set or replace password for the current Bearer user (Argon2 hash in DB).
     async fn set_password(&self, ctx: &Context<'_>, password: String) -> Result<bool> {
         let pool = ctx.data::<SqlitePool>()?;
         let uid = require_registered_user(ctx).await?;
-        if password.len() < 4 {
-            return Err(Error::new("password too short"));
+        if password.len() < 8 {
+            return Err(Error::new("password must be at least 8 characters"));
         }
         let hash = auth_password::hash_password(&password).map_err(Error::new)?;
         db::set_password_hash(pool, uid, &hash)
@@ -256,7 +344,7 @@ impl MutationRoot {
         ctx: &Context<'_>,
         display_name: String,
         password: String,
-    ) -> Result<UserGql> {
+    ) -> Result<AuthSessionGql> {
         let pool = ctx.data::<SqlitePool>()?;
         let candidates = lobby_db::find_user_by_display_name_and_password(pool, &display_name)
             .await
@@ -270,11 +358,15 @@ impl MutationRoot {
                     .await
                     .map_err(|e| Error::new(format!("db: {e}")))?
                     .ok_or_else(|| Error::new("user vanished"))?;
-                return Ok(UserGql {
-                    id: row.0.to_string().into(),
-                    display_name: row.1,
-                    created_at: row.2,
-                });
+                return issue_auth_session(
+                    pool,
+                    UserGql {
+                        id: row.0.to_string().into(),
+                        display_name: row.1,
+                        created_at: row.2,
+                    },
+                )
+                .await;
             }
         }
         Err(Error::new("invalid credentials"))

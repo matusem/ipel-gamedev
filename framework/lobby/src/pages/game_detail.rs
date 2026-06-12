@@ -2,10 +2,10 @@ use crate::api::{create_lobby_with_game, graphql_exec, graphql_post};
 use crate::components::game::{MediaGallery, SteamSection, SteamSectionNav, StorefrontEditor};
 use crate::components::ui::*;
 use crate::models::{
-    format_play_time, format_relative_time, AspectRatings, GameComment, GameReview, GameSession,
-    GameStorefront, GameTypeInfo, LeaderboardEntry, PlayTimeEntry,
+    format_estimated_match_time, format_play_time, format_relative_time, AspectRatings,
+    GameComment, GameReview, GameSession, GameStorefront, GameTypeInfo, LeaderboardEntry,
+    PlayTimeEntry,
 };
-use crate::stub::game_stub;
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -42,7 +42,7 @@ pub fn GameDetailPage(name: String) -> Element {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Data { game_types: Vec<GameTypeInfo> }
-            let q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson } }"#;
+            let q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson activePlayers featured tags creatorDisplayName avgSessionMins coverImageUrl } }"#;
             match graphql_post::<Data>(q).await {
                 Ok(d) => game_types.set(d.game_types),
                 Err(e) => error_msg.set(Some(e)),
@@ -118,8 +118,18 @@ pub fn GameDetailPage(name: String) -> Element {
         });
     });
     let gt = game_types().into_iter().find(|g| g.name == name);
-    let stub = game_stub(&name);
     let sf = storefront();
+    let creator_label = sf
+        .as_ref()
+        .and_then(|s| s.creator_display_name.clone())
+        .or_else(|| gt.as_ref().and_then(|g| g.creator_display_name.clone()))
+        .unwrap_or_else(|| "—".into());
+    let active_players = gt.as_ref().map(|g| g.active_players).unwrap_or(0);
+    let avg_mins = sf
+        .as_ref()
+        .map(|s| s.avg_session_mins)
+        .or_else(|| gt.as_ref().map(|g| g.avg_session_mins))
+        .unwrap_or(0);
     let aspects = sf.as_ref().map(|s| s.aspect_ratings.clone()).unwrap_or(AspectRatings {
         gameplay: 4.0, balance: 4.0, visuals: 3.5, social: 4.0, depth: 3.5,
     });
@@ -155,7 +165,7 @@ pub fn GameDetailPage(name: String) -> Element {
                             MediaGallery { screenshots: store.screenshots.clone() }
                         } else {
                             section { class: "page-hero min-h-[200px]",
-                                div { class: "absolute inset-0 bg-gradient-to-br {stub.media.accent_gradient} z-0" }
+                                div { class: "absolute inset-0 bg-gradient-to-br from-primary-container/40 via-surface-container-low to-background z-0" }
                             }
                         }
                         div {
@@ -164,9 +174,9 @@ pub fn GameDetailPage(name: String) -> Element {
                                     for tag in store.tags.clone() {
                                         Chip { label: tag, muted: false }
                                     }
-                                } else {
-                                    for tag in stub.tags {
-                                        Chip { label: tag.to_string(), muted: false }
+                                } else if let Some(ref game) = gt {
+                                    for tag in game.tags.clone() {
+                                        Chip { label: tag, muted: false }
                                     }
                                 }
                             }
@@ -187,7 +197,7 @@ pub fn GameDetailPage(name: String) -> Element {
                         div { class: "space-y-0 pt-2",
                             {
                                 let desc = sf.as_ref().map(|s| s.long_description.clone())
-                                    .unwrap_or_else(|| if game.description.is_empty() { stub.long_description.to_string() } else { game.description.clone() });
+                                    .unwrap_or_else(|| game.description.clone());
                                 let review_count = sf.as_ref().map(|s| s.review_count).unwrap_or(0);
                                 let rev_list = reviews();
                                 let rev_visible = if reviews_all() { rev_list.len() } else { rev_list.len().min(3) };
@@ -219,10 +229,10 @@ pub fn GameDetailPage(name: String) -> Element {
                                                 }
                                             }
                                             div { class: "mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4",
-                                                KpiCard { label: "Creator".to_string(), value: stub.creator.to_string(), icon: None, trend: None, trend_up: true }
-                                                KpiCard { label: "Active".to_string(), value: stub.active_players.to_string(), icon: None, trend: None, trend_up: true }
+                                                KpiCard { label: "Creator".to_string(), value: creator_label.clone(), icon: None, trend: None, trend_up: true }
+                                                KpiCard { label: "Active".to_string(), value: active_players.to_string(), icon: None, trend: None, trend_up: active_players > 0 }
                                                 KpiCard { label: "Reviews".to_string(), value: review_count.to_string(), icon: None, trend: None, trend_up: true }
-                                                KpiCard { label: "Ping".to_string(), value: format!("{}ms", stub.ping_ms), icon: None, trend: None, trend_up: stub.ping_ms < 40 }
+                                                KpiCard { label: "Avg session".to_string(), value: format_estimated_match_time(avg_mins), icon: None, trend: None, trend_up: true }
                                             }
                                         }
                                     }
@@ -316,6 +326,26 @@ pub fn GameDetailPage(name: String) -> Element {
                                                             }
                                                             p { class: "text-body-sm text-on-surface-variant mt-2 leading-relaxed", "{rev.body}" }
                                                             p { class: "text-xs text-outline mt-2", "{rev.helpful_votes} found helpful" }
+                                                            if !rev.user_has_voted {
+                                                                button {
+                                                                    class: "btn-ghost text-xs mt-2",
+                                                                    onclick: {
+                                                                        let rid = rev.id.clone();
+                                                                        let mut reload_key = reload_key;
+                                                                        move |_| {
+                                                                            let rid = rid.clone();
+                                                                            spawn(async move {
+                                                                                let q = "mutation($id: ID!) { markReviewHelpful(reviewId: $id) { id } }";
+                                                                                let vars = serde_json::json!({ "id": rid });
+                                                                                if graphql_exec::<serde_json::Value>(q, Some(vars)).await.is_ok() {
+                                                                                    reload_key.set(reload_key() + 1);
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                    "Mark helpful"
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -582,7 +612,7 @@ pub fn GameDetailPage(name: String) -> Element {
                                 div {
                                     p { class: "text-outline text-label-caps uppercase text-[10px]", "Avg session" }
                                     p { class: "font-mono-code text-on-surface",
-                                        if let Some(ref store) = sf { "{store.avg_session_mins} min" } else { "{stub.avg_duration}" }
+                                        if avg_mins > 0 { "{avg_mins} min" } else { "—" }
                                     }
                                 }
                             }

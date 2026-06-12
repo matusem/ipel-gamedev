@@ -164,25 +164,20 @@ fn App() -> Element {
         let mut session_checked = session_checked;
         let mut error_msg = error_msg;
         spawn(async move {
-            if stored_user_id().is_none() {
+            if stored_session_token().is_none() {
                 session_ok.set(false);
                 session_checked.set(true);
                 return;
             }
-            let id = stored_user_id().unwrap();
-            let q = r#"query UserExists($id: ID!) { user(id: $id) { id } }"#;
-            let vars = serde_json::json!({ "id": id });
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "camelCase")]
-            struct UserExists {
-                user: Option<models::RegisterUserRow>,
+            struct ProfileWrap {
+                my_profile: Option<models::UserProfile>,
             }
-            match graphql_exec_anonymous::<UserExists>(q, Some(vars)).await {
-                Ok(p) if p.user.is_some() => session_ok.set(true),
+            match graphql_post::<ProfileWrap>("query { myProfile { displayName } }").await {
+                Ok(p) if p.my_profile.is_some() => session_ok.set(true),
                 _ => {
-                    if let Some(st) = local_storage() {
-                        let _ = st.remove_item(USER_ID_KEY);
-                    }
+                    clear_auth_session();
                     session_ok.set(false);
                 }
             }

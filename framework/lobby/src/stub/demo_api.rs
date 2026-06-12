@@ -197,7 +197,14 @@ fn platform_stats() -> Value {
         "activeLobbies": 17,
         "publishedGameTypes": 13,
         "finishedGames24h": 218,
-        "status": "ok"
+        "activeSessions": 42,
+        "status": "ok",
+        "trends": [
+            { "label": "Active lobbies", "value": "17", "deltaPct": "+12%", "up": true },
+            { "label": "Published games", "value": "13", "deltaPct": "+2", "up": true },
+            { "label": "Finished (24h)", "value": "218", "deltaPct": "+8%", "up": true }
+        ],
+        "proTip": "Demo mode — data is synthetic. Claim a seat and mark Ready before the host launches."
     })
 }
 

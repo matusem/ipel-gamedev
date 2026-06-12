@@ -4,7 +4,7 @@ use crate::components::lobby::{
 };
 use crate::components::ui::{push_toast, status_variant_from_lobby, Icon, JsonConsole, StatusBadge, use_toast, ToastKind};
 use crate::models::*;
-use crate::stub::{estimated_match_time_stub, game_media};
+use crate::stub::game_media;
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use gloo_events::EventListener;
@@ -450,6 +450,9 @@ pub fn LobbyRoomBody(
     let show_rules = !no_game_yet && about_url.is_some();
     let config_title = game_type_display_title(&gt_list, &game_name);
     let rules_title = config_title.clone();
+    let est_match = format_estimated_match_time(
+        selected_gt.as_ref().map(|g| g.avg_session_mins).unwrap_or(0),
+    );
     let my_seat_position = uid.as_ref().and_then(|u| {
         lobby_for_cols
             .seats
@@ -665,7 +668,7 @@ pub fn LobbyRoomBody(
                 div { class: "flex items-center gap-3",
                     StatusBadge { label: lobby_for_cols.status.clone(), variant: status_variant }
                     span { class: "text-body-sm text-on-surface-variant hidden sm:inline",
-                        "Est. {estimated_match_time_stub()}"
+                        "Est. {est_match}"
                     }
                 }
                 div { class: "flex flex-wrap items-center gap-2",

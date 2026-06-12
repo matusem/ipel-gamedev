@@ -5,6 +5,7 @@ pub const CONFIG_RESULT_SOURCE: &str = "ipel-game-config-result";
 pub const CONFIG_SCHEMA_SOURCE: &str = "ipel-game-config-schema";
 pub const CONFIG_STATE_SOURCE: &str = "ipel-game-config-state";
 pub const USER_ID_KEY: &str = "ipel_user_id";
+pub const SESSION_TOKEN_KEY: &str = "ipel_session_token";
 
 pub const LOBBIES_QUERY: &str =
     r#"query { lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt } }"#;
@@ -26,6 +27,16 @@ pub struct GameTypeInfo {
     pub config_schema_json: Option<String>,
     #[serde(default)]
     pub cover_image_url: Option<String>,
+    #[serde(default)]
+    pub active_players: i32,
+    #[serde(default)]
+    pub featured: bool,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub creator_display_name: Option<String>,
+    #[serde(default)]
+    pub avg_session_mins: i32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -139,8 +150,37 @@ pub struct RegisterUserRow {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UserRow {
+    pub id: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub created_at: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthSessionRow {
+    pub session_token: String,
+    pub user: UserRow,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegisterUserData {
-    pub register_user: RegisterUserRow,
+    pub register_user: AuthSessionRow,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignUpData {
+    pub sign_up: AuthSessionRow,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginData {
+    pub login_with_password: AuthSessionRow,
 }
 
 #[derive(Deserialize)]
@@ -293,11 +333,26 @@ pub struct DeploymentRow {
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct KpiTrend {
+    pub label: String,
+    pub value: String,
+    pub delta_pct: String,
+    pub up: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlatformStats {
     pub active_lobbies: i32,
     pub published_game_types: i32,
     pub finished_games24h: i32,
+    #[serde(default)]
+    pub active_sessions: i32,
     pub status: String,
+    #[serde(default)]
+    pub trends: Vec<KpiTrend>,
+    #[serde(default)]
+    pub pro_tip: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -382,6 +437,10 @@ pub struct GameStorefront {
     pub patch_notes: Vec<GamePatchNote>,
     pub tags: Vec<String>,
     pub avg_session_mins: i32,
+    #[serde(default)]
+    pub featured: bool,
+    #[serde(default)]
+    pub creator_display_name: Option<String>,
     pub aspect_ratings: AspectRatings,
     pub review_count: i32,
     pub can_edit: bool,
@@ -396,6 +455,8 @@ pub struct GameReview {
     pub body: String,
     pub aspects: AspectRatings,
     pub helpful_votes: i32,
+    #[serde(default)]
+    pub user_has_voted: bool,
     pub created_at: i64,
 }
 
@@ -415,6 +476,14 @@ pub struct PlayTimeEntry {
     pub display_name: String,
     pub total_mins: i32,
     pub sessions: u32,
+}
+
+pub fn format_estimated_match_time(avg_session_mins: i32) -> String {
+    if avg_session_mins <= 0 {
+        "—".into()
+    } else {
+        format!("~{avg_session_mins} min")
+    }
 }
 
 pub fn format_play_time(mins: i32) -> String {

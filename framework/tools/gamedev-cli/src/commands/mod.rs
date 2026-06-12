@@ -25,7 +25,17 @@ pub fn run_build(args: BuildArgs) -> Result<()> {
 }
 
 pub fn run_login(args: LoginArgs) -> Result<()> {
-    let token = api::gql_create_publish_token(&args.server_url, &args.user_id)?;
+    let (token, user_id, expires_at) = if let (Some(name), Some(pass)) =
+        (args.display_name.as_deref(), args.password.as_deref())
+    {
+        let session = api::gql_login_with_password(&args.server_url, name, pass)?;
+        (session.token, session.user_id, session.expires_at)
+    } else if let Some(uid) = args.user_id.as_deref() {
+        let publish = api::gql_create_publish_token(&args.server_url, uid)?;
+        (publish.token, publish.user_id, publish.expires_at)
+    } else {
+        bail!("provide --display-name and --password, or deprecated --user-id");
+    };
     let path = auth::auth_db_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -34,12 +44,12 @@ pub fn run_login(args: LoginArgs) -> Result<()> {
     db.retain(|e| e.server_url != args.server_url);
     db.push(AuthEntry {
         server_url: args.server_url,
-        token: token.token,
-        expires_at: token.expires_at,
-        user_id: token.user_id,
+        token: token.clone(),
+        expires_at,
+        user_id: user_id.clone(),
     });
     fs::write(path, serde_json::to_vec_pretty(&db)?)?;
-    println!("Login successful. Token expires at {}", token.expires_at);
+    println!("Login successful for {user_id}. Token expires at {expires_at}");
     Ok(())
 }
 
@@ -48,6 +58,7 @@ pub fn run_deploy(args: DeployArgs) -> Result<()> {
     run_build(BuildArgs {
         project_dir: Some(root.clone()),
         out: None,
+        strict: false,
     })?;
     let zip_path = root.join("dist/game.zip");
     let tok = auth::load_token(&args.server_url)?;

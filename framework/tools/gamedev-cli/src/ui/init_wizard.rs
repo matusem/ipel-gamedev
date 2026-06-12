@@ -319,8 +319,7 @@ impl InitWizardState {
         let js_template = if self.frontend_idx == 0 {
             Some(match self.template_idx {
                 0 => JsTemplate::VanillaVite,
-                1 => JsTemplate::PlainStatic,
-                _ => JsTemplate::ReactVite,
+                _ => JsTemplate::PlainStatic,
             })
         } else {
             None

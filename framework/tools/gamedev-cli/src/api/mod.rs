@@ -60,6 +60,37 @@ pub struct PublishTokenResp {
     pub expires_at: i64,
 }
 
+pub struct AuthSessionResp {
+    pub token: String,
+    pub user_id: String,
+    pub expires_at: i64,
+}
+
+pub fn gql_login_with_password(
+    server_url: &str,
+    display_name: &str,
+    password: &str,
+) -> Result<AuthSessionResp> {
+    let q = r#"mutation($n: String!, $p: String!) { loginWithPassword(displayName: $n, password: $p) { sessionToken user { id createdAt } } }"#;
+    let body = gql_raw_anonymous(
+        server_url,
+        q,
+        json!({ "n": display_name, "p": password }),
+    )?;
+    let v: serde_json::Value = serde_json::from_str(&body)?;
+    if let Some(errs) = v.get("errors") {
+        bail!("graphql errors: {errs}");
+    }
+    let t = &v["data"]["loginWithPassword"];
+    let user_id = t["user"]["id"].as_str().unwrap_or_default().to_string();
+    let created = t["user"]["createdAt"].as_i64().unwrap_or(0);
+    Ok(AuthSessionResp {
+        token: t["sessionToken"].as_str().unwrap_or_default().to_string(),
+        user_id,
+        expires_at: created + 30 * 24 * 60 * 60,
+    })
+}
+
 pub fn gql_create_publish_token(server_url: &str, user_id: &str) -> Result<PublishTokenResp> {
     let q = r#"mutation($ttlDays: Int!) { createPublishToken(ttlDays: $ttlDays) { token userId expiresAt } }"#;
     let body = gql_raw(server_url, user_id, q, json!({ "ttlDays": 7 }))?;
@@ -116,6 +147,20 @@ pub fn gql_raw(
     let res = client
         .post(server_url)
         .header("Authorization", format!("Bearer {}", bearer))
+        .json(&json!({ "query": query, "variables": variables }))
+        .send()?
+        .text()?;
+    Ok(res)
+}
+
+pub fn gql_raw_anonymous(
+    server_url: &str,
+    query: &str,
+    variables: serde_json::Value,
+) -> Result<String> {
+    let client = Client::new();
+    let res = client
+        .post(server_url)
         .json(&json!({ "query": query, "variables": variables }))
         .send()?
         .text()?;

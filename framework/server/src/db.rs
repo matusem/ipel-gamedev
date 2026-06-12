@@ -32,8 +32,8 @@ impl GameInstanceStore {
         let config_s = String::from_utf8_lossy(config);
         let now = Self::now_secs();
         sqlx::query(
-            r#"INSERT INTO game_instances (id, game_type, config, state, status, updated_at, lobby_id)
-               VALUES (?, ?, ?, ?, 'active', ?, ?)"#,
+            r#"INSERT INTO game_instances (id, game_type, config, state, status, updated_at, lobby_id, started_at)
+               VALUES (?, ?, ?, ?, 'active', ?, ?, ?)"#,
         )
         .bind(id.to_string())
         .bind(game_type)
@@ -41,6 +41,7 @@ impl GameInstanceStore {
         .bind(state_json)
         .bind(now)
         .bind(lobby_id.map(|u| u.to_string()))
+        .bind(now)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -98,76 +99,58 @@ pub struct FinishedGameRow {
     pub game_type: String,
     pub lobby_id: Option<Uuid>,
     pub finished_at: i64,
+    pub started_at: Option<i64>,
     pub result_json: String,
     pub player_scores_json: String,
     pub seats_snapshot_json: String,
 }
 
+fn map_finished_row(r: sqlx::sqlite::SqliteRow) -> Option<FinishedGameRow> {
+    let id_s: String = r.get(0);
+    let id = Uuid::parse_str(&id_s).ok()?;
+    let lobby: Option<String> = r.get(2);
+    let finished: Option<i64> = r.get(3);
+    let started: Option<i64> = r.try_get(7).ok();
+    let result_j: Option<String> = r.get(4);
+    let scores_j: Option<String> = r.get(5);
+    let seats_j: Option<String> = r.get(6);
+    Some(FinishedGameRow {
+        id,
+        game_type: r.get(1),
+        lobby_id: lobby.and_then(|s| Uuid::parse_str(&s).ok()),
+        finished_at: finished.unwrap_or(0),
+        started_at: started,
+        result_json: result_j.unwrap_or_else(|| "{}".into()),
+        player_scores_json: scores_j.unwrap_or_else(|| "{}".into()),
+        seats_snapshot_json: seats_j.unwrap_or_else(|| "[]".into()),
+    })
+}
+
+const FINISHED_SELECT: &str = r#"SELECT id, game_type, lobby_id, finished_at, result_json, player_scores_json, seats_snapshot_json, started_at
+           FROM game_instances"#;
+
 pub async fn get_finished_game(
     pool: &SqlitePool,
     id: Uuid,
 ) -> Result<Option<FinishedGameRow>, sqlx::Error> {
-    let row = sqlx::query(
-        r#"SELECT id, game_type, lobby_id, finished_at, result_json, player_scores_json, seats_snapshot_json
-           FROM game_instances WHERE id = ? AND status = 'finished'"#,
-    )
-    .bind(id.to_string())
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.and_then(|r| {
-        let id_s: String = r.get(0);
-        let lobby: Option<String> = r.get(2);
-        let finished: Option<i64> = r.get(3);
-        let result_j: Option<String> = r.get(4);
-        let scores_j: Option<String> = r.get(5);
-        let seats_j: Option<String> = r.get(6);
-        let id = Uuid::parse_str(&id_s).ok()?;
-        Some(FinishedGameRow {
-            id,
-            game_type: r.get(1),
-            lobby_id: lobby.and_then(|s| Uuid::parse_str(&s).ok()),
-            finished_at: finished.unwrap_or(0),
-            result_json: result_j.unwrap_or_else(|| "{}".into()),
-            player_scores_json: scores_j.unwrap_or_else(|| "{}".into()),
-            seats_snapshot_json: seats_j.unwrap_or_else(|| "[]".into()),
-        })
-    }))
+    let row = sqlx::query(&format!("{FINISHED_SELECT} WHERE id = ? AND status = 'finished'"))
+        .bind(id.to_string())
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.and_then(map_finished_row))
 }
 
 pub async fn list_recent_finished_games(
     pool: &SqlitePool,
     limit: i64,
 ) -> Result<Vec<FinishedGameRow>, sqlx::Error> {
-    let rows = sqlx::query(
-        r#"SELECT id, game_type, lobby_id, finished_at, result_json, player_scores_json, seats_snapshot_json
-           FROM game_instances WHERE status = 'finished' AND finished_at IS NOT NULL
-           ORDER BY finished_at DESC LIMIT ?"#,
-    )
+    let rows = sqlx::query(&format!(
+        "{FINISHED_SELECT} WHERE status = 'finished' AND finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT ?"
+    ))
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    let mut out = Vec::new();
-    for r in rows {
-        let id_s: String = r.get(0);
-        let Ok(id) = Uuid::parse_str(&id_s) else {
-            continue;
-        };
-        let lobby: Option<String> = r.get(2);
-        let finished: Option<i64> = r.get(3);
-        let result_j: Option<String> = r.get(4);
-        let scores_j: Option<String> = r.get(5);
-        let seats_j: Option<String> = r.get(6);
-        out.push(FinishedGameRow {
-            id,
-            game_type: r.get(1),
-            lobby_id: lobby.and_then(|s| Uuid::parse_str(&s).ok()),
-            finished_at: finished.unwrap_or(0),
-            result_json: result_j.unwrap_or_else(|| "{}".into()),
-            player_scores_json: scores_j.unwrap_or_else(|| "{}".into()),
-            seats_snapshot_json: seats_j.unwrap_or_else(|| "[]".into()),
-        });
-    }
-    Ok(out)
+    Ok(rows.into_iter().filter_map(map_finished_row).collect())
 }
 
 pub async fn list_finished_games_by_type(
@@ -175,37 +158,44 @@ pub async fn list_finished_games_by_type(
     game_type: &str,
     limit: i64,
 ) -> Result<Vec<FinishedGameRow>, sqlx::Error> {
-    let rows = sqlx::query(
-        r#"SELECT id, game_type, lobby_id, finished_at, result_json, player_scores_json, seats_snapshot_json
-           FROM game_instances WHERE status = 'finished' AND finished_at IS NOT NULL AND game_type = ?
-           ORDER BY finished_at DESC LIMIT ?"#,
-    )
+    let rows = sqlx::query(&format!(
+        "{FINISHED_SELECT} WHERE status = 'finished' AND finished_at IS NOT NULL AND game_type = ? ORDER BY finished_at DESC LIMIT ?"
+    ))
     .bind(game_type)
     .bind(limit)
     .fetch_all(pool)
     .await?;
-    let mut out = Vec::new();
+    Ok(rows.into_iter().filter_map(map_finished_row).collect())
+}
+
+pub async fn count_active_players_by_type(
+    pool: &SqlitePool,
+) -> Result<std::collections::HashMap<String, i32>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT game_type, COUNT(*) FROM game_instances WHERE status = 'active' GROUP BY game_type",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut out = std::collections::HashMap::new();
     for r in rows {
-        let id_s: String = r.get(0);
-        let Ok(id) = Uuid::parse_str(&id_s) else {
-            continue;
-        };
-        let lobby: Option<String> = r.get(2);
-        let finished: Option<i64> = r.get(3);
-        let result_j: Option<String> = r.get(4);
-        let scores_j: Option<String> = r.get(5);
-        let seats_j: Option<String> = r.get(6);
-        out.push(FinishedGameRow {
-            id,
-            game_type: r.get(1),
-            lobby_id: lobby.and_then(|s| Uuid::parse_str(&s).ok()),
-            finished_at: finished.unwrap_or(0),
-            result_json: result_j.unwrap_or_else(|| "{}".into()),
-            player_scores_json: scores_j.unwrap_or_else(|| "{}".into()),
-            seats_snapshot_json: seats_j.unwrap_or_else(|| "[]".into()),
-        });
+        let game_type: String = r.get(0);
+        let count: i64 = r.get(1);
+        out.insert(game_type, count as i32);
     }
     Ok(out)
+}
+
+pub async fn update_user_display_name(
+    pool: &SqlitePool,
+    user_id: Uuid,
+    display_name: &str,
+) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")
+        .bind(display_name)
+        .bind(user_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
 }
 
 pub async fn count_finished_games_since(pool: &SqlitePool, since_ts: i64) -> Result<i64, sqlx::Error> {

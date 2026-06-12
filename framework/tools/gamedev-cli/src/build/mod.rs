@@ -26,6 +26,19 @@ pub use validate::{
 pub fn run(args: BuildArgs) -> Result<()> {
     let root = args.project_dir.unwrap_or(std::env::current_dir()?);
     let cfg = load_config(&root)?;
+    if !cfg.backend.is_implemented() {
+        bail!(
+            "backend {:?} is not implemented yet; use rust or java",
+            cfg.backend
+        );
+    }
+    if !cfg.frontend.is_implemented() {
+        bail!(
+            "frontend {:?} is not implemented yet; use js, ts, bevy, or dioxus",
+            cfg.frontend
+        );
+    }
+    let strict = args.strict;
     let stage = tempfile::tempdir()?;
     fs::copy(root.join("manifest.json"), stage.path().join("manifest.json"))?;
     match cfg.backend {
@@ -124,7 +137,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
 
     match cfg.frontend {
         FrontendKind::Js | FrontendKind::Ts => {
-            merge_frontend_web_build_into_client(&root, stage.path())?;
+            merge_frontend_web_build_into_client(&root, stage.path(), strict)?;
         }
         FrontendKind::Bevy => merge_bevy_build_into_client(&root, stage.path())?,
         _ => {}
@@ -223,7 +236,7 @@ fn ensure_wasm_browser_tooling(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn merge_frontend_web_build_into_client(root: &Path, stage_root: &Path) -> Result<()> {
+fn merge_frontend_web_build_into_client(root: &Path, stage_root: &Path, strict: bool) -> Result<()> {
     let web_dir = root.join("frontend").join("web");
     if !web_dir.exists() {
         return Ok(());
@@ -240,10 +253,16 @@ fn merge_frontend_web_build_into_client(root: &Path, stage_root: &Path) -> Resul
     if npm_ok {
         let install_status = Command::new("npm").arg("install").current_dir(&web_dir).status();
         if install_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
+            if strict {
+                bail!("npm install failed in frontend/web");
+            }
             println!("warning: npm install failed, falling back to static frontend/web merge");
         } else {
             let build_status = Command::new("npm").arg("run").arg("build").current_dir(&web_dir).status();
             if build_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
+                if strict {
+                    bail!("npm run build failed in frontend/web");
+                }
                 println!("warning: npm run build failed, falling back to static frontend/web merge");
             } else {
                 let dist_dir = web_dir.join("dist");
@@ -257,11 +276,16 @@ fn merge_frontend_web_build_into_client(root: &Path, stage_root: &Path) -> Resul
                 }
             }
         }
+    } else if strict {
+        bail!("npm not available but frontend/web requires a build");
     } else {
         println!("warning: npm not available, merging frontend/web/src into packaged client/");
     }
 
     if !dist_ready {
+        if strict {
+            bail!("no frontend/web dist/ output; run with npm or use frontend=plain_static");
+        }
         merge_frontend_web_static_into_staged_client(root, stage_root)?;
     }
     Ok(())

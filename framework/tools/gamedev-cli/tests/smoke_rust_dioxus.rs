@@ -143,6 +143,7 @@ fn smoke_rust_dioxus_init_test_build() -> Result<()> {
     run_build(BuildArgs {
         project_dir: Some(game_root.clone()),
         out: None,
+        strict: false,
     })?;
 
     let zip_path = game_root.join("dist/game.zip");

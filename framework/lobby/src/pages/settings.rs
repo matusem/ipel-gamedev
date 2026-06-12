@@ -10,6 +10,8 @@ pub fn SettingsPage() -> Element {
     let mut tab = use_signal(|| 0usize);
     let user_id = stored_user_id().unwrap_or_else(|| "—".into());
     let mut profile = use_signal(|| None::<UserProfile>);
+    let mut display_name_edit = use_signal(String::new);
+    let mut saving_name = use_signal(|| false);
     let mut tokens = use_signal(Vec::<PublishTokenSummary>::new);
     let mut loading_tokens = use_signal(|| true);
     let mut creating_token = use_signal(|| false);
@@ -61,7 +63,10 @@ pub fn SettingsPage() -> Element {
             )
             .await
             {
-                profile.set(w.my_profile);
+                profile.set(w.my_profile.clone());
+                if let Some(p) = w.my_profile {
+                    display_name_edit.set(p.display_name);
+                }
             }
             fetch_notifications();
         });
@@ -131,12 +136,29 @@ pub fn SettingsPage() -> Element {
                         }
                         div {
                             label { class: "text-label-caps font-label-caps text-outline uppercase block mb-1", "Display name" }
-                            span { class: "inline-flex items-center gap-2 px-2 py-0.5 rounded-full bg-primary-container/15 text-primary text-label-caps font-label-caps uppercase text-[10px] mb-2", "Preview — coming soon" }
                             input {
                                 class: "input-field",
-                                placeholder: "Coming soon",
-                                disabled: true,
-                                value: profile().map(|p| p.display_name).unwrap_or_default(),
+                                placeholder: "Your display name",
+                                value: "{display_name_edit}",
+                                oninput: move |e| display_name_edit.set(e.value()),
+                            }
+                            PrimaryButton {
+                                label: if saving_name() { "Saving…".to_string() } else { "Save display name".to_string() },
+                                disabled: saving_name() || display_name_edit().trim().is_empty(),
+                                onclick: move |_| {
+                                    let name = display_name_edit().trim().to_string();
+                                    let toast = toast;
+                                    saving_name.set(true);
+                                    spawn(async move {
+                                        let q = "mutation U($n: String!) { updateDisplayName(displayName: $n) { displayName } }";
+                                        let vars = serde_json::json!({ "n": name });
+                                        match graphql_exec::<serde_json::Value>(q, Some(vars)).await {
+                                            Ok(_) => push_toast(toast.show, "Display name updated", ToastKind::Success),
+                                            Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                        }
+                                        saving_name.set(false);
+                                    });
+                                },
                             }
                         }
                     }

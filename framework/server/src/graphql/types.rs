@@ -10,6 +10,20 @@ use crate::game_storefront::AspectRatings;
 use crate::game_upload::ValidationReport;
 use crate::lobby_db::{self, LobbyDetail, LobbyMessage, LobbySeat, LobbySummary};
 #[derive(SimpleObject, Clone)]
+pub struct AuthSessionGql {
+    pub session_token: String,
+    pub user: UserGql,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct KpiTrendGql {
+    pub label: String,
+    pub value: String,
+    pub delta_pct: String,
+    pub up: bool,
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct UserGql {
     pub id: async_graphql::types::ID,
     pub display_name: String,
@@ -66,7 +80,10 @@ pub struct PlatformStatsGql {
     pub active_lobbies: i32,
     pub published_game_types: i32,
     pub finished_games24h: i32,
+    pub active_sessions: i32,
     pub status: String,
+    pub trends: Vec<KpiTrendGql>,
+    pub pro_tip: String,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -142,6 +159,8 @@ pub struct GameStorefrontGql {
     pub patch_notes: Vec<GamePatchNoteGql>,
     pub tags: Vec<String>,
     pub avg_session_mins: i32,
+    pub featured: bool,
+    pub creator_display_name: Option<String>,
     pub aspect_ratings: AspectRatingsGql,
     pub review_count: i32,
     pub can_edit: bool,
@@ -155,6 +174,7 @@ pub struct GameReviewGql {
     pub body: String,
     pub aspects: AspectRatingsGql,
     pub helpful_votes: i32,
+    pub user_has_voted: bool,
     pub created_at: i64,
 }
 
@@ -197,6 +217,11 @@ pub struct GameTypeGql {
     pub about_ui_path: Option<String>,
     pub config_schema_json: Option<String>,
     pub cover_image_url: Option<String>,
+    pub active_players: i32,
+    pub featured: bool,
+    pub tags: Vec<String>,
+    pub creator_display_name: Option<String>,
+    pub avg_session_mins: i32,
 }
 
 #[derive(SimpleObject, Clone)]

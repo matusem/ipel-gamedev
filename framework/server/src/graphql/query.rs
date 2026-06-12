@@ -26,15 +26,36 @@ pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
     async fn game_types(&self, ctx: &Context<'_>) -> Result<Vec<GameTypeGql>> {
+        let pool = ctx.data::<SqlitePool>()?;
         let reg = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
-        let guard = reg
-            .read()
-            .map_err(|_| Error::new("registry lock poisoned"))?;
-        Ok(guard
-            .game_types()
-            .iter()
-            .map(|gt| GameTypeGql {
-                name: gt.manifest.name.clone(),
+        let game_db = ctx.data::<GameDb>()?;
+        let game_types: Vec<crate::game_registry::GameType> = {
+            let guard = reg
+                .read()
+                .map_err(|_| Error::new("registry lock poisoned"))?;
+            guard.game_types().to_vec()
+        };
+        let mut live_players: std::collections::HashMap<String, i32> =
+            std::collections::HashMap::new();
+        for entry in map_game_entries(game_db) {
+            *live_players.entry(entry.game_type).or_insert(0) +=
+                entry.connected_players as i32;
+        }
+        let mut out = Vec::new();
+        for gt in game_types {
+            let name = gt.manifest.name.clone();
+            let (featured, creator, tags, avg_mins) =
+                game_storefront::catalog_meta_for_game(pool, &name)
+                    .await
+                    .unwrap_or((false, None, vec![], 10));
+            let cover = game_storefront::get_storefront(pool, &name)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|sf| sf.screenshots.first().and_then(|s| s.image_url.clone()))
+                .or_else(|| game_storefront::default_cover_image(&name));
+            out.push(GameTypeGql {
+                name: name.clone(),
                 display_name: gt.manifest.display_name.clone(),
                 version: gt.manifest.version.clone(),
                 min_players: gt.manifest.min_players,
@@ -48,9 +69,15 @@ impl QueryRoot {
                     .config_schema
                     .as_ref()
                     .and_then(|v| serde_json::to_string(v).ok()),
-                cover_image_url: crate::game_storefront::default_cover_image(&gt.manifest.name),
-            })
-            .collect())
+                cover_image_url: cover,
+                active_players: *live_players.get(&name).unwrap_or(&0),
+                featured,
+                tags,
+                creator_display_name: creator,
+                avg_session_mins: avg_mins,
+            });
+        }
+        Ok(out)
     }
 
     async fn game_instances(&self, ctx: &Context<'_>) -> Result<Vec<GameInstanceGql>> {
@@ -143,9 +170,11 @@ impl QueryRoot {
         }
     }
 
-    /// Always false until an OAuth provider is integrated.
+    /// False until an OAuth provider is integrated; set OAUTH_ENABLED=true when configured.
     async fn oauth_available(&self) -> bool {
-        false
+        std::env::var("OAUTH_ENABLED")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
     }
 
     async fn is_developer(&self, ctx: &Context<'_>) -> Result<bool> {
@@ -153,7 +182,7 @@ impl QueryRoot {
         let pool = ctx.data::<SqlitePool>()?;
         let open_uploads = std::env::var("OPEN_DEVELOPER_UPLOADS")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true);
+            .unwrap_or(false);
         if open_uploads {
             return Ok(true);
         }
@@ -271,20 +300,33 @@ impl QueryRoot {
     ) -> Result<Vec<DeploymentGql>> {
         let _uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
+        let reg = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
         let lim = limit.unwrap_or(20).clamp(1, 100) as i64;
         let rows = db::list_published_deployments(pool, lim)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
+        let live_versions: std::collections::HashMap<String, String> = reg
+            .read()
+            .map_err(|_| Error::new("registry lock poisoned"))?
+            .game_types()
+            .iter()
+            .map(|gt| (gt.manifest.name.clone(), gt.manifest.version.clone()))
+            .collect();
         Ok(rows
             .into_iter()
             .filter_map(|d| {
                 let deployed_at = d.published_at?;
+                let status = if live_versions.get(&d.game_name).is_some_and(|v| v == &d.version) {
+                    "Live".into()
+                } else {
+                    "Archived".into()
+                };
                 Some(DeploymentGql {
                     id: d.id.to_string().into(),
                     game_name: d.game_name,
                     display_name: d.display_name,
                     version: d.version,
-                    status: "Live".into(),
+                    status,
                     deployed_at,
                 })
             })
@@ -295,6 +337,7 @@ impl QueryRoot {
         let _uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         let reg = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let game_db = ctx.data::<GameDb>()?;
         let lobbies = lobby_db::list_active_lobbies(pool)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
@@ -307,11 +350,38 @@ impl QueryRoot {
         let finished_games24h = db::count_finished_games_since(pool, since)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))? as i32;
-        Ok(PlatformStatsGql {
+        let active_sessions = map_game_entries(game_db)
+            .iter()
+            .map(|g| g.connected_players as i32)
+            .sum();
+        let snapshot = platform_stats::MetricsSnapshot {
             active_lobbies: lobbies.len() as i32,
             published_game_types,
             finished_games24h,
+            active_sessions,
+        };
+        platform_stats::record_metrics_snapshot(pool, &snapshot)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let trends = platform_stats::build_kpi_trends(pool, &snapshot)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .into_iter()
+            .map(|t| super::KpiTrendGql {
+                label: t.label,
+                value: t.value,
+                delta_pct: t.delta_pct,
+                up: t.up,
+            })
+            .collect();
+        Ok(PlatformStatsGql {
+            active_lobbies: snapshot.active_lobbies,
+            published_game_types: snapshot.published_game_types,
+            finished_games24h: snapshot.finished_games24h,
+            active_sessions: snapshot.active_sessions,
             status: "ok".into(),
+            trends,
+            pro_tip: platform_stats::pro_tip_text(),
         })
     }
 
@@ -403,6 +473,8 @@ impl QueryRoot {
                 .collect(),
             tags: sf.tags,
             avg_session_mins: sf.avg_session_mins,
+            featured: sf.featured,
+            creator_display_name: sf.creator_display_name,
             aspect_ratings: map_aspect_ratings(&aspects),
             review_count,
             can_edit,
@@ -416,23 +488,28 @@ impl QueryRoot {
         game_type: String,
         limit: Option<i32>,
     ) -> Result<Vec<GameReviewGql>> {
-        let _uid = require_registered_user(ctx).await?;
+        let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         let lim = limit.unwrap_or(20).clamp(1, 50) as i64;
         let rows = game_storefront::list_reviews(pool, &game_type, lim)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
-        Ok(rows
-            .into_iter()
-            .map(|r| GameReviewGql {
+        let mut out = Vec::new();
+        for r in rows {
+            let voted = game_storefront::user_voted_review(pool, r.id, uid)
+                .await
+                .unwrap_or(false);
+            out.push(GameReviewGql {
                 id: r.id.to_string().into(),
                 display_name: r.display_name,
                 body: r.body,
                 aspects: map_aspect_ratings(&r.aspects),
                 helpful_votes: r.helpful_votes,
+                user_has_voted: voted,
                 created_at: r.created_at,
-            })
-            .collect())
+            });
+        }
+        Ok(out)
     }
 
     async fn game_comments(
