@@ -135,7 +135,7 @@ impl ComponentDb {
 }
 
 fn log_validation_failure(detail: &str) {
-    eprintln!("[logic.wasm validation] {}", detail.replace('\n', " "));
+    tracing::warn!(detail = %detail.replace('\n', " "), "logic.wasm validation failed");
 }
 
 fn wasm_bytes_summary(bytes: &[u8]) -> String {

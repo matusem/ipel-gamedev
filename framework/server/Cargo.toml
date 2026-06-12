@@ -3,6 +3,14 @@ name = "server"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "server"
+path = "src/main.rs"
+
 [dependencies]
 actix-files = "0.6"
 actix-web = "4.11.0"
@@ -29,3 +37,9 @@ wasmtime = { version = "37.0.2", features = ["async"] }
 wasmtime-wasi = "37.0.2"
 zip = "8.5.0"
 tempfile = "3.27.0"
+tracing = "0.1"
+tracing-actix-web = "0.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }

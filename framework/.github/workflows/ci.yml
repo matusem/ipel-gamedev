@@ -26,8 +26,17 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Stage tic_tac_toe test fixture
+        run: bash sdk/scripts/stage-tic-tac-toe-fixture.sh
+
       - name: Test workspace
         run: cargo test --workspace
+
+      - name: CLI Dioxus smoke (optional)
+        run: cargo test -p gamedev-cli smoke_rust_dioxus -- --ignored
+        env:
+          GAMEDEV_CLI_SMOKE: "1"
+        continue-on-error: true
 
   lobby:
     runs-on: ubuntu-latest
@@ -54,6 +63,26 @@ jobs:
       - name: Build lobby WASM
         working-directory: lobby
         run: dx build --platform web
+
+  java-component:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install wasm-tools
+        run: cargo install wasm-tools --locked
+
+      - name: Export and validate Java logic.wasm
+        working-directory: sdk/java/component-template
+        run: |
+          chmod +x gradlew mvnw 2>/dev/null || true
+          ./gradlew exportLogicComponent --no-daemon -q
+          wasm-tools component wit build/out/logic.wasm
 
   game-sdk:
     runs-on: ubuntu-latest

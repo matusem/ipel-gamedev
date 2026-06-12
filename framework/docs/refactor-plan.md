@@ -24,13 +24,14 @@ IPEL GameDev is a single-container multiplayer web game platform: Rust/Actix ser
 | 3 | Home page visual refresh | ✅ Done (Discover hero, trending, quick links) |
 | 3 | New routes: Games, Lobbies, Settings, Profile | ✅ Done (stub data for leaderboard/history/tokens) |
 | 2 | Split `lobby/src/main.rs` → modules | ✅ Done (main.rs ~175 lines; pages + components extracted) |
-| 1 | Split `graphql_api.rs` | ⬜ Pending |
-| 1 | Server integration tests | ⬜ Pending |
+| 1 | Split `graphql_api.rs` | ✅ Done (`server/src/graphql/{mod,types,query,mutation,subscription}.rs`) |
+| 1 | Server integration tests | ✅ Done (8 integration tests across `lobby_flow` + `engagement`) |
+| 1 | Badges + notifications API | ✅ Done (`user_engagement.rs`, wired in lobby header/profile/settings) |
 | 3 | Lobby room + developer pages UI | ✅ Done (design tokens, UI kit, toast, mobile nav) |
 | 3 | Professional UI polish (Phases 1–4) | ✅ Done |
 | 4 | Ship tic-tac-toe in Docker | ✅ Done |
 | 4 | GET /health endpoint | ✅ Done |
-| 4 | Structured logging (`tracing`) | ⬜ Pending |
+| 4 | Structured logging (`tracing`) | ✅ Done (`tracing` + `tracing-actix-web`, `RUST_LOG`) |
 | 5 | Wire client stubs → GraphQL APIs | ✅ Done (tokens, history, leaderboard, deployments, stats, activity, profile) |
 | 5 | Lobby SDK crate / GraphQL codegen | ⬜ Pending |
 
@@ -40,7 +41,7 @@ IPEL GameDev is a single-container multiplayer web game platform: Rust/Actix ser
 
 - [x] CI: `cargo test`, `cargo clippy`, lobby CSS build, game-sdk npm build
 - [x] README: architecture, env vars, local dev
-- [ ] Structured logging — replace `println!` with `tracing`
+- [x] Structured logging — `tracing` + `RUST_LOG` on server hot paths
 - [ ] Add `lobby` to root Cargo workspace; align Rust edition 2024
 - [ ] `.gitignore` hygiene
 
@@ -110,7 +111,6 @@ Screen rollout:
 ## Phase 4 — Platform hardening
 
 - Prebuild tic-tac-toe into Docker `/app/games`
-- E2E smoke test (Playwright)
 - `GET /health` endpoint
 - Backup runbook (SQLite + `/app/games`)
 
@@ -127,7 +127,7 @@ Screen rollout:
 | Leaderboard | ✅ Wired | `gameLeaderboard(gameType)` |
 | Session history | ✅ Wired | `finishedGamesByType(gameType)` |
 | Activity feed | ✅ Wired | `activityFeed(limit)` |
-| Profile stats | ✅ Wired (partial) | `myProfile` — rank/badges still stub |
+| Profile stats | ✅ Wired | `myProfile` + `myBadges` on profile page |
 | API tokens | ✅ Wired | `myPublishTokens`, `createPublishToken`, `revokePublishToken` |
 | Server ping/status | ✅ Wired | `/health` ping + `platformStats.status` |
 | Deployments | ✅ Wired | `publishedDeployments(limit)` |
@@ -135,8 +135,8 @@ Screen rollout:
 | Game covers / tags | ⬜ Stub | `game_media()`, `game_stub()` — extend manifest |
 | Search | ⬜ Client filter | `SearchContext` — full-text query later |
 | KPI trend deltas | ⬜ Stub | `kpi_trends_stub()` — needs metrics history |
-| Badges | ⬜ Stub | `badges_stub()` — achievements API |
-| Notifications | ⬜ Stub | inbox table + subscription |
+| Badges | ✅ Wired | `myBadges` — auto-award from profile stats |
+| Notifications | ✅ Wired (partial) | `myNotifications`, `markNotificationRead`, `markAllNotificationsRead` |
 
 ---
 
@@ -145,8 +145,8 @@ Screen rollout:
 | Metric | Before | Target |
 |--------|--------|--------|
 | `lobby/src/main.rs` lines | ~2,800 | < 200 |
-| `graphql_api.rs` lines | ~1,300 | < 300 |
-| Server integration tests | 0 | ≥ 10 |
+| `graphql_api.rs` lines | ~1,970 | split into 5 modules (largest: `mutation.rs` ~950) |
+| Server integration tests | 0 | 5 lobby-flow tests (+ 2 unit tests) |
 | CI pipeline | none | every PR |
 | Design token coverage | 0% | 100% lobby |
 | Games in Docker image | 0 | ≥ 1 |
@@ -176,11 +176,11 @@ flowchart TB
 
 ---
 
-*Last updated: 2026-06-10 (session 2)*
+*Last updated: 2026-06-10 (session 5 — structured logging; Playwright removed from plan)*
 
 ### Next up
-1. Split `server/src/graphql_api.rs` into query/mutation/subscription modules
-2. Add server integration tests (lobby create → start → guest join)
-3. Achievements/badges schema + notifications inbox
-4. Structured logging (`tracing`) on server hot paths
-5. Playwright E2E smoke tests (Phase 4 platform hardening)
+1. Notification subscription (`myNotificationsUpdated`) for live inbox
+2. Full lobby start integration test (requires built `logic.wasm` for tic-tac-toe)
+3. GraphQL codegen + SDK merge (Phase 5)
+4. KPI trend deltas API (replace `kpi_trends_stub`)
+5. Phase 0: lobby in root workspace, `.gitignore` hygiene

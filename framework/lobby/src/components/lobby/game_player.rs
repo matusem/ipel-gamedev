@@ -9,14 +9,17 @@ pub fn GamePlayer(
     game_id: String,
     player: String,
     return_lobby_id: Option<String>,
+    spectator: bool,
     on_close: EventHandler<()>,
     on_navigate_lobby: EventHandler<String>,
 ) -> Element {
     let ws_base = get_ws_base();
-    let player_q = urlencoding::encode(&player);
-    let iframe_src = format!(
-        "/games/{game_type}/?ws={ws_base}&id={game_id}&player={player_q}"
-    );
+    let iframe_src = if spectator {
+        format!("/games/{game_type}/?ws={ws_base}&id={game_id}&spectator=1")
+    } else {
+        let player_q = urlencoding::encode(&player);
+        format!("/games/{game_type}/?ws={ws_base}&id={game_id}&player={player_q}")
+    };
     let ret = return_lobby_id.clone();
 
     rsx! {
@@ -42,10 +45,15 @@ pub fn GamePlayer(
                     "Back to lobby"
                 }
                 span { class: "text-body-sm text-on-surface-variant",
-                    "Playing "
-                    span { class: "font-semibold text-on-surface", "{game_type}" }
-                    " as "
-                    span { class: "text-tertiary font-mono-code text-xs sm:text-sm", "{player}" }
+                    if spectator {
+                        "Spectating "
+                        span { class: "font-semibold text-on-surface", "{game_type}" }
+                    } else {
+                        "Playing "
+                        span { class: "font-semibold text-on-surface", "{game_type}" }
+                        " as "
+                        span { class: "text-tertiary font-mono-code text-xs sm:text-sm", "{player}" }
+                    }
                 }
             }
             iframe {

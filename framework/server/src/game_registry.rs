@@ -24,6 +24,13 @@ pub struct GameManifest {
     /// JSON Schema for the `config` string posted by the lobby config UI (JSON instance).
     #[serde(default)]
     pub config_schema: Option<Value>,
+    /// When false, lobby hides the spectate action for in-game rooms.
+    #[serde(default = "default_supports_spectators")]
+    pub supports_spectators: bool,
+}
+
+fn default_supports_spectators() -> bool {
+    true
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +53,7 @@ pub struct GameRegistry {
 impl GameRegistry {
     pub fn load(games_dir: &Path, component_db: &ComponentDb) -> Self {
         let game_types = Self::scan_game_types(games_dir, component_db);
-        println!("Loaded {} game type(s)", game_types.len());
+        tracing::info!(count = game_types.len(), "loaded game types");
         Self { game_types }
     }
 
@@ -56,7 +63,7 @@ impl GameRegistry {
         let entries = match std::fs::read_dir(games_dir) {
             Ok(entries) => entries,
             Err(e) => {
-                println!("Warning: could not read GAMES_DIR '{}': {}", games_dir.display(), e);
+                tracing::warn!(games_dir = %games_dir.display(), error = %e, "could not read games directory");
                 return game_types;
             }
         };
@@ -75,12 +82,12 @@ impl GameRegistry {
                 Ok(content) => match serde_json::from_str(&content) {
                     Ok(m) => m,
                     Err(e) => {
-                        println!("Warning: invalid manifest at '{}': {}", manifest_path.display(), e);
+                        tracing::warn!(path = %manifest_path.display(), error = %e, "invalid game manifest");
                         continue;
                     }
                 },
                 Err(e) => {
-                    println!("Warning: no manifest.json in '{}': {}", path.display(), e);
+                    tracing::warn!(path = %path.display(), error = %e, "missing game manifest");
                     continue;
                 }
             };
@@ -88,15 +95,19 @@ impl GameRegistry {
             match std::fs::read(&logic_path) {
                 Ok(wasm_bytes) => {
                     match component_db.insert_components_as_wasm_bytes(&manifest.name, &wasm_bytes) {
-                        Ok(_) => println!("Loaded game '{}' ({})", manifest.display_name, manifest.name),
+                        Ok(_) => tracing::info!(
+                            display_name = %manifest.display_name,
+                            game_type = %manifest.name,
+                            "loaded game component"
+                        ),
                         Err(e) => {
-                            println!("Warning: failed to load WASM for '{}': {}", manifest.name, e);
+                            tracing::warn!(game_type = %manifest.name, error = %e, "failed to load game wasm");
                             continue;
                         }
                     }
                 }
                 Err(e) => {
-                    println!("Warning: no logic.wasm in '{}': {}", path.display(), e);
+                    tracing::warn!(path = %path.display(), error = %e, "missing logic.wasm");
                     continue;
                 }
             }
@@ -145,7 +156,7 @@ impl GameRegistry {
 
     pub fn reload(&mut self, games_dir: &Path, component_db: &ComponentDb) {
         self.game_types = Self::scan_game_types(games_dir, component_db);
-        println!("Reloaded {} game type(s)", self.game_types.len());
+        tracing::info!(count = self.game_types.len(), "reloaded game types");
     }
 
     pub fn game_types(&self) -> &[GameType] {

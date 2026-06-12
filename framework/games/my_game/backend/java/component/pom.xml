@@ -93,7 +93,10 @@
             <configuration>
               <targetDirectory>${project.build.directory}/generated/wasm/teavm-wasm</targetDirectory>
               <targetType>WEBASSEMBLY</targetType>
-              <mainClass>wit.worlds.GameCoreImpl</mainClass>
+              <mainClass>wit.worlds.TeaVmMain</mainClass>
+              <classesToPreserve>
+                wit.worlds.GameCore
+              </classesToPreserve>
               <debugInformationGenerated>true</debugInformationGenerated>
               <minifying>false</minifying>
               <optimizationLevel>SIMPLE</optimizationLevel>

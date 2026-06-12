@@ -103,20 +103,26 @@ public final class GameCore{
     public static final class Game {
         public final byte[] fullState;
         public final ArrayList<PlayerState> playerStates;
+        public final byte[] spectatorState;
         
-        public Game(byte[] fullState, ArrayList<PlayerState> playerStates) {
+        public Game(byte[] fullState, ArrayList<PlayerState> playerStates, byte[] spectatorState) {
             this.fullState = fullState;
             this.playerStates = playerStates;
+            this.spectatorState = spectatorState;
         }
     }
     
     public static final class TakeActionResult {
         public final byte[] newGameFullState;
         public final ArrayList<NewPlayerState> playerStates;
+        public final ArrayList<byte[]> spectatorEvents;
+        public final byte[] spectatorState;
         
-        public TakeActionResult(byte[] newGameFullState, ArrayList<NewPlayerState> playerStates) {
+        public TakeActionResult(byte[] newGameFullState, ArrayList<NewPlayerState> playerStates, ArrayList<byte[]> spectatorEvents, byte[] spectatorState) {
             this.newGameFullState = newGameFullState;
             this.playerStates = playerStates;
+            this.spectatorEvents = spectatorEvents;
+            this.spectatorState = spectatorState;
         }
     }
     
@@ -157,62 +163,67 @@ public final class GameCore{
                 org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 16).putInt(((payload).playerStates).size());
                 org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(address4);
                 
+                org.teavm.interop.Address address5 = Memory.malloc(1 * ((payload).spectatorState).length, 1);
+                Memory.putBytes(address5, (payload).spectatorState, 0, ((payload).spectatorState).length);
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 24).putInt(((payload).spectatorState).length);
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 20).putInt(address5.toInt());
+                
                 break;
             }
             case 1: {
-                GameCoreError payload7 = (result).getErr();
+                GameCoreError payload8 = (result).getErr();
                 org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 0).putByte((byte) (1));
                 
-                switch ((payload7).tag) {
+                switch ((payload8).tag) {
                     case 0: {
-                        String payload10 = (payload7).getDeserialize();
+                        String payload11 = (payload8).getDeserialize();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (0));
-                        byte[] bytes = (payload10).getBytes(StandardCharsets.UTF_8);
+                        byte[] bytes = (payload11).getBytes(StandardCharsets.UTF_8);
                         
-                        org.teavm.interop.Address address11 = Memory.malloc(bytes.length, 1);
-                        Memory.putBytes(address11, bytes, 0, bytes.length);
+                        org.teavm.interop.Address address12 = Memory.malloc(bytes.length, 1);
+                        Memory.putBytes(address12, bytes, 0, bytes.length);
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address11.toInt());
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address12.toInt());
                         
                         break;
                     }
                     case 1: {
-                        String payload14 = (payload7).getSerialize();
+                        String payload15 = (payload8).getSerialize();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (1));
-                        byte[] bytes15 = (payload14).getBytes(StandardCharsets.UTF_8);
+                        byte[] bytes16 = (payload15).getBytes(StandardCharsets.UTF_8);
                         
-                        org.teavm.interop.Address address16 = Memory.malloc(bytes15.length, 1);
-                        Memory.putBytes(address16, bytes15, 0, bytes15.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes15.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address16.toInt());
+                        org.teavm.interop.Address address17 = Memory.malloc(bytes16.length, 1);
+                        Memory.putBytes(address17, bytes16, 0, bytes16.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes16.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address17.toInt());
                         
                         break;
                     }
                     case 2: {
-                        String payload19 = (payload7).getProcessing();
+                        String payload20 = (payload8).getProcessing();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (2));
-                        byte[] bytes20 = (payload19).getBytes(StandardCharsets.UTF_8);
+                        byte[] bytes21 = (payload20).getBytes(StandardCharsets.UTF_8);
                         
-                        org.teavm.interop.Address address21 = Memory.malloc(bytes20.length, 1);
-                        Memory.putBytes(address21, bytes20, 0, bytes20.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes20.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address21.toInt());
+                        org.teavm.interop.Address address22 = Memory.malloc(bytes21.length, 1);
+                        Memory.putBytes(address22, bytes21, 0, bytes21.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes21.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address22.toInt());
                         
                         break;
                     }
                     case 3: {
-                        byte[] payload24 = (payload7).getGameCore();
+                        byte[] payload25 = (payload8).getGameCore();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (3));
                         
-                        org.teavm.interop.Address address25 = Memory.malloc(1 * (payload24).length, 1);
-                        Memory.putBytes(address25, payload24, 0, (payload24).length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt((payload24).length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address25.toInt());
+                        org.teavm.interop.Address address26 = Memory.malloc(1 * (payload25).length, 1);
+                        Memory.putBytes(address26, payload25, 0, (payload25).length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt((payload25).length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address26.toInt());
                         
                         break;
                     }
                     
-                    default: throw new AssertionError("invalid discriminant: " + (payload7).tag);
+                    default: throw new AssertionError("invalid discriminant: " + (payload8).tag);
                 }
                 
                 break;
@@ -238,6 +249,7 @@ public final class GameCore{
                     
                 }
                 Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 12).getInt()), (org.teavm.interop.Address.fromInt((p0) + 16).getInt()) * 16, 4);
+                Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 20).getInt()), (org.teavm.interop.Address.fromInt((p0) + 24).getInt()) * 1, 1);
                 
                 break;
             }
@@ -273,7 +285,7 @@ public final class GameCore{
     }
     
     @Export(name = "take-action")
-    private static int wasmExportTakeAction(int p0, int p1, int p2, int p3, int p4, int p5, int p6, int p7, int p8) {
+    private static int wasmExportTakeAction(int p0, int p1, int p2, int p3, int p4, int p5, int p6, int p7, int p8, int p9, int p10) {
         
         byte[] array = new byte[p2];
         Memory.getBytes(org.teavm.interop.Address.fromInt(p1), array, 0, (array).length);
@@ -298,7 +310,10 @@ public final class GameCore{
         byte[] array4 = new byte[p8];
         Memory.getBytes(org.teavm.interop.Address.fromInt(p7), array4, 0, (array4).length);
         
-        wit.worlds.GameCore.Result<TakeActionResult, GameCoreError> result = wit.worlds.GameCoreImpl.takeAction(SerializationFormat.values()[p0], new Game(array, array2), new wit.worlds.GameCore.Tuple2<byte[], byte[]>(array3, array4));
+        byte[] array5 = new byte[p10];
+        Memory.getBytes(org.teavm.interop.Address.fromInt(p9), array5, 0, (array5).length);
+        
+        wit.worlds.GameCore.Result<TakeActionResult, GameCoreError> result = wit.worlds.GameCoreImpl.takeAction(SerializationFormat.values()[p0], new Game(array, array2, array3), new wit.worlds.GameCore.Tuple2<byte[], byte[]>(array4, array5));
         
         switch ((result).tag) {
             case 0: {
@@ -310,95 +325,114 @@ public final class GameCore{
                 org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(((payload).newGameFullState).length);
                 org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putInt(address.toInt());
                 
-                int address16 = Memory.malloc(((payload).playerStates).size() * 24, 4).toInt();
-                for (int index17 = 0; index17 < ((payload).playerStates).size(); ++index17) {
-                    NewPlayerState element7 = ((payload).playerStates).get(index17);
-                    int base8 = address16 + (index17 * 24);
+                int address17 = Memory.malloc(((payload).playerStates).size() * 24, 4).toInt();
+                for (int index18 = 0; index18 < ((payload).playerStates).size(); ++index18) {
+                    NewPlayerState element8 = ((payload).playerStates).get(index18);
+                    int base9 = address17 + (index18 * 24);
                     
-                    org.teavm.interop.Address address9 = Memory.malloc(1 * (((element7).state).player).length, 1);
-                    Memory.putBytes(address9, ((element7).state).player, 0, (((element7).state).player).length);
-                    org.teavm.interop.Address.fromInt((base8) + 4).putInt((((element7).state).player).length);
-                    org.teavm.interop.Address.fromInt((base8) + 0).putInt(address9.toInt());
+                    org.teavm.interop.Address address10 = Memory.malloc(1 * (((element8).state).player).length, 1);
+                    Memory.putBytes(address10, ((element8).state).player, 0, (((element8).state).player).length);
+                    org.teavm.interop.Address.fromInt((base9) + 4).putInt((((element8).state).player).length);
+                    org.teavm.interop.Address.fromInt((base9) + 0).putInt(address10.toInt());
                     
-                    org.teavm.interop.Address address10 = Memory.malloc(1 * (((element7).state).state).length, 1);
-                    Memory.putBytes(address10, ((element7).state).state, 0, (((element7).state).state).length);
-                    org.teavm.interop.Address.fromInt((base8) + 12).putInt((((element7).state).state).length);
-                    org.teavm.interop.Address.fromInt((base8) + 8).putInt(address10.toInt());
+                    org.teavm.interop.Address address11 = Memory.malloc(1 * (((element8).state).state).length, 1);
+                    Memory.putBytes(address11, ((element8).state).state, 0, (((element8).state).state).length);
+                    org.teavm.interop.Address.fromInt((base9) + 12).putInt((((element8).state).state).length);
+                    org.teavm.interop.Address.fromInt((base9) + 8).putInt(address11.toInt());
                     
-                    int address14 = Memory.malloc(((element7).events).size() * 8, 4).toInt();
-                    for (int index15 = 0; index15 < ((element7).events).size(); ++index15) {
-                        byte[] element11 = ((element7).events).get(index15);
-                        int base12 = address14 + (index15 * 8);
+                    int address15 = Memory.malloc(((element8).events).size() * 8, 4).toInt();
+                    for (int index16 = 0; index16 < ((element8).events).size(); ++index16) {
+                        byte[] element12 = ((element8).events).get(index16);
+                        int base13 = address15 + (index16 * 8);
                         
-                        org.teavm.interop.Address address13 = Memory.malloc(1 * (element11).length, 1);
-                        Memory.putBytes(address13, element11, 0, (element11).length);
-                        org.teavm.interop.Address.fromInt((base12) + 4).putInt((element11).length);
-                        org.teavm.interop.Address.fromInt((base12) + 0).putInt(address13.toInt());
+                        org.teavm.interop.Address address14 = Memory.malloc(1 * (element12).length, 1);
+                        Memory.putBytes(address14, element12, 0, (element12).length);
+                        org.teavm.interop.Address.fromInt((base13) + 4).putInt((element12).length);
+                        org.teavm.interop.Address.fromInt((base13) + 0).putInt(address14.toInt());
                         
                     }
-                    org.teavm.interop.Address.fromInt((base8) + 20).putInt(((element7).events).size());
-                    org.teavm.interop.Address.fromInt((base8) + 16).putInt(address14);
+                    org.teavm.interop.Address.fromInt((base9) + 20).putInt(((element8).events).size());
+                    org.teavm.interop.Address.fromInt((base9) + 16).putInt(address15);
                     
                 }
                 org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 16).putInt(((payload).playerStates).size());
-                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(address16);
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(address17);
+                
+                int address22 = Memory.malloc(((payload).spectatorEvents).size() * 8, 4).toInt();
+                for (int index23 = 0; index23 < ((payload).spectatorEvents).size(); ++index23) {
+                    byte[] element19 = ((payload).spectatorEvents).get(index23);
+                    int base20 = address22 + (index23 * 8);
+                    
+                    org.teavm.interop.Address address21 = Memory.malloc(1 * (element19).length, 1);
+                    Memory.putBytes(address21, element19, 0, (element19).length);
+                    org.teavm.interop.Address.fromInt((base20) + 4).putInt((element19).length);
+                    org.teavm.interop.Address.fromInt((base20) + 0).putInt(address21.toInt());
+                    
+                }
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 24).putInt(((payload).spectatorEvents).size());
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 20).putInt(address22);
+                
+                org.teavm.interop.Address address24 = Memory.malloc(1 * ((payload).spectatorState).length, 1);
+                Memory.putBytes(address24, (payload).spectatorState, 0, ((payload).spectatorState).length);
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 32).putInt(((payload).spectatorState).length);
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 28).putInt(address24.toInt());
                 
                 break;
             }
             case 1: {
-                GameCoreError payload20 = (result).getErr();
+                GameCoreError payload27 = (result).getErr();
                 org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 0).putByte((byte) (1));
                 
-                switch ((payload20).tag) {
+                switch ((payload27).tag) {
                     case 0: {
-                        String payload23 = (payload20).getDeserialize();
+                        String payload30 = (payload27).getDeserialize();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (0));
-                        byte[] bytes = (payload23).getBytes(StandardCharsets.UTF_8);
+                        byte[] bytes = (payload30).getBytes(StandardCharsets.UTF_8);
                         
-                        org.teavm.interop.Address address24 = Memory.malloc(bytes.length, 1);
-                        Memory.putBytes(address24, bytes, 0, bytes.length);
+                        org.teavm.interop.Address address31 = Memory.malloc(bytes.length, 1);
+                        Memory.putBytes(address31, bytes, 0, bytes.length);
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address24.toInt());
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address31.toInt());
                         
                         break;
                     }
                     case 1: {
-                        String payload27 = (payload20).getSerialize();
+                        String payload34 = (payload27).getSerialize();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (1));
-                        byte[] bytes28 = (payload27).getBytes(StandardCharsets.UTF_8);
+                        byte[] bytes35 = (payload34).getBytes(StandardCharsets.UTF_8);
                         
-                        org.teavm.interop.Address address29 = Memory.malloc(bytes28.length, 1);
-                        Memory.putBytes(address29, bytes28, 0, bytes28.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes28.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address29.toInt());
+                        org.teavm.interop.Address address36 = Memory.malloc(bytes35.length, 1);
+                        Memory.putBytes(address36, bytes35, 0, bytes35.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes35.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address36.toInt());
                         
                         break;
                     }
                     case 2: {
-                        String payload32 = (payload20).getProcessing();
+                        String payload39 = (payload27).getProcessing();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (2));
-                        byte[] bytes33 = (payload32).getBytes(StandardCharsets.UTF_8);
+                        byte[] bytes40 = (payload39).getBytes(StandardCharsets.UTF_8);
                         
-                        org.teavm.interop.Address address34 = Memory.malloc(bytes33.length, 1);
-                        Memory.putBytes(address34, bytes33, 0, bytes33.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes33.length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address34.toInt());
+                        org.teavm.interop.Address address41 = Memory.malloc(bytes40.length, 1);
+                        Memory.putBytes(address41, bytes40, 0, bytes40.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes40.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address41.toInt());
                         
                         break;
                     }
                     case 3: {
-                        byte[] payload37 = (payload20).getGameCore();
+                        byte[] payload44 = (payload27).getGameCore();
                         org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (3));
                         
-                        org.teavm.interop.Address address38 = Memory.malloc(1 * (payload37).length, 1);
-                        Memory.putBytes(address38, payload37, 0, (payload37).length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt((payload37).length);
-                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address38.toInt());
+                        org.teavm.interop.Address address45 = Memory.malloc(1 * (payload44).length, 1);
+                        Memory.putBytes(address45, payload44, 0, (payload44).length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt((payload44).length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address45.toInt());
                         
                         break;
                     }
                     
-                    default: throw new AssertionError("invalid discriminant: " + (payload20).tag);
+                    default: throw new AssertionError("invalid discriminant: " + (payload27).tag);
                 }
                 
                 break;
@@ -431,6 +465,14 @@ public final class GameCore{
                     
                 }
                 Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 12).getInt()), (org.teavm.interop.Address.fromInt((p0) + 16).getInt()) * 24, 4);
+                
+                for (int index17 = 0; index17 < (org.teavm.interop.Address.fromInt((p0) + 24).getInt()); ++index17) {
+                    int base14 = (org.teavm.interop.Address.fromInt((p0) + 20).getInt()) + (index17 * 8);
+                    Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((base14) + 0).getInt()), (org.teavm.interop.Address.fromInt((base14) + 4).getInt()) * 1, 1);
+                    
+                }
+                Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 20).getInt()), (org.teavm.interop.Address.fromInt((p0) + 24).getInt()) * 8, 4);
+                Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 28).getInt()), (org.teavm.interop.Address.fromInt((p0) + 32).getInt()) * 1, 1);
                 
                 break;
             }
@@ -466,7 +508,7 @@ public final class GameCore{
     }
     
     @CustomSection(name = "component-type:GameCore")
-    private static final String __WIT_BINDGEN_COMPONENT_TYPE = "0061736d0d0001000019167769742d636f6d706f6e656e742d656e636f64696e67040007f40301410201411a016d02046a736f6e0c6d6573736167652d7061636b03001473657269616c697a6174696f6e2d666f726d617403000001707d0300066275666665720300020171040b646573657269616c697a650173000973657269616c697a650173000a70726f63657373696e670173000967616d652d636f726501030003000f67616d652d636f72652d6572726f72030004030006706c61796572030003016f02060303000d706c617965722d616374696f6e03000701720206706c61796572060573746174650303000c706c617965722d73746174650300090170030172020573746174650a066576656e74730b0300106e65772d706c617965722d737461746503000c01700a0172020a66756c6c2d7374617465030d706c617965722d7374617465730e03000467616d6503000f01700d017202136e65772d67616d652d66756c6c2d7374617465030d706c617965722d7374617465731103001274616b652d616374696f6e2d726573756c74030012016a0110010501400206666f726d61740106636f6e666967030014040004696e69740115016a0113010501400306666f726d6174010467616d65100d706c617965722d616374696f6e08001604000b74616b652d616374696f6e01170400206578616d706c653a67616d652d696e746572666163652f67616d652d636f726504000b0f01000967616d652d636f7265030000004d0970726f647563657273010c70726f6365737365642d6279020d7769742d636f6d706f6e656e7407302e3232372e31167769742d62696e6467656e2d746561766d2d6a61766106302e34302e30";
+    private static final String __WIT_BINDGEN_COMPONENT_TYPE = "0061736d0d0001000019167769742d636f6d706f6e656e742d656e636f64696e67040007a80401410201411a016d02046a736f6e0c6d6573736167652d7061636b03001473657269616c697a6174696f6e2d666f726d617403000001707d0300066275666665720300020171040b646573657269616c697a650173000973657269616c697a650173000a70726f63657373696e670173000967616d652d636f726501030003000f67616d652d636f72652d6572726f72030004030006706c61796572030003016f02060303000d706c617965722d616374696f6e03000701720206706c61796572060573746174650303000c706c617965722d73746174650300090170030172020573746174650a066576656e74730b0300106e65772d706c617965722d737461746503000c01700a0172030a66756c6c2d7374617465030d706c617965722d7374617465730e0f737065637461746f722d73746174650303000467616d6503000f01700d017204136e65772d67616d652d66756c6c2d7374617465030d706c617965722d7374617465731110737065637461746f722d6576656e74730b0f737065637461746f722d73746174650303001274616b652d616374696f6e2d726573756c74030012016a0110010501400206666f726d61740106636f6e666967030014040004696e69740115016a0113010501400306666f726d6174010467616d65100d706c617965722d616374696f6e08001604000b74616b652d616374696f6e01170400206578616d706c653a67616d652d696e746572666163652f67616d652d636f726504000b0f01000967616d652d636f7265030000004d0970726f647563657273010c70726f6365737365642d6279020d7769742d636f6d706f6e656e7407302e3232372e31167769742d62696e6467656e2d746561766d2d6a61766106302e34302e30";
     
     public static final class Tuple2<T0, T1>{
         public final T0 f0;
@@ -515,5 +557,5 @@ public final class GameCore{
         public static final byte OK = 0;
         public static final byte ERR = 1;
     }
-    public static final int RETURN_AREA = Memory.malloc(20, 4).toInt();
+    public static final int RETURN_AREA = Memory.malloc(36, 4).toInt();
 }

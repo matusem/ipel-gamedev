@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 
 use crate::cli::{BackendKind, FrontendKind, InitArgs, JsTemplate};
 use crate::pack::copy_dir_recursive;
-use crate::project::{self, ProjectConfig};
+use crate::project::{self, ProjectConfig, ProjectLayout};
 
 pub fn cmd_init(args: InitArgs) -> Result<()> {
     let root = match args.name {
@@ -93,19 +93,61 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
         }
         FrontendKind::Bevy => {
             if !rust_bevy_flat {
-                scaffold_bevy_frontend(&root, matches!(cfg.backend, BackendKind::Rust))?;
+                scaffold_bevy_frontend(&root, &cfg, matches!(cfg.backend, BackendKind::Rust))?;
             }
         }
         FrontendKind::Dioxus => {
-            scaffold_dioxus_frontend(&root, matches!(cfg.backend, BackendKind::Rust))?;
+            scaffold_dioxus_frontend(&root, &cfg, matches!(cfg.backend, BackendKind::Rust))?;
         }
         _ => {}
     }
 
     fs::write(root.join("README.md"), include_str!("../../templates/README.md"))
         .with_context(|| format!("write {}", root.join("README.md").display()))?;
+    let layout = project::detect_layout(&root);
     println!("Initialized game project at {}", root.display());
+    print_init_next_steps(&root, &cfg, layout);
     Ok(())
+}
+
+fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout) {
+    println!();
+    println!("Next steps:");
+    println!("  gamedev-cli doctor");
+    println!("  gamedev-cli test");
+    println!("  gamedev-cli build");
+    match (cfg.backend, cfg.frontend, layout) {
+        (BackendKind::Rust, FrontendKind::Bevy, ProjectLayout::FlatRustBevy) => {
+            println!();
+            println!("Rust + Bevy (flat workspace):");
+            println!("  cd {}", root.display());
+            println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
+            println!("  rustup target add wasm32-unknown-unknown");
+            println!("  gamedev-cli build   # logic.wasm + Bevy wasm-bindgen → client/");
+        }
+        (_, FrontendKind::Js | FrontendKind::Ts, _) => {
+            println!("  cd frontend/web && npm install && npm run dev   # local UI");
+        }
+        (BackendKind::Rust, FrontendKind::Bevy, ProjectLayout::NestedRust) => {
+            println!();
+            println!("Rust + Bevy (nested workspace):");
+            println!("  cd {}", root.display());
+            println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
+            println!("  rustup target add wasm32-unknown-unknown");
+            println!("  gamedev-cli build   # logic.wasm + Bevy wasm-bindgen → client/");
+        }
+        (BackendKind::Rust, FrontendKind::Dioxus, ProjectLayout::NestedRust) => {
+            println!();
+            println!("Rust + Dioxus (nested workspace):");
+            println!("  cd {}", root.display());
+            println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
+            println!("  rustup target add wasm32-unknown-unknown");
+            println!("  gamedev-cli build   # logic.wasm + Dioxus wasm-bindgen → client/");
+        }
+        _ => {}
+    }
+    println!("  gamedev-cli login --user-id <uuid>");
+    println!("  gamedev-cli deploy --draft-only");
 }
 
 fn scaffold_rust_bevy_flat(root: &Path, cfg: &ProjectConfig) -> Result<()> {
@@ -342,6 +384,7 @@ fn scaffold_js_frontend(root: &Path, template: JsTemplate, use_ts: bool, rust_ba
         JsTemplate::PlainStatic => include_str!("../../templates/frontend/plain_static_package.json"),
         JsTemplate::ReactVite => include_str!("../../templates/frontend/react_vite_package.json"),
     };
+    let pkg = wire_sdk_js_package_json(pkg, &web, root)?;
     fs::write(web.join("package.json"), pkg)?;
 
     let (entry_path, entry_source) = if use_ts {
@@ -366,22 +409,55 @@ export type Move = { Place: { index: number } };
     Ok(())
 }
 
-fn scaffold_bevy_frontend(root: &Path, in_workspace: bool) -> Result<()> {
+fn scaffold_bevy_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool) -> Result<()> {
     let bevy = root.join("frontend").join("bevy");
     fs::create_dir_all(bevy.join("src"))?;
-    let mut cargo = include_str!("../../templates/frontend/bevy_Cargo.toml").to_string();
+    let crate_name = cfg.name.replace('-', "_");
+    let shared_types_name = format!("{crate_name}_shared_types");
+    let sdk_line = project::find_framework_sdk_rust_crate(root, "bevy")
+        .and_then(|sdk| project::relative_path_from(&bevy, &sdk))
+        .map(|rel| format!("framework-sdk-bevy = {{ path = \"{rel}\" }}"))
+        .unwrap_or_default();
+    let mut cargo = include_str!("../../templates/frontend/bevy_Cargo.toml")
+        .replace("__SHARED_TYPES_NAME__", &shared_types_name)
+        .replace("__SDK_BEVY_LINE__", &sdk_line)
+        .to_string();
     if !in_workspace {
         cargo.push_str("\n[workspace]\n");
     }
     fs::write(bevy.join("Cargo.toml"), cargo)?;
     fs::write(bevy.join("src/main.rs"), include_str!("../../templates/frontend/bevy_main.rs"))?;
+
+    let dot_cargo = root.join(".cargo");
+    fs::create_dir_all(&dot_cargo)
+        .with_context(|| format!("create {}", dot_cargo.display()))?;
+    fs::write(
+        dot_cargo.join("config.toml"),
+        include_str!("../../templates/misc/dot_cargo_config_wasm.toml"),
+    )
+    .with_context(|| format!("write {}", dot_cargo.join("config.toml").display()))?;
+
+    let bevy_js = "bevy_frontend.js";
+    let index_bevy = include_str!("../../templates/client/index_bevy.html")
+        .replace("__BEVY_WASM_BINDGEN_JS__", bevy_js);
+    fs::write(root.join("client/index.html"), index_bevy)
+        .with_context(|| format!("write {}", root.join("client/index.html").display()))?;
     Ok(())
 }
 
-fn scaffold_dioxus_frontend(root: &Path, in_workspace: bool) -> Result<()> {
+fn scaffold_dioxus_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool) -> Result<()> {
     let dioxus = root.join("frontend").join("dioxus");
     fs::create_dir_all(dioxus.join("src"))?;
-    let mut cargo = include_str!("../../templates/frontend/dioxus_Cargo.toml").to_string();
+    let crate_name = cfg.name.replace('-', "_");
+    let shared_types_name = format!("{crate_name}_shared_types");
+    let sdk_line = project::find_framework_sdk_rust_crate(root, "dioxus")
+        .and_then(|sdk| project::relative_path_from(&dioxus, &sdk))
+        .map(|rel| format!("framework-sdk-dioxus = {{ path = \"{rel}\" }}"))
+        .unwrap_or_default();
+    let mut cargo = include_str!("../../templates/frontend/dioxus_Cargo.toml")
+        .replace("__SHARED_TYPES_NAME__", &shared_types_name)
+        .replace("__SDK_DIOXUS_LINE__", &sdk_line)
+        .to_string();
     if !in_workspace {
         cargo.push_str("\n[workspace]\n");
     }
@@ -390,5 +466,43 @@ fn scaffold_dioxus_frontend(root: &Path, in_workspace: bool) -> Result<()> {
         dioxus.join("src/main.rs"),
         include_str!("../../templates/frontend/dioxus_main.rs"),
     )?;
+
+    let dot_cargo = root.join(".cargo");
+    fs::create_dir_all(&dot_cargo)
+        .with_context(|| format!("create {}", dot_cargo.display()))?;
+    fs::write(
+        dot_cargo.join("config.toml"),
+        include_str!("../../templates/misc/dot_cargo_config_wasm.toml"),
+    )
+    .with_context(|| format!("write {}", dot_cargo.join("config.toml").display()))?;
+
+    let dioxus_js = "frontend_dioxus.js";
+    let index_dioxus = include_str!("../../templates/client/index_dioxus.html")
+        .replace("__DIOXUS_WASM_BINDGEN_JS__", dioxus_js);
+    fs::write(root.join("client/index.html"), index_dioxus)
+        .with_context(|| format!("write {}", root.join("client/index.html").display()))?;
     Ok(())
+}
+
+fn wire_sdk_js_package_json(pkg: &str, web_dir: &Path, root: &Path) -> Result<String> {
+    let Some(sdk_js) = project::find_framework_sdk_js(root) else {
+        return Ok(pkg.to_string());
+    };
+    let Some(rel) = project::relative_path_from(web_dir, &sdk_js) else {
+        return Ok(pkg.to_string());
+    };
+    let mut value: serde_json::Value = serde_json::from_str(pkg)?;
+    let obj = value
+        .as_object_mut()
+        .context("package.json template must be a JSON object")?;
+    let deps = obj
+        .entry("dependencies")
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(deps_obj) = deps.as_object_mut() {
+        deps_obj.insert(
+            "@framework/sdk-js".to_string(),
+            serde_json::json!({ "version": format!("file:{rel}") }),
+        );
+    }
+    Ok(serde_json::to_string_pretty(&value)?)
 }

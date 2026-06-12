@@ -31,6 +31,7 @@ pub fn encode_game_snapshot(game: &Game) -> Result<String, serde_json::Error> {
     let v = json!({
         "full_state": B64.encode(&game.full_state),
         "player_states": player_states,
+        "spectator_state": B64.encode(&game.spectator_state),
     });
     serde_json::to_string(&v)
 }
@@ -92,6 +93,26 @@ impl PlayerChannel {
         action: Buffer,
     ) -> Result<(), async_channel::SendError<(Player, Buffer)>> {
         self.action_sender.send((self.player.clone(), action)).await
+    }
+
+    pub async fn receive_event(&self) -> Result<Buffer, async_channel::RecvError> {
+        self.event_receiver.recv().await
+    }
+}
+
+#[derive(Clone)]
+pub struct SpectatorChannel {
+    event_sender: async_channel::Sender<Buffer>,
+    event_receiver: async_channel::Receiver<Buffer>,
+}
+
+impl SpectatorChannel {
+    pub fn new() -> Self {
+        let (event_sender, event_receiver) = async_channel::unbounded();
+        Self {
+            event_sender,
+            event_receiver,
+        }
     }
 
     pub async fn receive_event(&self) -> Result<Buffer, async_channel::RecvError> {
@@ -176,6 +197,7 @@ fn float_scores_from_outcomes(outcomes: &HashMap<String, String>) -> HashMap<Str
 pub struct GameInstance {
     game_type: String,
     players: Arc<RwLock<HashMap<Uuid, PlayerChannel>>>,
+    spectators: Arc<RwLock<HashMap<Uuid, SpectatorChannel>>>,
     game: Arc<RwLock<Game>>,
     game_core: Arc<RwLock<GameCore>>,
     action_sender: async_channel::Sender<(Player, Buffer)>,
@@ -189,6 +211,7 @@ impl GameInstance {
         Self {
             game_type,
             players: Arc::new(RwLock::new(HashMap::new())),
+            spectators: Arc::new(RwLock::new(HashMap::new())),
             game: Arc::new(RwLock::new(game)),
             game_core: Arc::new(RwLock::new(game_core)),
             action_sender,
@@ -231,10 +254,10 @@ impl GameInstance {
             let mut game = self.game.write().unwrap();
             let players = self.players.write().unwrap();
 
-            println!(
-                "Player {:?} wants to play action: {:?}",
-                player,
-                str::from_utf8(&action).unwrap()
+            tracing::debug!(
+                player = ?player,
+                action = str::from_utf8(&action).unwrap_or("<invalid utf8>"),
+                "game action received"
             );
 
             let result = game_core
@@ -251,13 +274,9 @@ impl GameInstance {
                 .map_err(|wasm_error| GameInstanceError::Wasm(wasm_error))
                 .flatten();
 
-            println!(
-                "Action {:?}",
-                if let Ok(_) = &result {
-                    "succeeded"
-                } else {
-                    "failed"
-                }
+            tracing::debug!(
+                outcome = if result.is_ok() { "succeeded" } else { "failed" },
+                "game action processed"
             );
 
             match result {
@@ -265,6 +284,8 @@ impl GameInstance {
                     let TakeActionResult {
                         new_game_full_state,
                         player_states,
+                        spectator_events,
+                        spectator_state,
                     } = take_action_result;
 
                     let new_game = Game {
@@ -273,19 +294,20 @@ impl GameInstance {
                             .iter()
                             .map(|new_player_state| new_player_state.state.clone())
                             .collect(),
+                        spectator_state,
                     };
 
                     let snap = encode_game_snapshot(&new_game)
                         .unwrap_or_else(|e| {
-                            eprintln!("encode_game_snapshot: {e}");
+                            tracing::error!(error = %e, "encode_game_snapshot failed");
                             "{}".to_string()
                         });
 
                     *game = new_game;
 
-                    println!(
-                        "Action successful, sending events to {} connected players",
-                        players.len()
+                    tracing::debug!(
+                        connected_players = players.len(),
+                        "broadcasting player events"
                     );
 
                     for (_other_player_id, other_player_channel) in players.iter() {
@@ -297,16 +319,24 @@ impl GameInstance {
                             .map(|new_player_state| new_player_state.events.clone())
                             .unwrap_or_default();
 
-                        println!(
-                            "Sending {} events to player {:?}",
-                            player_events.len(),
-                            other_player_channel.player
+                        tracing::trace!(
+                            event_count = player_events.len(),
+                            player = ?other_player_channel.player,
+                            "sending player events"
                         );
 
                         for event in player_events {
                             let _ = other_player_channel.event_sender.send(event).await;
                         }
                     }
+
+                    let spectators = self.spectators.read().unwrap();
+                    for event in spectator_events {
+                        for (_id, spectator_channel) in spectators.iter() {
+                            let _ = spectator_channel.event_sender.send(event.clone()).await;
+                        }
+                    }
+                    drop(spectators);
 
                     drop(players);
                     drop(game);
@@ -357,7 +387,7 @@ impl GameInstance {
                                 )
                                 .await
                             {
-                                eprintln!("finish_game_record failed: {e}");
+                                tracing::error!(game_id = %p.game_id, error = %e, "finish_game_record failed");
                             }
                             if let Some(lid) = p.lobby_id {
                                 let _ = lobby_db::mark_lobby_finished(&p.pool, lid).await;
@@ -371,12 +401,12 @@ impl GameInstance {
 
                     if let Some(p) = persistence.as_ref() {
                         if let Err(e) = p.store.update_game_state(p.game_id, &snap).await {
-                            eprintln!("game_instances state persist failed: {e}");
+                            tracing::error!(game_id = %p.game_id, error = %e, "game state persist failed");
                         }
                     }
                 }
                 Err(e) => {
-                    println!("Error applying action for player {:?}: {}", player, e);
+                    tracing::warn!(player = ?player, error = %e, "game action failed");
                 }
             }
         }
@@ -419,6 +449,32 @@ impl GameInstance {
             .map_err(|_| GameInstanceError::LockFailed)?
             .remove(&player_id);
 
+        Ok(())
+    }
+
+    pub fn register_spectator(
+        &mut self,
+    ) -> Result<(Buffer, SpectatorChannel, Uuid), GameInstanceError> {
+        let uuid = Uuid::new_v4();
+        let spectator_state = self
+            .game
+            .read()
+            .map_err(|_| GameInstanceError::LockFailed)?
+            .spectator_state
+            .clone();
+        let channel = SpectatorChannel::new();
+        self.spectators
+            .write()
+            .map_err(|_| GameInstanceError::LockFailed)?
+            .insert(uuid, channel.clone());
+        Ok((spectator_state, channel, uuid))
+    }
+
+    pub fn unregister_spectator(&mut self, spectator_id: Uuid) -> Result<(), GameInstanceError> {
+        self.spectators
+            .write()
+            .map_err(|_| GameInstanceError::LockFailed)?
+            .remove(&spectator_id);
         Ok(())
     }
 }

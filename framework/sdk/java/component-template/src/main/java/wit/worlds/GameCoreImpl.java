@@ -1,5 +1,6 @@
 package wit.worlds;
 
+import dev.ipel.gamedev.game.ActionApplicationResult;
 import dev.ipel.gamedev.game.GameOrchestrator;
 import dev.ipel.gamedev.game.GameSerde;
 import dev.ipel.gamedev.game.InitBundle;
@@ -7,7 +8,9 @@ import dev.ipel.gamedev.game.PlayerAction;
 import dev.ipel.gamedev.game.PlayerEvent;
 import dev.ipel.gamedev.game.PlayerStateEntry;
 import dev.ipel.gamedev.game.SerializationFormat;
+import dev.ipel.gamedev.game.SpectatorEvent;
 import dev.ipel.gamedev.tictactoe.Config;
+import dev.ipel.gamedev.tictactoe.GameOutcome;
 import dev.ipel.gamedev.tictactoe.MoveEvent;
 import dev.ipel.gamedev.tictactoe.Player;
 import dev.ipel.gamedev.tictactoe.PlayerOutcome;
@@ -29,17 +32,12 @@ public final class GameCoreImpl {
 
     private GameCoreImpl() {}
 
-
-
-    /** TeaVM entry (unused at runtime; keeps whole module reachable for wasm-gc compile). */
-    public static void main(String[] args) {}
-
     private static SerializationFormat mapFormat(GameCore.SerializationFormat f) {
         return SerializationFormat.values()[f.ordinal()];
     }
 
     private static GameSerde serde(GameCore.SerializationFormat f) {
-        return dev.ipel.gamedev.game.GameSerdeFactory.forFormat(mapFormat(f));
+        return TeaVmGameSerde.forFormat(mapFormat(f));
     }
 
     private static Config parseConfig(GameSerde serde, byte[] configBytes) throws GameSerde.SerializationException {
@@ -67,7 +65,9 @@ public final class GameCoreImpl {
                 byte[] ps = serde.serialize(e.state());
                 rows.add(new GameCore.PlayerState(p, ps));
             }
-            return GameCore.Result.ok(new GameCore.Game(full, rows));
+            State spectator = RULES.initSpectatorState(cfg);
+            byte[] spectatorState = serde.serialize(spectator);
+            return GameCore.Result.ok(new GameCore.Game(full, rows, spectatorState));
         } catch (GameSerde.SerializationException e) {
             return GameCore.Result.err(GameCore.GameCoreError.deserialize(e.getMessage()));
         } catch (RuntimeException e) {
@@ -90,6 +90,7 @@ public final class GameCoreImpl {
                 cps.state = full.state.clone();
                 entries.add(new PlayerStateEntry<>(p, cps));
             }
+            State spectatorState = serde.deserialize(State.class, game.spectatorState);
             Player actor = serde.deserialize(Player.class, playerAction.f0);
             Position move = serde.deserialize(Position.class, playerAction.f1);
             PlayerAction<Player, Position> pa = new PlayerAction<>(actor, move);
@@ -99,15 +100,17 @@ public final class GameCoreImpl {
                             .map(PlayerStateEntry::state)
                             .findFirst()
                             .orElseThrow(() -> new IllegalStateException("Player state not found"));
-            var applied = GameOrchestrator.applyAction(full, pa, acting, RULES);
+            var applied =
+                    GameOrchestrator.applyActionFull(full, pa, acting, RULES, RULES);
             if (!applied.isOk()) {
                 return GameCore.Result.err(GameCore.GameCoreError.gameCore(applied.err()));
             }
-            Map<Player, List<PlayerEvent<MoveEvent, PlayerOutcome>>> result = applied.ok();
+            ActionApplicationResult<Player, MoveEvent, PlayerOutcome, MoveEvent, GameOutcome> result =
+                    applied.ok();
             byte[] newFull = serde.serialize(FullStateWire.from(full));
             ArrayList<GameCore.NewPlayerState> outRows = new ArrayList<>();
             for (PlayerStateEntry<Player, TttPlayerState> e : entries) {
-                List<PlayerEvent<MoveEvent, PlayerOutcome>> evs = result.get(e.player());
+                List<PlayerEvent<MoveEvent, PlayerOutcome>> evs = result.playerEvents().get(e.player());
                 TttPlayerState ps = e.state();
                 for (PlayerEvent<MoveEvent, PlayerOutcome> pe : evs) {
                     if (pe instanceof PlayerEvent.Visible<MoveEvent, PlayerOutcome> v) {
@@ -116,13 +119,24 @@ public final class GameCoreImpl {
                 }
                 ArrayList<byte[]> evBytes = new ArrayList<>();
                 for (PlayerEvent<MoveEvent, PlayerOutcome> pe : evs) {
-                    evBytes.add(EventEncoding.playerEvent(serde.jacksonMapper(), pe));
+                    evBytes.add(EventEncoding.playerEvent(pe));
                 }
                 byte[] pEnc = serde.serialize(e.player());
                 byte[] psEnc = serde.serialize(ps);
                 outRows.add(new GameCore.NewPlayerState(new GameCore.PlayerState(pEnc, psEnc), evBytes));
             }
-            return GameCore.Result.ok(new GameCore.TakeActionResult(newFull, outRows));
+            for (SpectatorEvent<MoveEvent, GameOutcome> se : result.spectatorEvents()) {
+                if (se instanceof SpectatorEvent.Visible<MoveEvent, GameOutcome> v) {
+                    RULES.applySpectatorEvent(spectatorState, v.event());
+                }
+            }
+            ArrayList<byte[]> spectatorEventBytes = new ArrayList<>();
+            for (SpectatorEvent<MoveEvent, GameOutcome> se : result.spectatorEvents()) {
+                spectatorEventBytes.add(EventEncoding.spectatorEvent(se));
+            }
+            byte[] spectatorOut = serde.serialize(spectatorState);
+            return GameCore.Result.ok(
+                    new GameCore.TakeActionResult(newFull, outRows, spectatorEventBytes, spectatorOut));
         } catch (GameSerde.SerializationException e) {
             return GameCore.Result.err(GameCore.GameCoreError.deserialize(e.getMessage()));
         } catch (RuntimeException e) {

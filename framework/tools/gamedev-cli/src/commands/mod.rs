@@ -10,10 +10,11 @@ use crate::api;
 use crate::auth::{self, AuthEntry};
 use crate::build;
 use crate::cli::{
-    BackendKind, BuildArgs, DeployArgs, DraftsArgs, DraftsSubcommands, LoginArgs, ManifestArgs,
-    ManifestSubcommands, TestArgs,
+    BackendKind, BuildArgs, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands, LoginArgs,
+    ManifestArgs, ManifestSubcommands, TestArgs, ValidateArgs,
 };
-use crate::project::{load_config, resolve_java_backend_dir, resolve_logic_dir};
+use crate::doctor::{self, has_failures, print_report};
+use crate::project::{game_cargo_command, load_config, resolve_java_backend_dir, resolve_test_dir};
 
 pub fn run_init(args: crate::cli::InitArgs) -> Result<()> {
     crate::scaffold::cmd_init(args)
@@ -135,15 +136,64 @@ pub fn run_manifest(args: ManifestArgs) -> Result<()> {
     Ok(())
 }
 
+pub fn run_doctor(args: DoctorArgs) -> Result<()> {
+    let root = args.project_dir.unwrap_or(std::env::current_dir()?);
+    let checks = doctor::run(&root)?;
+    print_report(&checks);
+    if has_failures(&checks) {
+        bail!("doctor found blocking issues");
+    }
+    Ok(())
+}
+
+pub fn run_validate(args: ValidateArgs) -> Result<()> {
+    let root = args.project_dir.unwrap_or(std::env::current_dir()?);
+    let logic = if let Some(p) = args.logic_wasm {
+        p
+    } else {
+        let zip = root.join("dist/game.zip");
+        if zip.is_file() {
+            let f = fs::File::open(&zip)?;
+            let mut archive = zip::ZipArchive::new(f)?;
+            let mut entry = archive.by_name("logic.wasm")?;
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes)?;
+            let tmp = tempfile::NamedTempFile::new()?;
+            fs::write(tmp.path(), &bytes)?;
+            tmp.path().to_path_buf()
+        } else {
+            let cfg = load_config(&root)?;
+            match cfg.backend {
+                BackendKind::Rust => {
+                    root.join("backend/rust/component/target/wasm32-wasip2/release/logic.wasm")
+                }
+                BackendKind::Java => {
+                    resolve_java_backend_dir(&root).join("component/build/out/logic.wasm")
+                }
+                _ => bail!("validate: specify --logic-wasm or run gamedev build first"),
+            }
+        }
+    };
+    if !logic.is_file() {
+        bail!(
+            "logic.wasm not found at {}. Run `gamedev build` or pass --logic-wasm",
+            logic.display()
+        );
+    }
+    build::validate_logic_component_file(&logic)?;
+    println!("OK: {} is a valid WebAssembly component", logic.display());
+    Ok(())
+}
+
 pub fn run_test(args: TestArgs) -> Result<()> {
     let root = args.project_dir.unwrap_or(std::env::current_dir()?);
     let cfg = load_config(&root)?;
     match cfg.backend {
         BackendKind::Rust => {
-            let logic_dir = resolve_logic_dir(&root);
-            let status = Command::new("cargo")
+            let test_dir = resolve_test_dir(&root);
+            let status = game_cargo_command()
                 .arg("test")
-                .current_dir(logic_dir)
+                .current_dir(&test_dir)
                 .status()?;
             if !status.success() {
                 bail!("tests failed");
@@ -158,9 +208,9 @@ pub fn run_test(args: TestArgs) -> Result<()> {
             let gradlew = java_dir.join("gradlew.bat");
             let gradlew_unix = java_dir.join("gradlew");
             let mut cmd = if gradlew.is_file() {
-                Command::new(gradlew)
+                Command::new(&gradlew)
             } else if gradlew_unix.is_file() {
-                Command::new(gradlew_unix)
+                Command::new(&gradlew_unix)
             } else {
                 Command::new("gradle")
             };
@@ -174,6 +224,36 @@ pub fn run_test(args: TestArgs) -> Result<()> {
                 .context("failed to run Gradle for Java backend")?;
             if !status.success() {
                 bail!("Java compile failed");
+            }
+            let export_task = if java_dir.join("component/build.gradle.kts").is_file() {
+                ":component:exportLogicComponent"
+            } else {
+                "exportLogicComponent"
+            };
+            let mut export_cmd = if gradlew.is_file() {
+                Command::new(&gradlew)
+            } else if gradlew_unix.is_file() {
+                Command::new(&gradlew_unix)
+            } else {
+                Command::new("gradle")
+            };
+            export_cmd.current_dir(&java_dir);
+            let export = export_cmd
+                .arg(export_task)
+                .args(["--no-daemon", "-q"])
+                .status()
+                .context("failed to export Java logic component")?;
+            if !export.success() {
+                bail!("Java exportLogicComponent failed");
+            }
+            let logic_out = java_dir.join("component/build/out/logic.wasm");
+            let logic_out = if logic_out.is_file() {
+                logic_out
+            } else {
+                java_dir.join("build/out/logic.wasm")
+            };
+            if logic_out.is_file() {
+                build::validate_logic_component_file(&logic_out)?;
             }
         }
         _ => bail!("backend test adapter not implemented yet"),

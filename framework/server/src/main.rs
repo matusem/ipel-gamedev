@@ -1,13 +1,15 @@
-use crate::game_db::GameDb;
-use crate::game_registry::GameRegistry;
-use crate::graphql_api::{AppSchema, DraftsDir, GamesDir, RequestUser};
-use crate::lobby_db::LobbyListNotify;
-use crate::{component_db::ComponentDb, game_core::Buffer};
+use server::game_core::Buffer;
+use server::game_db::GameDb;
+use server::game_registry::GameRegistry;
+use server::graphql::{AppSchema, DraftsDir, GamesDir, RequestUser};
+use server::lobby_db::LobbyListNotify;
+use server::{component_db::ComponentDb, db};
 use actix_files::{Files, NamedFile};
 use actix_web::dev::{fn_service, ServiceRequest, ServiceResponse};
 use actix_web::guard;
 use actix_web::http::header;
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Result as ActixResult, rt};
+use tracing_actix_web::TracingLogger;
 use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
 use async_graphql::Data as GqlData;
 use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
@@ -17,29 +19,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::sync::broadcast;
 use uuid::Uuid;
-
-mod component_db;
-mod db;
-mod game_db;
-mod game_registry;
-mod game_service;
-mod graphql_api;
-mod auth_password;
-mod lobby_db;
-mod game_upload;
-mod platform_stats;
-mod game_storefront;
-
-mod game_core {
-    use wasmtime::component::bindgen;
-
-    bindgen!({
-        path: "../test.wit",
-        world: "game-core",
-        imports: { default: async | trappable },
-        exports: { default: async }
-    });
-}
 
 fn player_identity_from_query_param(param: &str) -> Buffer {
     let t = param.trim();
@@ -53,9 +32,14 @@ fn player_identity_from_query_param(param: &str) -> Buffer {
         .unwrap_or_else(|_| t.as_bytes().to_vec())
 }
 
+enum GameWsMode {
+    Player(Buffer),
+    Spectator,
+}
+
 struct GameRequestParams {
     game_id: Uuid,
-    player: Buffer,
+    mode: GameWsMode,
 }
 
 impl GameRequestParams {
@@ -74,13 +58,28 @@ impl GameRequestParams {
         let game_id = Uuid::parse_str(game_id)
             .map_err(|_| actix_web::error::ErrorBadRequest("Invalid 'id' format"))?;
 
+        let spectator = params
+            .get("spectator")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        if spectator {
+            return Ok(Self {
+                game_id,
+                mode: GameWsMode::Spectator,
+            });
+        }
+
         let player = params
             .get("player")
             .ok_or_else(|| actix_web::error::ErrorBadRequest("Missing 'player' parameter"))?;
 
         let player: Buffer = player_identity_from_query_param(player);
 
-        Ok(Self { game_id, player })
+        Ok(Self {
+            game_id,
+            mode: GameWsMode::Player(player),
+        })
     }
 }
 
@@ -90,75 +89,148 @@ async fn game(
     game_db: web::Data<GameDb>,
 ) -> Result<HttpResponse, Error> {
     let params = GameRequestParams::parse(&request)?;
-    let GameRequestParams { game_id, player } = params;
+    let GameRequestParams { game_id, mode } = params;
 
     let (response, mut session, stream) = actix_ws::handle(&request, body)?;
     let mut stream = stream
         .aggregate_continuations()
         .max_continuation_size(2_usize.pow(20));
 
-    let player_state = {
-        let mut game_instance = game_db.get_game(game_id)?;
-        game_instance.register_player(player.clone())?
-    };
+    match mode {
+        GameWsMode::Player(player) => {
+            let player_state = {
+                let mut game_instance = game_db.get_game(game_id)?;
+                game_instance.register_player(player.clone())?
+            };
 
-    game_db.notify_game_list_changed();
+            game_db.notify_game_list_changed();
 
-    println!("Sending initial state to player");
-    let initial = String::from_utf8_lossy(&player_state.0);
-    let _ = session.text(initial.as_ref()).await;
+            let initial = String::from_utf8_lossy(&player_state.0);
+            let _ = session.text(initial.as_ref()).await;
 
-    println!("Player registered with ID: {:?}", player_state.2);
+            tracing::info!(
+                game_id = %game_id,
+                player_id = ?player_state.2,
+                "game websocket player registered"
+            );
 
-    rt::spawn(async move {
-        loop {
-            tokio::select! {
-                player_event = player_state.1.receive_event() => {
-                    match player_event {
-                        Ok(buffer) => {
-                            let out = String::from_utf8_lossy(&buffer);
-                            let _ = session.text(out.as_ref()).await;
+            rt::spawn(async move {
+                loop {
+                    tokio::select! {
+                        player_event = player_state.1.receive_event() => {
+                            match player_event {
+                                Ok(buffer) => {
+                                    let out = String::from_utf8_lossy(&buffer);
+                                    let _ = session.text(out.as_ref()).await;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(game_id = %game_id, error = ?e, "game websocket event channel closed");
+                                    break;
+                                }
+                            }
                         }
-                        Err(e) => {
-                            eprintln!("game WS event channel closed: {e:?}");
-                            break;
+                        msg = stream.recv() => {
+                            match msg {
+                                Some(Ok(msg)) => match msg {
+                                    actix_ws::AggregatedMessage::Text(text) => {
+                                        let _ = player_state
+                                            .1
+                                            .send_action(text.into_bytes().to_vec())
+                                            .await;
+                                    }
+                                    actix_ws::AggregatedMessage::Binary(bin) => {
+                                        let _ = player_state.1.send_action(bin.to_vec()).await;
+                                    }
+                                    actix_ws::AggregatedMessage::Ping(bytes) => {
+                                        let _ = session.pong(&bytes).await;
+                                    }
+                                    actix_ws::AggregatedMessage::Pong(_) => {}
+                                    actix_ws::AggregatedMessage::Close(_) => break,
+                                },
+                                Some(Err(e)) => {
+                                    tracing::warn!(game_id = %game_id, error = ?e, "game websocket protocol error");
+                                    break;
+                                }
+                                None => break,
+                            }
                         }
                     }
                 }
-                msg = stream.recv() => {
-                    match msg {
-                        Some(Ok(msg)) => match msg {
-                            actix_ws::AggregatedMessage::Text(text) => {
-                                let _ = player_state
-                                    .1
-                                    .send_action(text.into_bytes().to_vec())
-                                    .await;
-                            }
-                            actix_ws::AggregatedMessage::Binary(bin) => {
-                                let _ = player_state.1.send_action(bin.to_vec()).await;
-                            }
-                            actix_ws::AggregatedMessage::Ping(bytes) => {
-                                let _ = session.pong(&bytes).await;
-                            }
-                            actix_ws::AggregatedMessage::Pong(_) => {}
-                            actix_ws::AggregatedMessage::Close(_) => break,
-                        },
-                        Some(Err(e)) => {
-                            eprintln!("game WS protocol error: {e:?}");
-                            break;
-                        }
-                        None => break,
-                    }
-                }
-            }
+
+                let _ = session.close(None).await;
+
+                let mut game_instance = game_db.get_game(game_id).unwrap();
+                let _ = game_instance.unregister_player(player_state.2);
+                game_db.notify_game_list_changed();
+            });
         }
+        GameWsMode::Spectator => {
+            let spectator_state = {
+                let mut game_instance = game_db.get_game(game_id)?;
+                game_instance.register_spectator()?
+            };
 
-        let _ = session.close(None).await;
+            game_db.notify_game_list_changed();
 
-        let mut game_instance = game_db.get_game(game_id).unwrap();
-        let _ = game_instance.unregister_player(player_state.2);
-        game_db.notify_game_list_changed();
-    });
+            let initial = String::from_utf8_lossy(&spectator_state.0);
+            let _ = session.text(initial.as_ref()).await;
+
+            tracing::info!(
+                game_id = %game_id,
+                spectator_id = ?spectator_state.2,
+                "game websocket spectator registered"
+            );
+
+            rt::spawn(async move {
+                let channel = spectator_state.1;
+                let spectator_id = spectator_state.2;
+
+                loop {
+                    tokio::select! {
+                        spectator_event = channel.receive_event() => {
+                            match spectator_event {
+                                Ok(buffer) => {
+                                    let out = String::from_utf8_lossy(&buffer);
+                                    let _ = session.text(out.as_ref()).await;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(game_id = %game_id, error = ?e, "spectator websocket event channel closed");
+                                    break;
+                                }
+                            }
+                        }
+                        msg = stream.recv() => {
+                            match msg {
+                                Some(Ok(msg)) => match msg {
+                                    actix_ws::AggregatedMessage::Ping(bytes) => {
+                                        let _ = session.pong(&bytes).await;
+                                    }
+                                    actix_ws::AggregatedMessage::Pong(_) => {}
+                                    actix_ws::AggregatedMessage::Close(_) => break,
+                                    actix_ws::AggregatedMessage::Text(_)
+                                    | actix_ws::AggregatedMessage::Binary(_) => {
+                                        tracing::debug!(game_id = %game_id, "ignoring inbound action on spectator socket");
+                                    }
+                                },
+                                Some(Err(e)) => {
+                                    tracing::warn!(game_id = %game_id, error = ?e, "spectator websocket protocol error");
+                                    break;
+                                }
+                                None => break,
+                            }
+                        }
+                    }
+                }
+
+                let _ = session.close(None).await;
+
+                if let Ok(mut game_instance) = game_db.get_game(game_id) {
+                    let _ = game_instance.unregister_spectator(spectator_id);
+                    game_db.notify_game_list_changed();
+                }
+            });
+        }
+    }
 
     Ok(response)
 }
@@ -349,6 +421,7 @@ fn cleanup_old_drafts(drafts_dir: &std::path::Path) {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    server::logging::init();
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -365,9 +438,9 @@ async fn main() -> std::io::Result<()> {
         .expect("database connect/migrate");
 
     let games_dir = PathBuf::from(std::env::var("GAMES_DIR").unwrap_or_else(|_| "./games".into()));
-    let drafts_dir = PathBuf::from(std::env::var("DRAFTS_DIR").unwrap_or_else(|_| "./game-drafts".into()));
+    let drafts_dir = PathBuf::from(std::env::var("DRAFTS_DIR").unwrap_or_else(|_| "./drafts".into()));
     let lobby_dir = PathBuf::from(std::env::var("LOBBY_DIR").unwrap_or_else(|_| "./lobby".into()));
-    let lib_dir = PathBuf::from(std::env::var("LIB_DIR").unwrap_or_else(|_| "./lib".into()));
+    let lib_dir = PathBuf::from(std::env::var("LIB_DIR").unwrap_or_else(|_| "./client-lib".into()));
     let _ = std::fs::create_dir_all(&drafts_dir);
     cleanup_old_drafts(&drafts_dir);
 
@@ -385,12 +458,13 @@ async fn main() -> std::io::Result<()> {
     let pool_data = web::Data::new(pool.clone());
     let games_dir_data = web::Data::new(GamesDir(games_dir.clone()));
     let drafts_dir_data = web::Data::new(DraftsDir(drafts_dir.clone()));
-    let schema = web::Data::new(graphql_api::build_schema());
+    let schema = web::Data::new(server::graphql::build_schema());
 
-    println!("Starting server on {}:{}", host, port);
+    tracing::info!(%host, port, "starting server");
 
     HttpServer::new(move || {
         let mut app = App::new()
+            .wrap(TracingLogger::default())
             .app_data(game_db.clone())
             .app_data(component_db.clone())
             .app_data(registry.clone())

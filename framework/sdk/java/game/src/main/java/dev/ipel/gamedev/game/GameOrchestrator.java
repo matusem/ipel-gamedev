@@ -122,6 +122,60 @@ public final class GameOrchestrator {
                                     GameResultT,
                                     PlayerResultT>
                             rules) {
+        var full = applyActionFull(gameState, playerAction, actingPlayerState, rules, null);
+        if (!full.isOk()) {
+            return Either.err(full.err());
+        }
+        return Either.ok(full.ok().playerEvents());
+    }
+
+    public static <
+                    ConfigT,
+                    StateT,
+                    ActionT,
+                    PlayerT,
+                    PlayerStateT,
+                    GameEventT,
+                    PlayerViewEventT,
+                    GameResultT,
+                    PlayerResultT,
+                    SpectatorViewEventT,
+                    SpectatorResultT,
+                    SpectatorStateT>
+            Either<
+                            ActionApplicationResult<
+                                    PlayerT,
+                                    PlayerViewEventT,
+                                    PlayerResultT,
+                                    SpectatorViewEventT,
+                                    SpectatorResultT>,
+                            byte[]>
+                    applyActionFull(
+                    FullState<ConfigT, StateT, ActionT, PlayerT> gameState,
+                    PlayerAction<PlayerT, ActionT> playerAction,
+                    PlayerStateT actingPlayerState,
+                    GameRules<
+                                    ConfigT,
+                                    StateT,
+                                    ActionT,
+                                    PlayerT,
+                                    PlayerStateT,
+                                    GameEventT,
+                                    PlayerViewEventT,
+                                    GameResultT,
+                                    PlayerResultT>
+                            rules,
+                    SpectatorCapable<
+                                    ConfigT,
+                                    StateT,
+                                    ActionT,
+                                    PlayerT,
+                                    GameEventT,
+                                    GameResultT,
+                                    SpectatorViewEventT,
+                                    SpectatorResultT,
+                                    SpectatorStateT>
+                            spectator) {
         Optional<byte[]> deny = rules.canTakeAction(actingPlayerState, playerAction.action);
         if (deny.isPresent()) {
             return Either.err(deny.get());
@@ -135,7 +189,13 @@ public final class GameOrchestrator {
         }
         Optional<GameResultT> over = rules.checkGameOver(gameState.state);
         over.ifPresent(r -> gameEvents.add(new Event.GameOver<>(r)));
-        return Either.ok(buildPlayerEventsMap(gameState, gameEvents, rules));
+        Map<PlayerT, List<PlayerEvent<PlayerViewEventT, PlayerResultT>>> playerEvents =
+                buildPlayerEventsMap(gameState, gameEvents, rules);
+        List<SpectatorEvent<SpectatorViewEventT, SpectatorResultT>> spectatorEvents =
+                spectator == null
+                        ? List.of()
+                        : spectator.buildSpectatorEventsMap(gameState, gameEvents);
+        return Either.ok(new ActionApplicationResult<>(playerEvents, spectatorEvents));
     }
 
     public static final class Either<ValueT, ErrorT> {

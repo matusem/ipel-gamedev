@@ -86,7 +86,25 @@ dx serve --platform web
 
 Open `http://127.0.0.1:8080`. GraphQL, game WebSocket, and `/games` assets are proxied to `:8081` via `lobby/Dioxus.toml`.
 
+Shortcut scripts (from `framework/`):
+
+```powershell
+.\scripts\dev-backend.ps1   # terminal 1 — Actix on :8081
+.\scripts\dev-lobby.ps1     # terminal 2 — Dioxus lobby on :8080
+```
+
 **Production / single-process:** build the lobby (`dx build --platform web --release`) and point `LOBBY_DIR` at the output; then only `cargo run -p server` on `:8080` is needed.
+
+### Troubleshooting `dx serve`
+
+| Symptom | Cause | Fix |
+|---------|--------|-----|
+| `Failed to find binary package` from `framework/` | Root workspace has no Dioxus app | `cd lobby` or run `.\scripts\dev-lobby.ps1` |
+| `mio` / `wasm32` errors while in `server/` | `server` is **not** a web UI crate | Use `cargo run -p server`; use `dx serve` only in **`lobby/`** |
+| `dx and dioxus versions are incompatible` in `server/` | `dx` picked the wrong crate; workspace SDK still uses Dioxus 0.6 | Ignore when in `server/`; run `dx` from **`lobby/`** (Dioxus 0.7.3) |
+| API calls fail on `:8080` | Backend not on `:8081` | Start `dev-backend.ps1` before `dev-lobby.ps1` |
+
+Install CLI to match the lobby crate: `cargo install dioxus-cli --locked --version 0.7.3` (or latest 0.7.x).
 
 ## Environment variables
 
@@ -97,10 +115,11 @@ Open `http://127.0.0.1:8080`. GraphQL, game WebSocket, and `/games` assets are p
 | `DATABASE_URL` | `sqlite:./data/app.db` | SQLite connection |
 | `GAMES_DIR` | `./games` | Published game bundles |
 | `DRAFTS_DIR` | `./drafts` | Developer upload staging |
-| `LOBBY_DIR` | `./lobby/dist` | Built lobby static files |
-| `LIB_DIR` | `./client-lib` | Legacy game-sdk IIFE |
+| `LOBBY_DIR` | `./lobby` | Built lobby static files (Docker copies `dx build` output here) |
+| `LIB_DIR` | `./client-lib` | Legacy game-sdk IIFE (`packages/game-sdk` build output) |
 | `OPEN_DEVELOPER_UPLOADS` | `true` | Allow developer uploads without role |
 | `DRAFT_RETENTION_SECS` | `604800` | Draft cleanup TTL |
+| `RUST_LOG` | `info,server=info` | Log filter (`debug` for game actions: `RUST_LOG=server::game_db=debug`) |
 
 ## Docker
 

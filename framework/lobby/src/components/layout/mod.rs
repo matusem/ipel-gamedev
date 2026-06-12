@@ -1,9 +1,8 @@
 use crate::api::{graphql_exec, stored_user_id};
 use crate::components::ui::{push_toast, Avatar, AvatarSize, Icon, SearchInput, ToastKind, use_toast};
-use crate::models::RegisterUserRow;
 use crate::api::graphql_post;
-use crate::models::PlatformStats;
-use crate::stub::{demo_mode, notifications_stub};
+use crate::models::{format_relative_time, NotificationGql, PlatformStats, RegisterUserRow};
+use crate::stub::demo_mode;
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -48,6 +47,26 @@ pub fn AppShell(children: Element) -> Element {
     let toast = use_toast();
     let mut server_status = use_signal(|| "System Stable".to_string());
     let mut ping_ms = use_signal(|| 18u32);
+    let mut notifications = use_signal(Vec::<NotificationGql>::new);
+    let mut unread_count = use_signal(|| 0i32);
+
+    let reload_notifications = move || {
+        spawn(async move {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct N { my_notifications: Vec<NotificationGql> }
+            if let Ok(n) = graphql_post::<N>(
+                "query { myNotifications(limit: 12) { id title body kind unread createdAt } }",
+            )
+            .await
+            {
+                let unread = n.my_notifications.iter().filter(|x| x.unread).count() as i32;
+                notifications.set(n.my_notifications);
+                unread_count.set(unread);
+            }
+        });
+    };
+
     use_hook(move || {
         spawn(async move {
             let start = js_sys::Date::now();
@@ -69,9 +88,27 @@ pub fn AppShell(children: Element) -> Element {
                 };
                 server_status.set(label.to_string());
             }
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct U { unread_notification_count: i32 }
+            if stored_user_id().is_some() {
+                if let Ok(u) = graphql_post::<U>("query { unreadNotificationCount }").await {
+                    unread_count.set(u.unread_notification_count);
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct N { my_notifications: Vec<NotificationGql> }
+                if let Ok(n) = graphql_post::<N>(
+                    "query { myNotifications(limit: 12) { id title body kind unread createdAt } }",
+                )
+                .await
+                {
+                    notifications.set(n.my_notifications);
+                }
+            }
         });
     });
-    let unread = notifications_stub().iter().filter(|n| n.unread).count();
+    let unread = unread_count() as usize;
     let user_id = stored_user_id().unwrap_or_else(|| "Player".into());
     let show_fab = active == NavTab::Discover;
     let demo_on = demo_mode::is_demo_mode();
@@ -130,7 +167,13 @@ pub fn AppShell(children: Element) -> Element {
                         button {
                             class: "{HEADER_ICON_BTN}",
                             aria_label: "Notifications",
-                            onclick: move |_| notif_open.set(!notif_open()),
+                            onclick: move |_| {
+                                let open = !notif_open();
+                                notif_open.set(open);
+                                if open {
+                                    reload_notifications();
+                                }
+                            },
                             Icon { name: "notifications", filled: false }
                         }
                         if unread > 0 {
@@ -138,15 +181,34 @@ pub fn AppShell(children: Element) -> Element {
                         }
                         if notif_open() {
                             div { class: "absolute right-0 top-full mt-2 w-72 rounded-xl border border-outline-variant/40 bg-surface-container shadow-raised z-50",
-                                div { class: "px-4 py-3 border-b border-outline-variant/30 flex justify-between items-center",
+                                div { class: "px-4 py-3 border-b border-outline-variant/30 flex justify-between items-center gap-2",
                                     p { class: "font-manrope font-semibold text-on-surface", "Notifications" }
-                                    button {
-                                        class: "text-label-caps font-label-caps text-outline hover:text-on-surface",
-                                        onclick: move |_| notif_open.set(false),
-                                        "Close"
+                                    div { class: "flex items-center gap-2",
+                                        if unread > 0 {
+                                            button {
+                                                class: "text-label-caps font-label-caps text-primary hover:text-on-surface",
+                                                onclick: move |_| {
+                                                    spawn(async move {
+                                                        let _ = graphql_post::<serde_json::Value>(
+                                                            "mutation { markAllNotificationsRead }"
+                                                        ).await;
+                                                        reload_notifications();
+                                                    });
+                                                },
+                                                "Mark all read"
+                                            }
+                                        }
+                                        button {
+                                            class: "text-label-caps font-label-caps text-outline hover:text-on-surface",
+                                            onclick: move |_| notif_open.set(false),
+                                            "Close"
+                                        }
                                     }
                                 }
-                                for item in notifications_stub() {
+                                if notifications().is_empty() {
+                                    p { class: "px-4 py-6 text-body-sm text-outline text-center", "No notifications yet." }
+                                }
+                                for item in notifications() {
                                     div {
                                         class: if item.unread {
                                             "px-4 py-3 border-b border-outline-variant/20 bg-primary-container/5"
@@ -155,7 +217,9 @@ pub fn AppShell(children: Element) -> Element {
                                         },
                                         p { class: "text-body-sm font-medium text-on-surface", "{item.title}" }
                                         p { class: "text-body-sm text-on-surface-variant mt-0.5", "{item.body}" }
-                                        p { class: "text-label-caps font-label-caps text-outline mt-1", "{item.time}" }
+                                        p { class: "text-label-caps font-label-caps text-outline mt-1",
+                                            "{format_relative_time(item.created_at)}"
+                                        }
                                     }
                                 }
                             }

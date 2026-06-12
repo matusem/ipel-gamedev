@@ -14,12 +14,13 @@ use anyhow::{Context, Result, bail};
 use crate::cli::{BackendKind, BuildArgs, FrontendKind};
 use crate::pack::{copy_dir_recursive, create_zip};
 use crate::project::{
-    find_built_component_wasm, find_built_java_logic_wasm, load_config, read_package_name, resolve_bevy_dir,
-    resolve_component_dir, resolve_java_backend_dir,
+    cargo_target_roots, find_built_component_wasm, find_built_java_logic_wasm, game_cargo_command, load_config,
+    read_package_name, resolve_bevy_dir, resolve_component_dir, resolve_dioxus_dir, resolve_java_backend_dir,
 };
 
 pub use validate::{
-    REQUIRED_CLIENT_HTML, validate_logic_wasm_file, validate_staged_pack,
+    REQUIRED_CLIENT_HTML, validate_logic_component_file, validate_logic_wasm_file,
+    validate_staged_pack,
 };
 
 pub fn run(args: BuildArgs) -> Result<()> {
@@ -29,7 +30,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
     fs::copy(root.join("manifest.json"), stage.path().join("manifest.json"))?;
     match cfg.backend {
         BackendKind::Rust => {
-            let cargo_ok = Command::new("cargo")
+            let cargo_ok = game_cargo_command()
                 .arg("--version")
                 .status()
                 .map(|s| s.success())
@@ -38,7 +39,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
                 bail!("cargo is not available on PATH; install Rust toolchain first");
             }
             let component_dir = resolve_component_dir(&root);
-            let status = Command::new("cargo")
+            let status = game_cargo_command()
                 .arg("component")
                 .arg("build")
                 .arg("--release")
@@ -74,9 +75,9 @@ pub fn run(args: BuildArgs) -> Result<()> {
             };
             cmd.current_dir(&java_dir);
             let export_task = if java_dir.join("component").join("build.gradle.kts").is_file() {
-                ":component:exportLogicWasm"
+                ":component:exportLogicComponent"
             } else {
-                "exportLogicWasm"
+                "exportLogicComponent"
             };
             let status = cmd
                 .arg(export_task)
@@ -84,17 +85,11 @@ pub fn run(args: BuildArgs) -> Result<()> {
                 .status()
                 .context("failed to run Gradle for Java logic.wasm; install JDK 21+ and Gradle (see sdk/java/README.md)")?;
             if !status.success() {
-                bail!("Java Gradle build failed (`:component:exportLogicWasm`)");
+                bail!("Java Gradle build failed (`{export_task}`); ensure wasm-tools is on PATH");
             }
             let built = find_built_java_logic_wasm(&java_dir)?;
             fs::copy(built, stage.path().join("logic.wasm"))
                 .context("failed to copy Java logic.wasm into stage")?;
-            eprintln!(
-                "warning: Java/Fermyon TeaVM `logic.wasm` is a core Wasm module (WASI + TeaVM runtime \
-                 imports), not a WebAssembly Component from `cargo component build`. Upload validation \
-                 may reject it. Use `backend = \"rust\"` for deployable component zips, or see \
-                 sdk/java/README.md (Deployment / server upload)."
-            );
         }
         _ => bail!("backend adapter not implemented yet"),
     }
@@ -111,8 +106,18 @@ pub fn run(args: BuildArgs) -> Result<()> {
         }
     }
 
-    if matches!(cfg.frontend, FrontendKind::Bevy) {
-        build_bevy_wasm_bindgen_client(&root, &client_src)?;
+    match cfg.frontend {
+        FrontendKind::Bevy => {
+            let bevy_dir = resolve_bevy_dir(&root)
+                .context("frontend=bevy but no bevy/Cargo.toml (or frontend/bevy/Cargo.toml)")?;
+            build_wasm_bindgen_frontend(&root, &client_src, &bevy_dir, "Bevy")?;
+        }
+        FrontendKind::Dioxus => {
+            let dioxus_dir = resolve_dioxus_dir(&root)
+                .context("frontend=dioxus but frontend/dioxus/Cargo.toml missing")?;
+            build_wasm_bindgen_frontend(&root, &client_src, &dioxus_dir, "Dioxus")?;
+        }
+        _ => {}
     }
 
     copy_dir_recursive(&client_src, &stage.path().join("client"))?;
@@ -136,13 +141,16 @@ pub fn run(args: BuildArgs) -> Result<()> {
     Ok(())
 }
 
-fn build_bevy_wasm_bindgen_client(root: &Path, client_dir: &Path) -> Result<()> {
-    let bevy_dir = resolve_bevy_dir(root)
-        .context("frontend=bevy but no bevy/Cargo.toml (or frontend/bevy/Cargo.toml)")?;
-    let pkg = read_package_name(&bevy_dir.join("Cargo.toml"))?;
+fn build_wasm_bindgen_frontend(
+    root: &Path,
+    client_dir: &Path,
+    frontend_dir: &Path,
+    label: &str,
+) -> Result<()> {
+    let pkg = read_package_name(&frontend_dir.join("Cargo.toml"))?;
     ensure_wasm_browser_tooling(root)?;
 
-    let status = Command::new("cargo")
+    let status = game_cargo_command()
         .arg("build")
         .arg("--release")
         .arg("--target")
@@ -151,21 +159,28 @@ fn build_bevy_wasm_bindgen_client(root: &Path, client_dir: &Path) -> Result<()> 
         .arg(&pkg)
         .current_dir(root)
         .status()
-        .context("failed to spawn `cargo build` for Bevy wasm")?;
+        .with_context(|| format!("failed to spawn `cargo build` for {label} wasm"))?;
     if !status.success() {
-        bail!("Bevy wasm build failed (`cargo build --release --target wasm32-unknown-unknown -p {pkg}`).");
+        bail!(
+            "{label} wasm build failed (`cargo build --release --target wasm32-unknown-unknown -p {pkg}`)."
+        );
     }
 
     let stem = pkg.replace('-', "_");
-    let wasm_path = root
-        .join("target/wasm32-unknown-unknown/release")
-        .join(format!("{stem}.wasm"));
-    if !wasm_path.is_file() {
-        bail!(
-            "expected wasm at {} — check Bevy package/binary name matches [package].name (hyphens become underscores in the file name)",
-            wasm_path.display()
-        );
-    }
+    let wasm_name = format!("{stem}.wasm");
+    let wasm_path = cargo_target_roots(root, frontend_dir)
+        .into_iter()
+        .map(|base| {
+            base.join("wasm32-unknown-unknown")
+                .join("release")
+                .join(&wasm_name)
+        })
+        .find(|p| p.is_file())
+        .with_context(|| {
+            format!(
+                "expected {wasm_name} under a cargo target dir — check {label} package/binary name matches [package].name (hyphens become underscores in the file name)"
+            )
+        })?;
 
     let wg_ok = Command::new("wasm-bindgen")
         .arg(&wasm_path)

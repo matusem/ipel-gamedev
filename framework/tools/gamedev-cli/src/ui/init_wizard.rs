@@ -43,17 +43,12 @@ impl InitWizardState {
         }
     }
 
-    fn backends() -> [&'static str; 4] {
-        [
-            "rust",
-            "java",
-            "csharp (not supported yet)",
-            "cpp (not supported yet)",
-        ]
+    fn backends() -> [&'static str; 2] {
+        ["rust", "java"]
     }
 
-    fn backends_disabled() -> [bool; 4] {
-        [false, false, true, true]
+    fn backends_disabled() -> [bool; 2] {
+        [false, false]
     }
 
     fn frontends() -> [&'static str; 4] {
@@ -134,10 +129,6 @@ impl InitWizardState {
                 self.backend_span(0, &backends, &backends_disabled),
                 Span::styled(" | ", Style::default().fg(Color::LightRed)),
                 self.backend_span(1, &backends, &backends_disabled),
-                Span::styled(" | ", Style::default().fg(Color::LightRed)),
-                self.backend_span(2, &backends, &backends_disabled),
-                Span::styled(" | ", Style::default().fg(Color::LightRed)),
-                self.backend_span(3, &backends, &backends_disabled),
             ]),
             Line::from(vec![
                 Span::styled(
@@ -231,8 +222,8 @@ impl InitWizardState {
     fn backend_span<'a>(
         &'a self,
         idx: usize,
-        backends: &[&'a str; 4],
-        disabled: &[bool; 4],
+        backends: &[&'a str],
+        disabled: &[bool],
     ) -> Span<'a> {
         let style = if self.backend_idx == idx {
             if disabled[idx] {
@@ -264,7 +255,7 @@ impl InitWizardState {
         Span::styled(templates[idx], style)
     }
 
-    fn next_enabled(disabled: &[bool; 4], current: usize) -> usize {
+    fn next_enabled(disabled: &[bool], current: usize) -> usize {
         let len = disabled.len();
         for step in 1..=len {
             let i = (current + step) % len;
@@ -275,7 +266,7 @@ impl InitWizardState {
         current
     }
 
-    fn prev_enabled(disabled: &[bool; 4], current: usize) -> usize {
+    fn prev_enabled(disabled: &[bool], current: usize) -> usize {
         let len = disabled.len();
         for step in 1..=len {
             let i = (current + len - step) % len;
@@ -317,9 +308,7 @@ impl InitWizardState {
     fn build_init_args(&self) -> Option<InitWizardOutcome> {
         let backend = match self.backend_idx {
             0 => Some(BackendKind::Rust),
-            1 => Some(BackendKind::Java),
-            2 => Some(BackendKind::Csharp),
-            _ => Some(BackendKind::Cpp),
+            _ => Some(BackendKind::Java),
         };
         let frontend = match self.frontend_idx {
             0 => Some(FrontendKind::Js),

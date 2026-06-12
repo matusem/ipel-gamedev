@@ -1,9 +1,12 @@
-use game::{Action, Config as GameConfig, GameCore, PlayerState as GamePlayerState};
+use game::{
+    Action, Config as GameConfig, GameCore, PlayerState as GamePlayerState,
+    SpectatorState as GameSpectatorState,
+};
 use serde::{Deserialize, Serialize};
 use shared_types::{Move, Player};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HelloGame;
+pub struct TicTacToe;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config;
@@ -16,7 +19,7 @@ pub struct State {
     pub winner: Option<Player>,
 }
 
-impl Action<HelloGame> for Move {
+impl Action<TicTacToe> for Move {
     type Error = String;
 }
 
@@ -25,7 +28,7 @@ pub struct PlayerState {
     pub player: Player,
 }
 
-impl GamePlayerState<HelloGame> for PlayerState {
+impl GamePlayerState<TicTacToe> for PlayerState {
     fn init(_config: &Config, player: Player) -> Self {
         Self { player }
     }
@@ -38,10 +41,21 @@ impl GamePlayerState<HelloGame> for PlayerState {
         Ok(())
     }
 
-    fn apply_event(&mut self, _event: &()) {}
+    fn apply_event(&mut self, _event: &String) {}
 }
 
-impl GameConfig<HelloGame> for Config {
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SpectatorStateStub;
+
+impl GameSpectatorState<TicTacToe> for SpectatorStateStub {
+    fn init(_config: &Config) -> Self {
+        Self
+    }
+
+    fn apply_event(&mut self, _event: &String) {}
+}
+
+impl GameConfig<TicTacToe> for Config {
     type ValidationError = String;
 
     fn validate(&self) -> Result<(), Self::ValidationError> {
@@ -53,7 +67,7 @@ impl GameConfig<HelloGame> for Config {
     }
 }
 
-impl GameCore for HelloGame {
+impl GameCore for TicTacToe {
     type Config = Config;
     type State = State;
     type Action = Move;
@@ -63,6 +77,9 @@ impl GameCore for HelloGame {
     type PlayerEvent = String;
     type Result = String;
     type PlayerResult = String;
+    type SpectatorEvent = String;
+    type SpectatorResult = String;
+    type SpectatorState = SpectatorStateStub;
 
     fn init(_config: &Self::Config) -> Self::State {
         State {
@@ -127,6 +144,17 @@ impl GameCore for HelloGame {
         result.clone()
     }
 
+    fn derive_spectator_event(
+        _state: &Self::State,
+        _event: &game::InGameEvent<Self>,
+    ) -> Option<Self::SpectatorEvent> {
+        Some("spectator-event".to_string())
+    }
+
+    fn derive_spectator_result(_state: &Self::State, result: &Self::Result) -> Self::SpectatorResult {
+        result.clone()
+    }
+
     fn scores_at_end(result: &Self::Result) -> Vec<(Self::Player, f64)> {
         match result.as_str() {
             "Player1 wins" => vec![(Player::Player1, 1.0), (Player::Player2, 0.0)],
@@ -164,9 +192,9 @@ mod tests {
     #[test]
     fn game_initializes_and_can_place_mark() {
         let config = Config;
-        let mut state = HelloGame::init(&config);
+        let mut state = TicTacToe::init(&config);
         assert_eq!(state.moves_made, 0);
-        HelloGame::take_action(
+        TicTacToe::take_action(
             &mut state,
             game::PlayerAction {
                 player: Player::Player1,
@@ -180,7 +208,7 @@ mod tests {
     #[test]
     fn game_detects_winner() {
         let config = Config;
-        let mut state = HelloGame::init(&config);
+        let mut state = TicTacToe::init(&config);
         let seq = [
             (Player::Player1, 0),
             (Player::Player2, 3),
@@ -189,7 +217,7 @@ mod tests {
             (Player::Player1, 2),
         ];
         for (player, idx) in seq {
-            HelloGame::take_action(
+            TicTacToe::take_action(
                 &mut state,
                 game::PlayerAction {
                     player,
@@ -197,6 +225,6 @@ mod tests {
                 },
             );
         }
-        assert_eq!(HelloGame::check_game_over(&state), Some("Player1 wins".to_string()));
+        assert_eq!(TicTacToe::check_game_over(&state), Some("Player1 wins".to_string()));
     }
 }

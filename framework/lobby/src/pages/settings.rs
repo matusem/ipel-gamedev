@@ -1,7 +1,7 @@
 use crate::api::{graphql_exec, graphql_post, stored_user_id};
 use crate::components::ui::*;
-use crate::models::{format_relative_time, PublishTokenSummary, UserProfile};
-use crate::stub::{demo_mode, notifications_stub};
+use crate::models::{format_relative_time, NotificationGql, PublishTokenSummary, UserProfile};
+use crate::stub::demo_mode;
 use dioxus::prelude::*;
 use serde::Deserialize;
 
@@ -13,7 +13,23 @@ pub fn SettingsPage() -> Element {
     let mut tokens = use_signal(Vec::<PublishTokenSummary>::new);
     let mut loading_tokens = use_signal(|| true);
     let mut creating_token = use_signal(|| false);
+    let mut notifications = use_signal(Vec::<NotificationGql>::new);
     let toast = use_toast();
+
+    let fetch_notifications = move || {
+        spawn(async move {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct N { my_notifications: Vec<NotificationGql> }
+            if let Ok(n) = graphql_post::<N>(
+                "query { myNotifications(limit: 20) { id title body kind unread createdAt } }",
+            )
+            .await
+            {
+                notifications.set(n.my_notifications);
+            }
+        });
+    };
 
     let fetch_tokens = move || {
         spawn(async move {
@@ -47,6 +63,7 @@ pub fn SettingsPage() -> Element {
             {
                 profile.set(w.my_profile);
             }
+            fetch_notifications();
         });
     });
 
@@ -226,13 +243,41 @@ pub fn SettingsPage() -> Element {
                 },
                 _ => rsx! {
                     div { class: "section-card space-y-4",
-                        p { class: "text-label-caps font-label-caps text-outline uppercase", "Notification preferences (preview)" }
-                        for item in notifications_stub() {
-                            label { class: "flex items-start gap-3 py-2 border-b border-outline-variant/20",
-                                input { r#type: "checkbox", checked: item.unread, disabled: true }
-                                div {
+                        div { class: "flex items-center justify-between gap-3",
+                            p { class: "text-label-caps font-label-caps text-outline uppercase", "Inbox" }
+                            if notifications().iter().any(|n| n.unread) {
+                                GhostButton {
+                                    label: "Mark all read".to_string(),
+                                    onclick: move |_| {
+                                        spawn(async move {
+                                            let _ = graphql_post::<serde_json::Value>(
+                                                "mutation { markAllNotificationsRead }"
+                                            ).await;
+                                            fetch_notifications();
+                                        });
+                                    },
+                                }
+                            }
+                        }
+                        if notifications().is_empty() {
+                            p { class: "text-body-sm text-outline", "No notifications yet." }
+                        }
+                        for item in notifications() {
+                            div {
+                                class: if item.unread {
+                                    "flex items-start gap-3 py-3 border-b border-outline-variant/20 bg-primary-container/5 rounded-lg px-2"
+                                } else {
+                                    "flex items-start gap-3 py-3 border-b border-outline-variant/20 px-2"
+                                },
+                                span {
+                                    class: if item.unread { "mt-1 h-2 w-2 rounded-full bg-primary-container shrink-0" } else { "mt-1 h-2 w-2 shrink-0" },
+                                }
+                                div { class: "min-w-0 flex-1",
                                     p { class: "text-body-sm font-medium text-on-surface", "{item.title}" }
-                                    p { class: "text-body-sm text-outline", "{item.body}" }
+                                    p { class: "text-body-sm text-outline mt-0.5", "{item.body}" }
+                                    p { class: "text-label-caps font-label-caps text-outline mt-1",
+                                        "{format_relative_time(item.created_at)}"
+                                    }
                                 }
                             }
                         }

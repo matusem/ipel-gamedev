@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+GAME_DIR="$ROOT/games/tic_tac_toe"
+FIXTURE_DIR="$ROOT/server/tests/fixtures/games/tic_tac_toe"
+
+cd "$GAME_DIR/rust/component"
+cargo component build --release
+WASM="target/wasm32-wasip2/release/tic_tac_toe_component.wasm"
+test -f "$WASM"
+
+mkdir -p "$FIXTURE_DIR/client"
+cp -f "$WASM" "$FIXTURE_DIR/logic.wasm"
+cp -f "$GAME_DIR/manifest.json" "$FIXTURE_DIR/manifest.json"
+for html in index.html config.html result.html about.html; do
+  if [[ -f "$GAME_DIR/client/$html" ]]; then
+    cp -f "$GAME_DIR/client/$html" "$FIXTURE_DIR/client/$html"
+  fi
+done
+echo "Staged fixture at $FIXTURE_DIR"

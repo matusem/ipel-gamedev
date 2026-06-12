@@ -5,6 +5,7 @@ pub mod auth;
 pub mod build;
 pub mod cli;
 pub mod commands;
+pub mod doctor;
 pub mod pack;
 pub mod project;
 pub mod scaffold;
@@ -26,6 +27,8 @@ pub fn run_cli() -> Result<()> {
             Commands::Drafts(args) => commands::run_drafts(args),
             Commands::Manifest(args) => commands::run_manifest(args),
             Commands::Test(args) => commands::run_test(args),
+            Commands::Doctor(args) => commands::run_doctor(args),
+            Commands::Validate(args) => commands::run_validate(args),
         };
     }
     loop {
@@ -37,6 +40,7 @@ pub fn run_cli() -> Result<()> {
             ui::UiCommand::Drafts(args) => commands::run_drafts(args)?,
             ui::UiCommand::Manifest(args) => commands::run_manifest(args)?,
             ui::UiCommand::Test(args) => commands::run_test(args)?,
+            ui::UiCommand::Doctor(args) => commands::run_doctor(args)?,
             ui::UiCommand::ExitProgram => break,
         }
     }

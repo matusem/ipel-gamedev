@@ -62,6 +62,30 @@ impl<GameT: GameCore> Clone for PlayerEvent<GameT> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SpectatorEvent<GameT: GameCore> {
+    Event(GameT::SpectatorEvent),
+    GameOver(GameT::SpectatorResult),
+}
+
+impl<GameT: GameCore> Clone for SpectatorEvent<GameT> {
+    fn clone(&self) -> Self {
+        match self {
+            SpectatorEvent::Event(event) => SpectatorEvent::Event(event.clone()),
+            SpectatorEvent::GameOver(result) => SpectatorEvent::GameOver(result.clone()),
+        }
+    }
+}
+
+/// Trait for spectator state in the game (single public observer view).
+pub trait SpectatorState<GameT: GameCore>:
+    Serialize + for<'de> Deserialize<'de> + Clone + Debug + 'static
+{
+    fn init(config: &GameT::Config) -> GameT::SpectatorState;
+
+    fn apply_event(&mut self, event: &GameT::SpectatorEvent);
+}
+
 /// Trait for player state in the game.
 pub trait PlayerState<GameT: GameCore>:
     Serialize + for<'de> Deserialize<'de> + Clone + Debug + 'static
@@ -134,6 +158,13 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
     /// The player result. Should represent the outcome of the game for a specific player.
     type PlayerResult: Serialize + for<'de> Deserialize<'de> + Clone + Debug + 'static;
 
+    /// Visible event for spectators (public observer stream).
+    type SpectatorEvent: Serialize + for<'de> Deserialize<'de> + Clone + Debug + 'static;
+    /// End-of-game outcome as shown to spectators.
+    type SpectatorResult: Serialize + for<'de> Deserialize<'de> + Clone + Debug + 'static;
+    /// Incremental public observer state.
+    type SpectatorState: SpectatorState<Self>;
+
     /// Initializes the game state based on the provided configuration.
     /// # Arguments
     /// * `config` - The configuration for the game **VALIDATED**
@@ -199,6 +230,15 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
         result: &Self::Result,
     ) -> Self::PlayerResult;
 
+    /// Derives a spectator-visible event from authoritative state.
+    fn derive_spectator_event(
+        state: &Self::State,
+        event: &InGameEvent<Self>,
+    ) -> Option<Self::SpectatorEvent>;
+
+    /// Derives the spectator-visible game-over outcome.
+    fn derive_spectator_result(state: &Self::State, result: &Self::Result) -> Self::SpectatorResult;
+
     /// Float score for each player when the game ends (`result` from [`Self::check_game_over`]).
     /// Convention: win = 1.0, loss = 0.0, draw = equal split across players (e.g. 0.5 each in 2‑player games).
     fn scores_at_end(result: &Self::Result) -> Vec<(Self::Player, f64)>;
@@ -243,7 +283,26 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
         player_events_map
     }
 
-    /// Applies an action to the game state and returns a map of player events.
+    fn build_spectator_events_map(
+        game_state: &FullState<Self>,
+        game_events: &[Event<Self>],
+    ) -> Vec<SpectatorEvent<Self>> {
+        game_events
+            .iter()
+            .filter_map(|event| match event {
+                Event::InGameEvent(in_game_event) => Self::derive_spectator_event(
+                    &game_state.state,
+                    in_game_event,
+                )
+                .map(SpectatorEvent::Event),
+                Event::GameOver(result) => Some(SpectatorEvent::GameOver(
+                    Self::derive_spectator_result(&game_state.state, result),
+                )),
+            })
+            .collect()
+    }
+
+    /// Applies an action to the game state and returns per-player and spectator events.
     /// # Arguments
     /// * `game_state` - The current full state of the game. **WILL BE MUTATED**
     /// * `player_action` - The action taken by the player.
@@ -255,8 +314,7 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
         game_state: &mut FullState<Self>,
         player_action: PlayerAction<Self>,
         player_state: &Self::PlayerState,
-    ) -> Result<HashMap<Self::Player, Vec<PlayerEvent<Self>>>, <Self::Action as Action<Self>>::Error>
-    {
+    ) -> Result<ActionApplicationResult<Self>, <Self::Action as Action<Self>>::Error> {
         player_state.can_take_action(&player_action.action)?;
 
         game_state.actions_made.push(player_action.clone());
@@ -274,6 +332,19 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
                 )
                 .collect();
 
-        Ok(Self::build_player_events_map(game_state, &game_events))
+        Ok(ActionApplicationResult {
+            player_events: Self::build_player_events_map(game_state, &game_events),
+            spectator_events: Self::build_spectator_events_map(game_state, &game_events),
+        })
     }
 }
+
+#[derive(Debug)]
+pub struct ActionApplicationResult<GameT: GameCore> {
+    pub player_events: HashMap<GameT::Player, Vec<PlayerEvent<GameT>>>,
+    pub spectator_events: Vec<SpectatorEvent<GameT>>,
+}
+
+#[cfg(test)]
+mod spectator_tests;
+

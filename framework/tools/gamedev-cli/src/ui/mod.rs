@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::Result;
 
 use crate::cli::{
-    BuildArgs, DeployArgs, DraftsArgs, FrontendKind, InitArgs, JsTemplate, LoginArgs, ManifestArgs,
-    TestArgs, BackendKind, DEFAULT_GRAPHQL_URL,
+    BackendKind, BuildArgs, DeployArgs, DoctorArgs, DraftsArgs, FrontendKind, InitArgs, JsTemplate,
+    LoginArgs, ManifestArgs, TestArgs, DEFAULT_GRAPHQL_URL,
 };
 
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
@@ -26,6 +26,7 @@ pub enum UiCommand {
     Drafts(DraftsArgs),
     Manifest(ManifestArgs),
     Test(TestArgs),
+    Doctor(DoctorArgs),
     ExitProgram,
 }
 
@@ -57,12 +58,13 @@ fn run_fallback() -> Result<UiCommand> {
     println!("5) drafts(list)");
     println!("6) manifest(show)");
     println!("7) test");
-    println!("8) exit");
+    println!("8) doctor");
+    println!("9) exit");
     print!("Choice: ");
     io::stdout().flush()?;
     let mut line = String::new();
     io::stdin().read_line(&mut line)?;
-    let c = line.trim().parse::<usize>().unwrap_or(8);
+    let c = line.trim().parse::<usize>().unwrap_or(9);
     let cmd = match c {
         1 => {
             print!("Project name (empty=current dir): ");
@@ -101,6 +103,7 @@ fn run_fallback() -> Result<UiCommand> {
             server_url: DEFAULT_GRAPHQL_URL.to_string(),
         }),
         7 => UiCommand::Test(TestArgs { project_dir: None }),
+        8 => UiCommand::Doctor(DoctorArgs { project_dir: None }),
         _ => UiCommand::ExitProgram,
     };
     Ok(cmd)

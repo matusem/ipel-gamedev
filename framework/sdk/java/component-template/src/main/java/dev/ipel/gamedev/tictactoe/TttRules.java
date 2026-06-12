@@ -3,6 +3,7 @@ package dev.ipel.gamedev.tictactoe;
 import dev.ipel.gamedev.game.GameRules;
 import dev.ipel.gamedev.game.InGameEvent;
 import dev.ipel.gamedev.game.PlayerAction;
+import dev.ipel.gamedev.game.SpectatorCapable;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
@@ -13,15 +14,25 @@ import java.util.Optional;
  */
 public final class TttRules
         implements GameRules<
-                Config,
-                State,
-                Position,
-                Player,
-                TttPlayerState,
-                Void,
-                MoveEvent,
-                GameOutcome,
-                PlayerOutcome> {
+                        Config,
+                        State,
+                        Position,
+                        Player,
+                        TttPlayerState,
+                        Void,
+                        MoveEvent,
+                        GameOutcome,
+                        PlayerOutcome>,
+                SpectatorCapable<
+                        Config,
+                        State,
+                        Position,
+                        Player,
+                        Void,
+                        GameOutcome,
+                        MoveEvent,
+                        GameOutcome,
+                        State> {
 
     public static final TttRules INSTANCE = new TttRules();
 
@@ -118,6 +129,29 @@ public final class TttRules
         int side = st.config.sideLength;
         st.setCell(event.action(), event.player());
         st.currentPlayer = st.currentPlayer.other();
+    }
+
+    @Override
+    public State initSpectatorState(Config config) {
+        return init(config);
+    }
+
+    @Override
+    public Optional<MoveEvent> deriveSpectatorEvent(
+            State state, InGameEvent<Player, Position, Void> event) {
+        return derivePlayerEvent(state, Player.X, event);
+    }
+
+    @Override
+    public GameOutcome deriveSpectatorResult(State state, GameOutcome result) {
+        return result;
+    }
+
+    @Override
+    public void applySpectatorEvent(State spectatorState, MoveEvent event) {
+        int side = spectatorState.config.sideLength;
+        spectatorState.setCell(event.action(), event.player());
+        spectatorState.currentPlayer = spectatorState.currentPlayer.other();
     }
 
     private static Optional<Player> tryWinSegment(

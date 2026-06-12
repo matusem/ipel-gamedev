@@ -37,16 +37,12 @@
       <scope>system</scope>
       <systemPath>${game.jar}</systemPath>
     </dependency>
+    <!-- Compile-only: GameSerde references ObjectMapper; TeaVM guest uses TeaVmGameSerde (no Jackson at runtime). -->
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
-      <!-- 2.15+ ships Java 21 multi-release classes; Fermyon TeaVM 0.2.x cannot parse major 65 -->
       <version>2.14.3</version>
-    </dependency>
-    <dependency>
-      <groupId>org.msgpack</groupId>
-      <artifactId>jackson-dataformat-msgpack</artifactId>
-      <version>0.9.8</version>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 
@@ -93,7 +89,11 @@
             <configuration>
               <targetDirectory>${project.build.directory}/generated/wasm/teavm-wasm</targetDirectory>
               <targetType>WEBASSEMBLY</targetType>
-              <mainClass>wit.worlds.GameCoreImpl</mainClass>
+              <mainClass>wit.worlds.TeaVmMain</mainClass>
+              <!-- spin-teavm-example pattern: dummy main + preserve generated export class -->
+              <classesToPreserve>
+                wit.worlds.GameCore
+              </classesToPreserve>
               <debugInformationGenerated>true</debugInformationGenerated>
               <minifying>false</minifying>
               <optimizationLevel>SIMPLE</optimizationLevel>

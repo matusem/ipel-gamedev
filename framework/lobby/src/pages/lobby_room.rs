@@ -58,6 +58,7 @@ pub fn LobbyRoomPage(
                         game_id: gid.clone(),
                         player: seat.player_identity.clone(),
                         return_lobby_id: Some(l.id.clone()),
+                        spectator: false,
                     }));
                     return;
                 }

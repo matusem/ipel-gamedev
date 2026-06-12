@@ -132,6 +132,7 @@ pub fn OverlayLayout() -> Element {
                 game_id: p.game_id.clone(),
                 player: p.player.clone(),
                 return_lobby_id: p.return_lobby_id.clone(),
+                spectator: p.spectator,
                 on_close: move |_| {
                     shell.playing.set(None);
                 },

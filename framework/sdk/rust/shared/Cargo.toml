@@ -5,11 +5,13 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
-base64 = "0.22"
 framework-sdk-shared-types = { path = "../shared-types" }
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
 [dev-dependencies]
 serde_json = "1"

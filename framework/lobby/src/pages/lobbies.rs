@@ -3,6 +3,7 @@ use crate::components::SearchContext;
 use crate::components::ui::*;
 use crate::models::*;
 use crate::stub::{game_media, lobby_elapsed_stub};
+use crate::AppShellContext;
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -20,6 +21,7 @@ pub fn LobbiesBrowserPage() -> Element {
     let mut segment = use_signal(|| 0usize);
     let mut page = use_signal(|| 0usize);
     let toast = use_toast();
+    let shell = use_context::<AppShellContext>();
 
     use_hook(move || {
         let mut game_types = game_types;
@@ -126,6 +128,9 @@ pub fn LobbiesBrowserPage() -> Element {
                                     let variant = status_variant_from_lobby(&lob.status, lob.seats_filled, lob.seats_total);
                                     let is_full = lob.seats_total > 0 && lob.seats_filled >= lob.seats_total;
                                     let in_game = lob.status.to_lowercase().contains("in_game");
+                                    let game_instance_id = lob.game_instance_id.clone();
+                                    let game_type_for_spec = lob.game_type.clone();
+                                    let lobby_id_for_spec = lid.clone();
                                     rsx! {
                                         tr {
                                             onclick: move |_| {
@@ -155,7 +160,17 @@ pub fn LobbiesBrowserPage() -> Element {
                                                         class: "btn-ghost btn-sm",
                                                         onclick: move |e| {
                                                             e.stop_propagation();
-                                                            push_toast(toast.show, "Spectate coming soon", ToastKind::Info);
+                                                            if let Some(gid) = game_instance_id.clone() {
+                                                                shell.playing.set(Some(PlayOverlay {
+                                                                    game_type: game_type_for_spec.clone(),
+                                                                    game_id: gid,
+                                                                    player: String::new(),
+                                                                    return_lobby_id: Some(lobby_id_for_spec.clone()),
+                                                                    spectator: true,
+                                                                }));
+                                                            } else {
+                                                                push_toast(toast.show, "Game not started yet", ToastKind::Info);
+                                                            }
                                                         },
                                                         "Spectate"
                                                     }

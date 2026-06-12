@@ -24,6 +24,8 @@ pub enum Commands {
     Drafts(DraftsArgs),
     Manifest(ManifestArgs),
     Test(TestArgs),
+    Doctor(DoctorArgs),
+    Validate(ValidateArgs),
 }
 
 #[derive(Args)]
@@ -109,7 +111,22 @@ pub struct TestArgs {
     pub project_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ValueEnum)]
+#[derive(Args)]
+pub struct DoctorArgs {
+    #[arg(long)]
+    pub project_dir: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub struct ValidateArgs {
+    #[arg(long)]
+    pub project_dir: Option<PathBuf>,
+    /// Path to logic.wasm (default: dist/game.zip → logic.wasm or backend build output).
+    #[arg(long)]
+    pub logic_wasm: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum BackendKind {
     Rust,
@@ -118,7 +135,7 @@ pub enum BackendKind {
     Cpp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum FrontendKind {
     Js,

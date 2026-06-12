@@ -128,6 +128,7 @@ pub struct PlayOverlay {
     pub game_id: String,
     pub player: String,
     pub return_lobby_id: Option<String>,
+    pub spectator: bool,
 }
 
 #[derive(Deserialize)]
@@ -306,6 +307,28 @@ pub struct UserProfile {
     pub games_published: u32,
     pub wins: u32,
     pub rep_score: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeGql {
+    pub id: String,
+    pub label: String,
+    pub tier: String,
+    pub locked: bool,
+    #[serde(default)]
+    pub earned_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationGql {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    pub kind: String,
+    pub unread: bool,
+    pub created_at: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -31,11 +31,14 @@ world game-core {
   record game {
     full-state: buffer,
     player-states: list<player-state>,
+    spectator-state: buffer,
   }
 
   record take-action-result {
     new-game-full-state: buffer,
     player-states: list<new-player-state>,
+    spectator-events: list<buffer>,
+    spectator-state: buffer,
   }
 
   export init: func(format: serialization-format, config: buffer) -> result<game, game-core-error>;

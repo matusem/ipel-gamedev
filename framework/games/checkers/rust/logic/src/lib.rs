@@ -27,7 +27,10 @@
 //! ## Game over
 //! - Side to move has **no legal moves**, or **no pieces** → opponent wins.
 
-use game::{Action, Config as GameConfig, GameCore, PlayerState as GamePlayerStateTrait};
+use game::{
+    Action, Config as GameConfig, GameCore, PlayerState as GamePlayerStateTrait,
+    SpectatorState as GameSpectatorState,
+};
 use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -242,6 +245,18 @@ impl PlayerState {
 pub struct PlayerEvent {
     pub player: Player,
     pub path: MovePath,
+}
+
+impl GameSpectatorState<Checkers> for State {
+    fn init(config: &Config) -> Self {
+        Checkers::init(config)
+    }
+
+    fn apply_event(&mut self, event: &PlayerEvent) {
+        let PlayerEvent { player, path } = event;
+        apply_turn_for_player(&mut self.board, path, *player);
+        self.current_player = player.other();
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -829,6 +844,10 @@ impl GameCore for Checkers {
     type Result = GameOutcome;
     type PlayerResult = PlayerOutcome;
 
+    type SpectatorEvent = PlayerEvent;
+    type SpectatorResult = GameOutcome;
+    type SpectatorState = State;
+
     fn init(config: &Self::Config) -> Self::State {
         State {
             config: config.clone(),
@@ -874,6 +893,23 @@ impl GameCore for Checkers {
             GameOutcome::Win(w) if *w == *player => PlayerOutcome::Win,
             GameOutcome::Win(_) => PlayerOutcome::Loss,
         }
+    }
+
+    fn derive_spectator_event(
+        _state: &Self::State,
+        event: &game::InGameEvent<Self>,
+    ) -> Option<Self::SpectatorEvent> {
+        match event {
+            game::InGameEvent::PlayerAction(pa) => Some(PlayerEvent {
+                player: pa.player,
+                path: pa.action.clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    fn derive_spectator_result(_state: &Self::State, result: &Self::Result) -> Self::SpectatorResult {
+        *result
     }
 
     fn scores_at_end(result: &Self::Result) -> Vec<(Self::Player, f64)> {

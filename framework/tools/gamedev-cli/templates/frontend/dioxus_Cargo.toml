@@ -5,4 +5,8 @@ edition = "2024"
 
 [dependencies]
 dioxus = { version = "0.6", features = ["web"] }
-shared-types = { path = "../../backend/rust/shared-types" }
+shared-types = { package = "__SHARED_TYPES_NAME__", path = "../../backend/rust/shared-types" }
+__SDK_DIOXUS_LINE__
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }

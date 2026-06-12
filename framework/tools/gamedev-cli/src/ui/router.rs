@@ -65,6 +65,7 @@ pub enum RouteFrame {
         field: usize,
     },
     TestConfirm,
+    DoctorConfirm,
 }
 
 #[derive(Clone, Copy)]
@@ -90,6 +91,7 @@ impl RouteFrame {
             RouteFrame::ManifestDraftId { .. } => "Manifest · Draft",
             RouteFrame::ManifestEditFields { .. } => "Manifest · Edit",
             RouteFrame::TestConfirm => "Test",
+            RouteFrame::DoctorConfirm => "Doctor",
         }
     }
 }

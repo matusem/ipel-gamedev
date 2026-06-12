@@ -591,6 +591,25 @@ fn my_profile() -> Value {
     })
 }
 
+fn my_badges() -> Value {
+    json!([
+        { "id": "veteran", "label": "Veteran", "tier": "Gold", "locked": false, "earnedAt": ago_days(30) },
+        { "id": "publisher", "label": "Publisher", "tier": "Silver", "locked": false, "earnedAt": ago_days(14) },
+        { "id": "streak", "label": "Win Streak", "tier": "Bronze", "locked": false, "earnedAt": ago_days(7) },
+        { "id": "elite", "label": "Elite Operator", "tier": "Elite", "locked": false, "earnedAt": ago_days(2) },
+        { "id": "architect", "label": "Architect", "tier": "Elite", "locked": true, "earnedAt": null },
+        { "id": "mentor", "label": "Mentor", "tier": "Gold", "locked": true, "earnedAt": null }
+    ])
+}
+
+fn my_notifications() -> Value {
+    json!([
+        { "id": "n1", "title": "Lobby started", "body": "Your tic_tac_toe match is now in progress.", "kind": "lobby", "unread": true, "createdAt": ago_mins(2) },
+        { "id": "n2", "title": "New game published", "body": "Tic Tac Toe v1.0.0 is live on this server.", "kind": "publish", "unread": true, "createdAt": ago_hours(1) },
+        { "id": "n3", "title": "Developer access", "body": "Upload console is available for your account.", "kind": "system", "unread": false, "createdAt": ago_days(1) }
+    ])
+}
+
 fn my_tokens() -> Value {
     json!([
         { "id": "tok-demo-1", "label": "CI Pipeline", "maskedKey": "ipel_••••••••4f2a", "createdAt": ago_days(14), "expiresAt": ago_days(-90) },
@@ -725,6 +744,16 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         json!({ "platformStats": platform_stats() })
     } else if q.contains("myProfile") {
         json!({ "myProfile": my_profile() })
+    } else if q.contains("myBadges") {
+        json!({ "myBadges": my_badges() })
+    } else if q.contains("myNotifications") {
+        json!({ "myNotifications": my_notifications() })
+    } else if q.contains("unreadNotificationCount") {
+        json!({ "unreadNotificationCount": 2 })
+    } else if q.contains("markAllNotificationsRead") {
+        json!({ "markAllNotificationsRead": 2 })
+    } else if q.contains("markNotificationRead") {
+        json!({ "markNotificationRead": true })
     } else if q.contains("myPublishTokens") {
         json!({ "myPublishTokens": my_tokens() })
     } else if q.contains("isDeveloper") {

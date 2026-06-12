@@ -1,8 +1,8 @@
 package wit.worlds;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.ipel.gamedev.game.PlayerEvent;
+import dev.ipel.gamedev.game.SpectatorEvent;
+import dev.ipel.gamedev.tictactoe.GameOutcome;
 import dev.ipel.gamedev.tictactoe.MoveEvent;
 import dev.ipel.gamedev.tictactoe.PlayerOutcome;
 
@@ -11,17 +11,11 @@ final class EventEncoding {
 
     private EventEncoding() {}
 
-    static byte[] playerEvent(ObjectMapper mapper, PlayerEvent<MoveEvent, PlayerOutcome> pe) {
-        try {
-            ObjectNode root = mapper.createObjectNode();
-            if (pe instanceof PlayerEvent.Visible<MoveEvent, PlayerOutcome> v) {
-                root.set("Event", mapper.valueToTree(v.event()));
-            } else if (pe instanceof PlayerEvent.Terminal<MoveEvent, PlayerOutcome> t) {
-                root.set("GameOver", mapper.valueToTree(t.result()));
-            }
-            return mapper.writeValueAsBytes(root);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new IllegalStateException(e);
-        }
+    static byte[] playerEvent(PlayerEvent<MoveEvent, PlayerOutcome> pe) {
+        return TeaVmJson.playerEvent(pe);
+    }
+
+    static byte[] spectatorEvent(SpectatorEvent<MoveEvent, GameOutcome> se) {
+        return TeaVmJson.spectatorEvent(se);
     }
 }

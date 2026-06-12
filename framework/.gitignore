@@ -1,12 +1,39 @@
-target
-lobby/target
-lobby/dist
-lobby/node_modules
+# --- Rust / Cargo ---
+target/
+target_alt/
+**/target/
+**/target_alt/
 
-packages/game-sdk/node_modules
-packages/game-sdk/dist
-games/tic_tac_toe/web/node_modules
-games/tic_tac_toe/dist
+# --- Node / front-end ---
+**/node_modules/
+**/dist/
 
-games/checkers/target
-games/checkers/dist
+# --- Java / Gradle / Maven ---
+**/build/
+build/
+**/.gradle/
+.gradle/
+*.class
+
+# --- WebAssembly staging (TeaVM / component pipeline) ---
+**/logic-core.wasm
+**/logic-embedded.wasm
+**/logic.wasm
+
+# --- OS & editors ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.iml
+
+# --- Logs & temp ---
+*.log
+*.tmp
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example

@@ -11,24 +11,69 @@ use ratatui::Frame;
 use ratatui_interact::components::{Breadcrumb, BreadcrumbStyle};
 
 use crate::cli::{
-    BuildArgs, DEFAULT_GRAPHQL_URL, DeployArgs, DraftsArgs, DraftsSubcommands, LoginArgs,
+    BuildArgs, DEFAULT_GRAPHQL_URL, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands, LoginArgs,
     ManifestArgs, ManifestSubcommands, TestArgs,
 };
+use crate::project::{is_game_project, resolve_test_dir};
 
 use super::init_wizard::{InitWizardOutcome, InitWizardState};
 use super::router::{breadcrumb_state, DraftMenuAction, ManifestNext, RouteFrame};
 use super::{interrupted, UiCommand};
 
-const MAIN_ITEMS: &[&str] = &[
-    "init",
-    "login",
-    "build",
-    "deploy",
-    "drafts",
-    "manifest",
-    "test",
-    "exit program",
-];
+#[derive(Clone, Copy)]
+enum MainMenuAction {
+    Init,
+    Login,
+    Build,
+    Deploy,
+    Drafts,
+    Manifest,
+    Test,
+    Doctor,
+    Exit,
+}
+
+impl MainMenuAction {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Init => "init",
+            Self::Login => "login",
+            Self::Build => "build",
+            Self::Deploy => "deploy",
+            Self::Drafts => "drafts",
+            Self::Manifest => "manifest",
+            Self::Test => "test",
+            Self::Doctor => "doctor",
+            Self::Exit => "exit program",
+        }
+    }
+}
+
+fn main_menu_actions() -> Vec<MainMenuAction> {
+    let in_project = std::env::current_dir()
+        .map(|p| is_game_project(&p))
+        .unwrap_or(false);
+    if in_project {
+        vec![
+            MainMenuAction::Init,
+            MainMenuAction::Login,
+            MainMenuAction::Build,
+            MainMenuAction::Deploy,
+            MainMenuAction::Drafts,
+            MainMenuAction::Manifest,
+            MainMenuAction::Test,
+            MainMenuAction::Doctor,
+            MainMenuAction::Exit,
+        ]
+    } else {
+        vec![
+            MainMenuAction::Init,
+            MainMenuAction::Login,
+            MainMenuAction::Doctor,
+            MainMenuAction::Exit,
+        ]
+    }
+}
 
 pub fn run_terminal_session(auth_user: Option<String>) -> Result<UiCommand> {
     let mut terminal = ratatui::try_init().map_err(|e| anyhow::anyhow!(e))?;
@@ -121,9 +166,19 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
     };
     match top {
         RouteFrame::MainMenu { list } => {
-            let items: Vec<ListItem> = MAIN_ITEMS.iter().map(|i| ListItem::new(*i)).collect();
+            let actions = main_menu_actions();
+            let items: Vec<ListItem> = actions.iter().map(|a| ListItem::new(a.label())).collect();
+            let subtitle = if actions.len() <= 4 {
+                " (outside game project — init / login / doctor only)"
+            } else {
+                ""
+            };
             let list_w = List::new(items)
-                .block(Block::new().title("Main menu").borders(Borders::ALL))
+                .block(
+                    Block::new()
+                        .title(format!("Main menu{subtitle}"))
+                        .borders(Borders::ALL),
+                )
                 .highlight_symbol(">> ");
             frame.render_stateful_widget(list_w, area, list);
         }
@@ -244,9 +299,28 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
             }
         }
         RouteFrame::TestConfirm => {
+            let hint = std::env::current_dir()
+                .map(|root| {
+                    let dir = resolve_test_dir(&root);
+                    format!(
+                        "Run `cargo test` in {}?\n\nEnter: run · Esc: back",
+                        dir.display()
+                    )
+                })
+                .unwrap_or_else(|_| {
+                    "Run `cargo test` in project?\n\nEnter: run · Esc: back".to_string()
+                });
             frame.render_widget(
-                Paragraph::new("Run `cargo test` in logic crate?\n\nEnter: run · Esc: back")
-                    .block(Block::new().title("Test").borders(Borders::ALL)),
+                Paragraph::new(hint).block(Block::new().title("Test").borders(Borders::ALL)),
+                area,
+            );
+        }
+        RouteFrame::DoctorConfirm => {
+            frame.render_widget(
+                Paragraph::new(
+                    "Check project layout, client files, and toolchain (cargo, wasm-bindgen, npm)?\n\nEnter: run doctor · Esc: back",
+                )
+                .block(Block::new().title("Doctor").borders(Borders::ALL)),
                 area,
             );
         }
@@ -278,7 +352,8 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
             }
             KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
                 if let Some(RouteFrame::MainMenu { list }) = stack.last_mut() {
-                    let i = (list.selected().unwrap_or(0) + 1).min(MAIN_ITEMS.len() - 1);
+                    let max = main_menu_actions().len().saturating_sub(1);
+                    let i = (list.selected().unwrap_or(0) + 1).min(max);
                     list.select(Some(i));
                 }
                 return Ok(None);
@@ -289,25 +364,30 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
                 } else {
                     return Ok(None);
                 };
-                match idx {
-                    0 => stack.push(RouteFrame::Init(InitWizardState::new())),
-                    1 => stack.push(RouteFrame::Login {
+                let actions = main_menu_actions();
+                let Some(action) = actions.get(idx) else {
+                    return Ok(None);
+                };
+                match action {
+                    MainMenuAction::Init => stack.push(RouteFrame::Init(InitWizardState::new())),
+                    MainMenuAction::Login => stack.push(RouteFrame::Login {
                         user: tui_input::Input::default(),
                         server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
                         field: 0,
                     }),
-                    2 => stack.push(RouteFrame::BuildConfirm),
-                    3 => stack.push(RouteFrame::DeployMode {
+                    MainMenuAction::Build => stack.push(RouteFrame::BuildConfirm),
+                    MainMenuAction::Deploy => stack.push(RouteFrame::DeployMode {
                         list: ratatui::widgets::ListState::default().with_selected(Some(0)),
                     }),
-                    4 => stack.push(RouteFrame::DraftsMode {
+                    MainMenuAction::Drafts => stack.push(RouteFrame::DraftsMode {
                         list: ratatui::widgets::ListState::default().with_selected(Some(0)),
                     }),
-                    5 => stack.push(RouteFrame::ManifestMode {
+                    MainMenuAction::Manifest => stack.push(RouteFrame::ManifestMode {
                         list: ratatui::widgets::ListState::default().with_selected(Some(0)),
                     }),
-                    6 => stack.push(RouteFrame::TestConfirm),
-                    _ => return Ok(Some(UiCommand::ExitProgram)),
+                    MainMenuAction::Test => stack.push(RouteFrame::TestConfirm),
+                    MainMenuAction::Doctor => stack.push(RouteFrame::DoctorConfirm),
+                    MainMenuAction::Exit => return Ok(Some(UiCommand::ExitProgram)),
                 }
                 return Ok(None);
             }
@@ -636,6 +716,15 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
             KeyCode::Enter => {
                 stack.pop();
                 Ok(Some(UiCommand::Test(TestArgs {
+                    project_dir: None,
+                })))
+            }
+            _ => Ok(None),
+        },
+        RouteFrame::DoctorConfirm => match key.code {
+            KeyCode::Enter => {
+                stack.pop();
+                Ok(Some(UiCommand::Doctor(DoctorArgs {
                     project_dir: None,
                 })))
             }

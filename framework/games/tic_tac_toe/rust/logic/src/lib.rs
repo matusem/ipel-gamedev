@@ -1,4 +1,7 @@
-use game::{Action, Config as GameConfig, GameCore, PlayerState as GamePlayerState};
+use game::{
+    Action, Config as GameConfig, GameCore, PlayerState as GamePlayerState,
+    SpectatorState as GameSpectatorState,
+};
 use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -136,6 +139,34 @@ impl GamePlayerState<TicTacToe> for PlayerState {
 pub struct PlayerEvent {
     pub player: Player,
     pub action: Position,
+}
+
+/// Public observer view (open-information tic-tac-toe mirrors the board).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpectatorStateView {
+    pub current_player: Player,
+    pub board: Board,
+}
+
+impl GameSpectatorState<TicTacToe> for SpectatorStateView {
+    fn init(config: &Config) -> Self {
+        let state = TicTacToe::init(config);
+        Self {
+            current_player: state.current_player,
+            board: state.board,
+        }
+    }
+
+    fn apply_event(&mut self, event: &PlayerEvent) {
+        let PlayerEvent { player, action } = event;
+        let cells = self.board.0.len();
+        let side = (cells as f64).sqrt() as u8;
+        self.board.set(*action, side, *player);
+        self.current_player = match self.current_player {
+            Player::X => Player::O,
+            Player::O => Player::X,
+        };
+    }
 }
 
 fn default_side() -> u8 {
@@ -344,6 +375,10 @@ impl GameCore for TicTacToe {
     type Result = GameOutcome;
     type PlayerResult = PlayerOutcome;
 
+    type SpectatorEvent = PlayerEvent;
+    type SpectatorResult = GameOutcome;
+    type SpectatorState = SpectatorStateView;
+
     fn init(config: &Self::Config) -> Self::State {
         let n = (config.side_length as usize).saturating_pow(2);
         State {
@@ -396,6 +431,23 @@ impl GameCore for TicTacToe {
             GameOutcome::Win(_) => PlayerOutcome::Loss,
             GameOutcome::Draw => PlayerOutcome::Draw,
         }
+    }
+
+    fn derive_spectator_event(
+        _state: &Self::State,
+        event: &game::InGameEvent<Self>,
+    ) -> Option<Self::SpectatorEvent> {
+        match event {
+            game::InGameEvent::PlayerAction(player_action) => Some(PlayerEvent {
+                player: player_action.player,
+                action: player_action.action,
+            }),
+            _ => None,
+        }
+    }
+
+    fn derive_spectator_result(_state: &Self::State, result: &Self::Result) -> Self::SpectatorResult {
+        *result
     }
 
     fn scores_at_end(result: &Self::Result) -> Vec<(Self::Player, f64)> {
@@ -457,6 +509,24 @@ mod tests {
             check_game_over_state(&state),
             Some(GameOutcome::Win(Player::X))
         );
+    }
+
+    #[test]
+    fn spectator_receives_public_move_events() {
+        let cfg = Config::default();
+        cfg.validate().unwrap();
+        let mut fs = TicTacToe::try_init(&cfg).unwrap();
+        let ps = PlayerState::init(&cfg, Player::X);
+        let result = TicTacToe::apply_action(
+            &mut fs,
+            game::PlayerAction {
+                player: Player::X,
+                action: Position(0, 0),
+            },
+            &ps,
+        )
+        .expect("legal move");
+        assert!(!result.spectator_events.is_empty());
     }
 
     #[test]

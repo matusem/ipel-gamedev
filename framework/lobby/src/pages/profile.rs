@@ -1,7 +1,6 @@
 use crate::api::{graphql_post, stored_user_id};
 use crate::components::ui::*;
-use crate::models::{ActivityEventGql, UserProfile};
-use crate::stub::badges_stub;
+use crate::models::{ActivityEventGql, BadgeGql, UserProfile};
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -12,6 +11,7 @@ pub fn ProfilePage() -> Element {
     let user_id = stored_user_id().unwrap_or_else(|| "guest".into());
     let mut profile: Signal<Option<UserProfile>> = use_signal(|| None);
     let mut activity: Signal<Vec<ActivityEventGql>> = use_signal(Vec::new);
+    let mut badges: Signal<Vec<BadgeGql>> = use_signal(Vec::new);
 
     use_hook(move || {
         spawn(async move {
@@ -34,6 +34,16 @@ pub fn ProfilePage() -> Element {
             .await
             {
                 activity.set(a.activity_feed);
+            }
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct B { my_badges: Vec<BadgeGql> }
+            if let Ok(b) = graphql_post::<B>(
+                "query { myBadges { id label tier locked earnedAt } }",
+            )
+            .await
+            {
+                badges.set(b.my_badges);
             }
         });
     });
@@ -86,9 +96,11 @@ pub fn ProfilePage() -> Element {
 
             section { class: "section-card",
                 h2 { class: "font-manrope text-h2 text-xl mb-4", "Earned badges" }
-                p { class: "text-label-caps font-label-caps text-outline uppercase mb-4", "Preview — achievements API coming soon" }
+                if badges().is_empty() {
+                    p { class: "text-body-sm text-outline mb-4", "Play matches and publish games to unlock badges." }
+                }
                 div { class: "grid grid-cols-2 sm:grid-cols-3 gap-3",
-                    for badge in badges_stub() {
+                    for badge in badges() {
                         div {
                             class: if badge.locked { "badge-tile badge-tile-locked" } else { "badge-tile hover:border-primary-container/50" },
                             if badge.locked {

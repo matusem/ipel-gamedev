@@ -3,6 +3,7 @@
 //! for `MyHost<TheirGame>`.
 
 #![allow(warnings)]
+#![allow(static_mut_refs)]
 
 pub mod bindings;
 
@@ -12,7 +13,7 @@ pub use bindings::{
 };
 
 use bindings::Guest;
-use game::GameCore;
+use game::{GameCore, SpectatorState as GameSpectatorState};
 use std::marker::PhantomData;
 
 mod serialization;
@@ -25,7 +26,6 @@ pub struct MyHost<GameCoreT: GameCore> {
 }
 
 impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
-    #[allow(async_fn_in_trait)]
     fn init(format: SerializationFormat, config: Buffer) -> Result<Game, GameCoreError> {
         let config: GameCoreT::Config = de(format)(&config).map_err(|error| {
             println!("Failed to initialize game with provided config: {}", error);
@@ -58,42 +58,45 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
                 })
                 .collect();
 
-        let game = {
-            let full_state = se(format)(&state).map_err(|error| {
-                println!("Failed to serialize game state: {}", error);
-                GameCoreError::Serialize(error)
-            })?;
+        let spectator_state =
+            <GameCoreT::SpectatorState as GameSpectatorState<GameCoreT>>::init(&config);
+        let full_state = se(format)(&state).map_err(|error| {
+            println!("Failed to serialize game state: {}", error);
+            GameCoreError::Serialize(error)
+        })?;
 
-            let player_states = player_states
-                .iter()
-                .map(|(player, player_state)| {
-                    let player = se(format)(player).map_err(|error| {
-                        println!("Failed to serialize player: {}", error);
-                        GameCoreError::Serialize(error)
-                    })?;
+        let player_states = player_states
+            .iter()
+            .map(|(player, player_state)| {
+                let player = se(format)(player).map_err(|error| {
+                    println!("Failed to serialize player: {}", error);
+                    GameCoreError::Serialize(error)
+                })?;
 
-                    let player_state = se(format)(player_state).map_err(|error| {
-                        println!("Failed to serialize player state: {}", error);
-                        GameCoreError::Serialize(error)
-                    })?;
+                let player_state = se(format)(player_state).map_err(|error| {
+                    println!("Failed to serialize player state: {}", error);
+                    GameCoreError::Serialize(error)
+                })?;
 
-                    Ok(PlayerState {
-                        player,
-                        state: player_state,
-                    })
+                Ok(PlayerState {
+                    player,
+                    state: player_state,
                 })
-                .collect::<Result<Vec<PlayerState>, GameCoreError>>()?;
+            })
+            .collect::<Result<Vec<PlayerState>, GameCoreError>>()?;
 
-            Game {
-                full_state,
-                player_states,
-            }
-        };
+        let spectator_state = se(format)(&spectator_state).map_err(|error| {
+            println!("Failed to serialize spectator state: {}", error);
+            GameCoreError::Serialize(error)
+        })?;
 
-        Ok(game)
+        Ok(Game {
+            full_state,
+            player_states,
+            spectator_state,
+        })
     }
 
-    #[allow(async_fn_in_trait)]
     fn take_action(
         format: SerializationFormat,
         game: Game,
@@ -124,6 +127,12 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
                 Ok((player, state))
             })
             .collect::<Result<Vec<(GameCoreT::Player, GameCoreT::PlayerState)>, GameCoreError>>()?;
+
+        let mut spectator_state: GameCoreT::SpectatorState =
+            de(format)(&game.spectator_state).map_err(|error| {
+                println!("Failed to deserialize spectator state: {}", error);
+                GameCoreError::Deserialize(error)
+            })?;
 
         let player: GameCoreT::Player = de(format)(&player_action.0).map_err(|error| {
             println!("Failed to deserialize player: {}", error);
@@ -162,7 +171,7 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
                 let player_states = player_states
                     .iter()
                     .map(|player_state| {
-                        let new_events = result.get(&player_state.0).unwrap();
+                        let new_events = result.player_events.get(&player_state.0).unwrap();
                         let mut state = player_state.1.clone();
                         for event in new_events {
                             if let game::PlayerEvent::Event(event) = event {
@@ -171,8 +180,8 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
                         }
 
                         let player = se(format)(&player_state.0).map_err(|error| {
-                            println!("Failed to deserialize player: {}", error);
-                            GameCoreError::Deserialize(error)
+                            println!("Failed to serialize player: {}", error);
+                            GameCoreError::Serialize(error)
                         })?;
 
                         let state = se(format)(&state).map_err(|error| {
@@ -185,34 +194,59 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
                         let events = new_events
                             .iter()
                             .map(|event| {
-                                se(format)(&event).map_err(|error| {
+                                se(format)(event).map_err(|error| {
                                     println!("Failed to serialize new player event: {}", error);
                                     GameCoreError::Serialize(error)
                                 })
                             })
                             .collect::<Result<Vec<Buffer>, GameCoreError>>()?;
 
-                        let new_player_state = NewPlayerState {
+                        Ok(NewPlayerState {
                             state: player_state,
                             events,
-                        };
-
-                        Ok(new_player_state)
+                        })
                     })
                     .collect::<Result<Vec<NewPlayerState>, GameCoreError>>()?;
+
+                for event in &result.spectator_events {
+                    if let game::SpectatorEvent::Event(event) = event {
+                        <GameCoreT::SpectatorState as GameSpectatorState<GameCoreT>>::apply_event(
+                            &mut spectator_state,
+                            event,
+                        );
+                    }
+                }
+
+                let spectator_events = result
+                    .spectator_events
+                    .iter()
+                    .map(|event| {
+                        se(format)(event).map_err(|error| {
+                            println!("Failed to serialize spectator event: {}", error);
+                            GameCoreError::Serialize(error)
+                        })
+                    })
+                    .collect::<Result<Vec<Buffer>, GameCoreError>>()?;
+
+                let spectator_state = se(format)(&spectator_state).map_err(|error| {
+                    println!("Failed to serialize spectator state: {}", error);
+                    GameCoreError::Serialize(error)
+                })?;
 
                 Ok(TakeActionResult {
                     new_game_full_state,
                     player_states,
+                    spectator_events,
+                    spectator_state,
                 })
             }
             Err(error) => {
                 println!("Failed to apply player action: {:?}", error);
                 match se(format)(&error) {
-                    Ok(error_buffer) => return Err(GameCoreError::GameCore(error_buffer)),
+                    Ok(error_buffer) => Err(GameCoreError::GameCore(error_buffer)),
                     Err(serialize_error) => {
                         println!("Failed to serialize game core error: {}", serialize_error);
-                        return Err(GameCoreError::Serialize(serialize_error));
+                        Err(GameCoreError::Serialize(serialize_error))
                     }
                 }
             }

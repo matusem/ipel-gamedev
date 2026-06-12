@@ -3,7 +3,7 @@ use shared_types::Player;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(MinimalPlugins)
         .add_systems(Startup, startup_log)
         .run();
 }
