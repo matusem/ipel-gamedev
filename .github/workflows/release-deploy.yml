@@ -52,8 +52,7 @@ jobs:
       - name: Build and push (linux/arm64)
         uses: docker/build-push-action@v6
         with:
-          context: framework
-          # Default Dockerfile path is {context}/Dockerfile → framework/Dockerfile from repo root.
+          file: framework/Dockerfile
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
