@@ -61,8 +61,21 @@ WORKDIR /app
 
 FROM debian:bookworm-slim
 
+ARG COMPOSE_VERSION=2.32.4
+ARG TARGETARCH
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl docker.io docker-compose-plugin \
+    ca-certificates curl docker.io \
+    && mkdir -p /usr/local/lib/docker/cli-plugins \
+    && case "${TARGETARCH}" in \
+         amd64) COMPOSE_ARCH=x86_64 ;; \
+         arm64) COMPOSE_ARCH=aarch64 ;; \
+         *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL \
+         "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" \
+         -o /usr/local/lib/docker/cli-plugins/docker-compose \
+    && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
