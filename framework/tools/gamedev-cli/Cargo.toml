@@ -27,7 +27,7 @@ dirs = "6"
 ratatui = { version = "0.30", features = ["crossterm"] }
 ratatui-interact = "0.5"
 tui-input = { version = "0.15", default-features = false, features = ["ratatui-crossterm"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
