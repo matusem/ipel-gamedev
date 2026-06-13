@@ -201,6 +201,14 @@ echo "$GITHUB_TOKEN" | docker login ghcr.io -u matusem --password-stdin
 docker pull ghcr.io/matusem/ipel-gamedev:0.1.1
 ```
 
+**Prebuilt CI builder (`ipel-gamedev-builder`):** release builds use `ghcr.io/matusem/ipel-gamedev-builder:bookworm`. Linking the package to the repo is not enough for private images pushed from your laptop — also do **one** of:
+
+1. **Package settings → Manage Actions access** → add `matusem/ipel-gamedev` with **Read**
+2. **Change visibility → Public** (fine for tooling; no secrets in the image)
+3. Add repo secret **`GHCR_TOKEN`** = classic PAT with `read:packages`
+
+Push **linux/arm64** (`docker buildx build --platform linux/arm64 ... --push`).
+
 ## Backup & restore
 
 Daily backup (cron on Pi):
