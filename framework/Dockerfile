@@ -1,12 +1,19 @@
-FROM rust:bookworm AS builder
+ARG BUILDER_IMAGE=rust:bookworm
+FROM ${BUILDER_IMAGE} AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
-    && rm -rf /var/lib/apt/lists/*
+# Bootstrap tooling only for local builds from plain rust:bookworm.
+ARG BUILDER_IMAGE
+RUN if [ "$BUILDER_IMAGE" = "rust:bookworm" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    rustup target add wasm32-unknown-unknown wasm32-wasip1 \
-    && cargo install dioxus-cli cargo-component --locked
+    if [ "$BUILDER_IMAGE" = "rust:bookworm" ]; then \
+      rustup target add wasm32-unknown-unknown wasm32-wasip1 \
+      && cargo install dioxus-cli cargo-component --locked; \
+    fi
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
