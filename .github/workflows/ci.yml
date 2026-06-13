@@ -27,6 +27,20 @@ jobs:
           workspaces: framework
           cache-all-crates: true
 
+      - name: Install Linux dependencies (Bevy SDK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libudev-dev \
+            pkg-config \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxrandr-dev
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -86,15 +100,10 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Cache Gradle and Maven
-        uses: actions/cache@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.m2/repository
-          key: java-${{ runner.os }}-${{ hashFiles('framework/sdk/java/**/build.gradle.kts', 'framework/sdk/java/**/pom.xml') }}
-          restore-keys: |
-            java-${{ runner.os }}-
+          gradle-version: "8.12.1"
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -110,8 +119,9 @@ jobs:
       - name: Export and validate Java logic.wasm
         working-directory: framework/sdk/java/component-template
         run: |
-          chmod +x gradlew mvnw 2>/dev/null || true
-          ./gradlew exportLogicComponent --no-daemon -q
+          chmod +x mvnw
+          wasm-tools parse wasm/teavm_ascii.wat -o wasm/teavm_ascii.wasm
+          gradle exportLogicComponent --no-daemon -q
           wasm-tools component wit build/out/logic.wasm
 
   game-sdk:
