@@ -3,7 +3,7 @@
 
 services:
   gamedev:
-    image: ${GAMEDEV_IMAGE:-ghcr.io/matusem/upjs-gdd:latest}
+    image: ${GAMEDEV_IMAGE:-ghcr.io/matusem/ipel-gamedev:latest}
     container_name: upjs-gdd
     restart: unless-stopped
     env_file:

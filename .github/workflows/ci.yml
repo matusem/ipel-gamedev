@@ -8,6 +8,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    working-directory: framework
+
 jobs:
   rust:
     runs-on: ubuntu-latest
@@ -19,6 +23,9 @@ jobs:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: framework
+          cache-all-crates: true
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -46,22 +53,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: framework/lobby/package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: lobby
+          workspaces: |
+            framework
+            framework/lobby
+          cache-all-crates: true
 
       - name: Install Dioxus CLI
-        run: cargo install dioxus-cli --locked
+        run: command -v dx >/dev/null || cargo install dioxus-cli --locked
 
       - name: Build lobby CSS
-        working-directory: lobby
+        working-directory: framework/lobby
         run: npm ci && npm run build:css
 
       - name: Build lobby WASM
-        working-directory: lobby
+        working-directory: framework/lobby
         run: dx build --platform web
 
   java-component:
@@ -74,11 +86,29 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Cache Gradle and Maven
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.m2/repository
+          key: java-${{ runner.os }}-${{ hashFiles('framework/sdk/java/**/build.gradle.kts', 'framework/sdk/java/**/pom.xml') }}
+          restore-keys: |
+            java-${{ runner.os }}-
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: framework
+          shared-key: wasm-tools
+          cache-all-crates: true
+
       - name: Install wasm-tools
-        run: cargo install wasm-tools --locked
+        run: command -v wasm-tools >/dev/null || cargo install wasm-tools --locked
 
       - name: Export and validate Java logic.wasm
-        working-directory: sdk/java/component-template
+        working-directory: framework/sdk/java/component-template
         run: |
           chmod +x gradlew mvnw 2>/dev/null || true
           ./gradlew exportLogicComponent --no-daemon -q
@@ -92,7 +122,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: framework/packages/game-sdk/package-lock.json
 
       - name: Build game-sdk
-        working-directory: packages/game-sdk
+        working-directory: framework/packages/game-sdk
         run: npm ci && npm run build

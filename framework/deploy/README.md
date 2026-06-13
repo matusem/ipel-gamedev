@@ -44,7 +44,7 @@ Host github.com
 EOF'
 sudo chmod 600 /home/upjs-gdd-deploy/.ssh/config
 
-sudo -u upjs-gdd-deploy ssh-keyscan github.com >> /home/upjs-gdd-deploy/.ssh/known_hosts
+sudo -u upjs-gdd-deploy bash -c 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
 sudo chmod 644 /home/upjs-gdd-deploy/.ssh/known_hosts
 ```
 
@@ -108,7 +108,7 @@ Required: WebSocket upgrade on `/graphql` and `/game`, proxy read/send timeout �
 
 ## CI/CD autodeploy
 
-GitHub Actions workflow [`.github/workflows/release-deploy.yml`](../.github/workflows/release-deploy.yml):
+GitHub Actions workflows live at the **repository root** [`.github/workflows/`](../../.github/workflows/) (not under `framework/`):
 
 1. On tag `v*` or manual dispatch — build `linux/arm64` image, push to GHCR
 2. SSH to deploy host — `docker compose pull && docker compose up -d`
@@ -120,14 +120,14 @@ GitHub Actions workflow [`.github/workflows/release-deploy.yml`](../.github/work
 | `DEPLOY_HOST` | SSH hostname or IP (reachable from Actions via tunnel/tailnet) |
 | `DEPLOY_USER` | e.g. `upjs-gdd-deploy` |
 | `DEPLOY_SSH_KEY` | Private key for deploy user |
-| `DEPLOY_PATH` | Path to `framework/` on host (default `/opt/upjs-gdd/framework`) |
+| `DEPLOY_PATH` | Path to `framework/` on host (default `/opt/upjs-gdd/ipel-gamedev/framework`) |
 
 ## Backup & restore
 
 Daily backup (cron on Pi):
 
 ```bash
-0 3 * * * /opt/upjs-gdd/framework/scripts/backup.sh /var/backups/upjs-gdd
+0 3 * * * /opt/upjs-gdd/ipel-gamedev/framework/scripts/backup.sh /var/backups/upjs-gdd
 ```
 
 Restore:

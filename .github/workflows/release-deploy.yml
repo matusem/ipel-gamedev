@@ -18,6 +18,7 @@ env:
 permissions:
   contents: read
   packages: write
+  actions: write
 
 jobs:
   build-image:
@@ -46,19 +47,23 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
 
       - name: Build and push (linux/arm64)
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: Dockerfile
+          context: framework
+          file: framework/Dockerfile
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-arm64
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-arm64,mode=max
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-arm64
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-arm64,mode=max
 
   deploy:
     needs: build-image
@@ -74,7 +79,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH || '/opt/upjs-gdd/framework' }}"
+            cd "${{ secrets.DEPLOY_PATH || '/opt/upjs-gdd/ipel-gamedev/framework' }}"
             docker compose pull
             docker compose up -d --remove-orphans
             curl -fsS http://127.0.0.1:8080/health
