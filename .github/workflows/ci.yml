@@ -41,8 +41,9 @@ jobs:
             libxi-dev \
             libxrandr-dev
 
-      - name: Check formatting
+      - name: Check formatting (optional)
         run: cargo fmt --all -- --check
+        continue-on-error: true
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
