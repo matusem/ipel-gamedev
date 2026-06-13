@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use framework_sdk_shared_types::{GameManifest, PublishToken, UploadGameZipResponse};
+use upjs_gdd_shared_types::{GameManifest, PublishToken, UploadGameZipResponse};
 use reqwest::blocking::Client;
 use serde_json::json;
 
@@ -46,7 +46,7 @@ impl SdkApiClient {
         let upload = &v["data"]["uploadGameZip"];
         Ok(UploadGameZipResponse {
             upload_id: upload["uploadId"].as_str().unwrap_or_default().to_string(),
-            draft: upload["draft"].as_object().map(|d| framework_sdk_shared_types::DraftLite {
+            draft: upload["draft"].as_object().map(|d| upjs_gdd_shared_types::DraftLite {
                 id: d.get("id").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
                 game_name: d
                     .get("gameName")
@@ -92,7 +92,7 @@ impl SdkApiClient {
         Ok(v["data"]["updateGameDraftManifest"].clone())
     }
 
-    pub fn list_my_drafts(&self, token: &str) -> Result<Vec<framework_sdk_shared_types::DraftLite>> {
+    pub fn list_my_drafts(&self, token: &str) -> Result<Vec<upjs_gdd_shared_types::DraftLite>> {
         let query = r#"query { myGameDrafts { id gameName version status } }"#;
         let body = self.gql_raw(token, query, json!({}))?;
         let v: serde_json::Value = serde_json::from_str(&body)?;
@@ -101,7 +101,7 @@ impl SdkApiClient {
             .context("missing myGameDrafts")?;
         let mut out = Vec::with_capacity(drafts.len());
         for d in drafts {
-            out.push(framework_sdk_shared_types::DraftLite {
+            out.push(upjs_gdd_shared_types::DraftLite {
                 id: d["id"].as_str().unwrap_or_default().to_string(),
                 game_name: d["gameName"].as_str().unwrap_or_default().to_string(),
                 version: d["version"].as_str().unwrap_or_default().to_string(),

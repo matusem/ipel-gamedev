@@ -3983,46 +3983,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "framework-sdk-bevy"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "framework-sdk-rust-shared",
- "framework-sdk-shared-types",
-]
-
-[[package]]
-name = "framework-sdk-dioxus"
-version = "0.1.0"
-dependencies = [
- "dioxus",
- "framework-sdk-rust-shared",
- "framework-sdk-shared-types",
-]
-
-[[package]]
-name = "framework-sdk-rust-shared"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "framework-sdk-shared-types",
- "reqwest",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "framework-sdk-shared-types"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "ts-rs",
-]
-
-[[package]]
 name = "fs-set-times"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4200,8 +4160,10 @@ dependencies = [
  "ratatui",
  "ratatui-interact",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
  "tui-input",
@@ -7680,6 +7642,7 @@ dependencies = [
  "futures-util",
  "password-hash",
  "rmp-serde",
+ "semver",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -9115,6 +9078,46 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
+name = "upjs-gdd-bevy"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "upjs-gdd-rust-shared",
+ "upjs-gdd-shared-types",
+]
+
+[[package]]
+name = "upjs-gdd-dioxus"
+version = "0.1.0"
+dependencies = [
+ "dioxus",
+ "upjs-gdd-rust-shared",
+ "upjs-gdd-shared-types",
+]
+
+[[package]]
+name = "upjs-gdd-rust-shared"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "upjs-gdd-shared-types",
+]
+
+[[package]]
+name = "upjs-gdd-shared-types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
 
 [[package]]
 name = "url"

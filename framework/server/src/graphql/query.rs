@@ -17,8 +17,8 @@ use super::{
     require_developer_user, require_registered_user, ActivityEventGql, BadgeGql, DeploymentGql,
     FinishedGameGql, GameCommentGql, GameDraftGql, GameInstanceGql, GamePatchNoteGql, GameReviewGql,
     GameScreenshotGql, GameSessionGql, GameStorefrontGql, GameTypeGql, LeaderboardEntryGql, LobbyGql,
-    LobbySummaryGql, NotificationGql, PlatformStatsGql, PlayTimeLeaderboardEntryGql,
-    PublishTokenSummaryGql, UserGql, UserProfileGql,
+    LobbySummaryGql, NotificationGql, PlatformManifestGql, PlatformStatsGql, PlayTimeLeaderboardEntryGql,
+    PublishTokenSummaryGql, UserGql, UserProfileGql, CliReleaseGql,
 };
 /// Root query.
 pub struct QueryRoot;
@@ -331,6 +331,37 @@ impl QueryRoot {
                 })
             })
             .collect())
+    }
+
+    /// Full platform release manifest (versions, SDK matrix, CLI requirements).
+    async fn platform_manifest(&self) -> Result<PlatformManifestGql> {
+        let m = crate::platform_manifest::load_manifest();
+        let sdk_versions_json = serde_json::to_string(&m.sdk_versions)
+            .map_err(|e| Error::new(format!("serialize sdk versions: {e}")))?;
+        Ok(PlatformManifestGql {
+            framework_version: m.framework_version.clone(),
+            wit_version: m.wit_version.clone(),
+            wasmtime_version: m.wasmtime_version.clone(),
+            released_at: m.released_at.clone(),
+            cli: super::CliReleaseGql {
+                version: m.cli.version.clone(),
+                min_supported: m.cli.min_supported.clone(),
+                released_at: m.cli.released_at.clone(),
+                notes: m.cli.notes.clone(),
+            },
+            sdk_versions_json,
+        })
+    }
+
+    /// CLI download manifest (subset of `platformManifest`).
+    async fn platform_cli_release(&self) -> Result<CliReleaseGql> {
+        let m = crate::platform_manifest::load_manifest();
+        Ok(super::CliReleaseGql {
+            version: m.cli.version.clone(),
+            min_supported: m.cli.min_supported.clone(),
+            released_at: m.cli.released_at.clone(),
+            notes: m.cli.notes.clone(),
+        })
     }
 
     async fn platform_stats(&self, ctx: &Context<'_>) -> Result<PlatformStatsGql> {

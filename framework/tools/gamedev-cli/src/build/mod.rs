@@ -40,7 +40,9 @@ pub fn run(args: BuildArgs) -> Result<()> {
     }
     let strict = args.strict;
     let stage = tempfile::tempdir()?;
-    fs::copy(root.join("manifest.json"), stage.path().join("manifest.json"))?;
+    let staged_manifest = stage.path().join("manifest.json");
+    fs::copy(root.join("manifest.json"), &staged_manifest)?;
+    inject_built_with(&staged_manifest)?;
     match cfg.backend {
         BackendKind::Rust => {
             let cargo_ok = game_cargo_command()
@@ -151,6 +153,25 @@ pub fn run(args: BuildArgs) -> Result<()> {
     }
     create_zip(stage.path(), &out)?;
     println!("Built package: {}", out.display());
+    Ok(())
+}
+
+fn inject_built_with(manifest_path: &Path) -> Result<()> {
+    let raw = fs::read_to_string(manifest_path)?;
+    let mut v: serde_json::Value = serde_json::from_str(&raw)?;
+    let obj = v
+        .as_object_mut()
+        .context("manifest.json root must be a JSON object")?;
+    obj.insert(
+        "built_with".to_string(),
+        serde_json::json!({
+            "cli_version": crate::version::cli_version(),
+            "framework_version": crate::version::FRAMEWORK_VERSION,
+            "wit_version": crate::version::WIT_VERSION,
+            "sdk_versions": crate::version::sdk_versions(),
+        }),
+    );
+    fs::write(manifest_path, serde_json::to_string_pretty(&v)?)?;
     Ok(())
 }
 

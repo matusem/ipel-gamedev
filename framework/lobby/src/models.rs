@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-pub const CONFIG_MSG_SOURCE: &str = "ipel-game-config";
-pub const CONFIG_RESULT_SOURCE: &str = "ipel-game-config-result";
-pub const CONFIG_SCHEMA_SOURCE: &str = "ipel-game-config-schema";
-pub const CONFIG_STATE_SOURCE: &str = "ipel-game-config-state";
-pub const USER_ID_KEY: &str = "ipel_user_id";
-pub const SESSION_TOKEN_KEY: &str = "ipel_session_token";
+pub const CONFIG_MSG_SOURCE: &str = "upjs-gdd-game-config";
+pub const CONFIG_RESULT_SOURCE: &str = "upjs-gdd-game-config-result";
+pub const CONFIG_SCHEMA_SOURCE: &str = "upjs-gdd-game-config-schema";
+pub const CONFIG_STATE_SOURCE: &str = "upjs-gdd-game-config-state";
+pub const USER_ID_KEY: &str = "upjs_gdd_user_id";
+pub const SESSION_TOKEN_KEY: &str = "upjs_gdd_session_token";
 
 pub const LOBBIES_QUERY: &str =
     r#"query { lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt } }"#;

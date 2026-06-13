@@ -1,8 +1,8 @@
 package wit.worlds;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.ipel.gamedev.game.GameSerde;
-import dev.ipel.gamedev.game.SerializationFormat;
+import sk.upjs.gdd.game.GameSerde;
+import sk.upjs.gdd.game.SerializationFormat;
 
 /**
  * TeaVM-safe serde: Jackson/msgpack libraries trigger {@code UnusedFunctionElimination} NPE when

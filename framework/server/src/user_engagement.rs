@@ -87,7 +87,7 @@ pub async fn welcome_notification(pool: &SqlitePool, user_id: Uuid) -> Result<()
     insert_notification(
         pool,
         user_id,
-        "Welcome to IPEL GameDev",
+        "Welcome to UPJŠ GDD Platform",
         "Your account is ready — browse games, join a lobby, or open the developer hub.",
         "system",
     )

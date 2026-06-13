@@ -23,6 +23,6 @@ rootProject.name = "java-component"
 
 includeBuild("../game") {
     dependencySubstitution {
-        substitute(module("dev.ipel.gamedev:game")).using(project(":"))
+        substitute(module("sk.upjs.gdd:game")).using(project(":"))
     }
 }

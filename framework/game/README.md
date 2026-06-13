@@ -259,10 +259,10 @@ The lobby loads `config.html` in an iframe. That iframe does not save config dir
 
 For `config.html`:
 
-- lobby sends schema via `ipel-game-config-schema`
-- lobby sends current saved config via `ipel-game-config-state`
-- iframe sends previews via `ipel-game-config`
-- lobby replies with validation via `ipel-game-config-result`
+- lobby sends schema via `upjs-gdd-game-config-schema`
+- lobby sends current saved config via `upjs-gdd-game-config-state`
+- iframe sends previews via `upjs-gdd-game-config`
+- lobby replies with validation via `upjs-gdd-game-config-result`
 
 For `index.html`:
 

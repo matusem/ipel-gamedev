@@ -1,6 +1,6 @@
 use crate::models::{SESSION_TOKEN_KEY, USER_ID_KEY};
 
-pub const DEMO_MODE_KEY: &str = "ipel_demo_mode";
+pub const DEMO_MODE_KEY: &str = "upjs_gdd_demo_mode";
 pub const DEMO_USER_ID: &str = "demo-user-nova";
 
 pub fn is_demo_mode() -> bool {

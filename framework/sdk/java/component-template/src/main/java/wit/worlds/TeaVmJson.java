@@ -1,15 +1,15 @@
 package wit.worlds;
 
-import dev.ipel.gamedev.game.PlayerEvent;
-import dev.ipel.gamedev.game.SpectatorEvent;
-import dev.ipel.gamedev.tictactoe.Config;
-import dev.ipel.gamedev.tictactoe.GameOutcome;
-import dev.ipel.gamedev.tictactoe.MoveEvent;
-import dev.ipel.gamedev.tictactoe.Player;
-import dev.ipel.gamedev.tictactoe.PlayerOutcome;
-import dev.ipel.gamedev.tictactoe.Position;
-import dev.ipel.gamedev.tictactoe.State;
-import dev.ipel.gamedev.tictactoe.TttPlayerState;
+import sk.upjs.gdd.game.PlayerEvent;
+import sk.upjs.gdd.game.SpectatorEvent;
+import sk.upjs.gdd.tictactoe.Config;
+import sk.upjs.gdd.tictactoe.GameOutcome;
+import sk.upjs.gdd.tictactoe.MoveEvent;
+import sk.upjs.gdd.tictactoe.Player;
+import sk.upjs.gdd.tictactoe.PlayerOutcome;
+import sk.upjs.gdd.tictactoe.Position;
+import sk.upjs.gdd.tictactoe.State;
+import sk.upjs.gdd.tictactoe.TttPlayerState;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;

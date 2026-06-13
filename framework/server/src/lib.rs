@@ -10,6 +10,7 @@ pub mod game_upload;
 pub mod graphql;
 pub mod lobby_db;
 pub mod logging;
+pub mod platform_manifest;
 pub mod platform_stats;
 pub mod user_engagement;
 

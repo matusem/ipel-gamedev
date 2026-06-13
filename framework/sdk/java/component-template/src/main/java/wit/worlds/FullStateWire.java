@@ -1,11 +1,11 @@
 package wit.worlds;
 
-import dev.ipel.gamedev.game.FullState;
-import dev.ipel.gamedev.game.PlayerAction;
-import dev.ipel.gamedev.tictactoe.Config;
-import dev.ipel.gamedev.tictactoe.Player;
-import dev.ipel.gamedev.tictactoe.Position;
-import dev.ipel.gamedev.tictactoe.State;
+import sk.upjs.gdd.game.FullState;
+import sk.upjs.gdd.game.PlayerAction;
+import sk.upjs.gdd.tictactoe.Config;
+import sk.upjs.gdd.tictactoe.Player;
+import sk.upjs.gdd.tictactoe.Position;
+import sk.upjs.gdd.tictactoe.State;
 import java.util.ArrayList;
 import java.util.List;
 

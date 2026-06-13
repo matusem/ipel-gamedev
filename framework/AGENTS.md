@@ -1,4 +1,4 @@
-# Agent instructions — IPEL GameDev Framework
+# Agent instructions — UPJŠ GDD Platform
 
 Multiplayer web game platform: Rust/Actix server, Dioxus WASM lobby, WASM game logic via Wasmtime. See [README.md](README.md) for architecture and setup.
 

@@ -2,6 +2,20 @@
 name = "gamedev-cli"
 version = "0.1.0"
 edition = "2024"
+description = "UPJŠ GDD Platform developer CLI — build, validate, and deploy game bundles"
+license = "MIT"
+repository = "https://github.com/matusem/ipel-gamedev"
+readme = "README.md"
+
+[package.metadata.deb]
+maintainer = "UPJŠ GDD <gamedev@ics.upjs.sk>"
+copyright = "2026, UPJŠ GDD"
+extended-description = """\
+Command-line tool for UPJŠ GDD Platform students: scaffold games, build WASM packages,\
+and upload to the multiplayer platform."""
+assets = [
+    ["target/release/gamedev-cli", "usr/bin/gamedev-cli", "755"],
+]
 
 [dependencies]
 anyhow = "1"
@@ -20,6 +34,8 @@ tempfile = "3"
 toml = "0.9"
 pathdiff = "0.2"
 zip = "4"
+semver = "1"
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

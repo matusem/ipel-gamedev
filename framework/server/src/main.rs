@@ -272,6 +272,18 @@ async fn health() -> ActixResult<HttpResponse> {
         .body(r#"{"status":"ok"}"#))
 }
 
+async fn platform_manifest() -> ActixResult<HttpResponse> {
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(server::platform_manifest::platform_manifest_json()))
+}
+
+async fn cli_manifest() -> ActixResult<HttpResponse> {
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(server::platform_manifest::cli_manifest_json()))
+}
+
 async fn graphql_playground() -> ActixResult<HttpResponse> {
     let html = playground_source(GraphQLPlaygroundConfig::new("/graphql").subscription_endpoint("/graphql"));
     Ok(HttpResponse::Ok()
@@ -441,6 +453,8 @@ async fn main() -> std::io::Result<()> {
     let drafts_dir = PathBuf::from(std::env::var("DRAFTS_DIR").unwrap_or_else(|_| "./drafts".into()));
     let lobby_dir = PathBuf::from(std::env::var("LOBBY_DIR").unwrap_or_else(|_| "./lobby".into()));
     let lib_dir = PathBuf::from(std::env::var("LIB_DIR").unwrap_or_else(|_| "./client-lib".into()));
+    let tools_dir = PathBuf::from(std::env::var("TOOLS_DIR").unwrap_or_else(|_| "./tools".into()));
+    let _ = server::platform_manifest::load_manifest();
     let _ = std::fs::create_dir_all(&drafts_dir);
     cleanup_old_drafts(&drafts_dir);
 
@@ -475,6 +489,11 @@ async fn main() -> std::io::Result<()> {
             .app_data(lobby_notify.clone())
             .app_data(schema.clone())
             .route("/health", web::get().to(health))
+            .route("/platform/manifest.json", web::get().to(platform_manifest))
+            .route(
+                "/tools/gamedev-cli/manifest.json",
+                web::get().to(cli_manifest),
+            )
             .route("/game", web::get().to(game))
             .route("/games/{game}/{tail:.*}", web::get().to(game_asset))
             .service(
@@ -487,6 +506,11 @@ async fn main() -> std::io::Result<()> {
 
         if lib_dir.exists() {
             app = app.service(Files::new("/lib", &lib_dir));
+        }
+
+        let cli_tools = tools_dir.join("gamedev-cli");
+        if cli_tools.is_dir() {
+            app = app.service(Files::new("/tools/gamedev-cli", &cli_tools));
         }
 
         if lobby_dir.exists() {

@@ -11,7 +11,7 @@ use crate::auth::{self, AuthEntry};
 use crate::build;
 use crate::cli::{
     BackendKind, BuildArgs, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands, LoginArgs,
-    ManifestArgs, ManifestSubcommands, TestArgs, ValidateArgs,
+    ManifestArgs, ManifestSubcommands, TestArgs, UpdateArgs, ValidateArgs,
 };
 use crate::doctor::{self, has_failures, print_report};
 use crate::project::{game_cargo_command, load_config, resolve_java_backend_dir, resolve_test_dir};
@@ -55,6 +55,12 @@ pub fn run_login(args: LoginArgs) -> Result<()> {
 
 pub fn run_deploy(args: DeployArgs) -> Result<()> {
     let root = args.project_dir.unwrap_or(std::env::current_dir()?);
+    let base = crate::update::base_from_server_url(&args.server_url);
+    if let Ok(m) = crate::platform::fetch_platform_manifest(&base) {
+        crate::platform::check_local_toolchain_against_platform(&m)?;
+    } else {
+        eprintln!("warning: could not fetch platform manifest from {base} — skipping version check");
+    }
     run_build(BuildArgs {
         project_dir: Some(root.clone()),
         out: None,
@@ -151,10 +157,19 @@ pub fn run_doctor(args: DoctorArgs) -> Result<()> {
     let root = args.project_dir.unwrap_or(std::env::current_dir()?);
     let checks = doctor::run(&root)?;
     print_report(&checks);
+    if let Some(base) = args.platform.as_deref() {
+        let m = crate::platform::fetch_platform_manifest(base)?;
+        crate::platform::check_local_toolchain_against_platform(&m)?;
+        println!("Platform compatibility: OK ({})", m.framework_version);
+    }
     if has_failures(&checks) {
         bail!("doctor found blocking issues");
     }
     Ok(())
+}
+
+pub fn run_update(args: UpdateArgs) -> Result<()> {
+    crate::update::run_update(&args.platform, args.check)
 }
 
 pub fn run_validate(args: ValidateArgs) -> Result<()> {

@@ -1,4 +1,4 @@
-use framework_sdk_shared_types::RealtimeEnvelope;
+use upjs_gdd_shared_types::RealtimeEnvelope;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]

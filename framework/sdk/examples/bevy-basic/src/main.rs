@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use framework_sdk_bevy::FrameworkBevySdkPlugin;
+use upjs_gdd_bevy::FrameworkBevySdkPlugin;
 
 fn main() {
     App::new()

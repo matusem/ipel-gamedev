@@ -2,17 +2,17 @@
  * **Config iframe** — teaches how to cooperate with the lobby’s JSON Schema pipeline.
  *
  * The lobby (`LobbyConfigPanel` in Dioxus):
- * 1. Posts the manifest’s `config_schema` as a JS object (`ipel-game-config-schema`).
- * 2. Posts the stored server config or null (`ipel-game-config-state`).
- * 3. Listens for preview JSON from the iframe (`ipel-game-config`). It only checks that the body is **valid JSON**;
+ * 1. Posts the manifest’s `config_schema` as a JS object (`upjs-gdd-game-config-schema`).
+ * 2. Posts the stored server config or null (`upjs-gdd-game-config-state`).
+ * 3. Listens for preview JSON from the iframe (`upjs-gdd-game-config`). It only checks that the body is **valid JSON**;
  *    richer validation is expected **inside the iframe** against the schema (this file implements a small Draft-07 subset).
- * 4. Replies with `ipel-game-config-result` (`ok`, `errors`) so the iframe can show whether the lobby accepted the preview string.
+ * 4. Replies with `upjs-gdd-game-config-result` (`ok`, `errors`) so the iframe can show whether the lobby accepted the preview string.
  *
  * The iframe does **not** call GraphQL; the host clicks **Apply configuration** to persist.
  */
 
-import { LobbyConfigBridge } from "@ipel/game-sdk";
-import type { JsonValue } from "@ipel/game-sdk";
+import { LobbyConfigBridge } from "@upjs-gdd/game-sdk";
+import type { JsonValue } from "@upjs-gdd/game-sdk";
 
 const GAME_TYPE = "tic_tac_toe";
 

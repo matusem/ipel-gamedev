@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "description": "UPJŠ GDD Platform developer CLI",
+  "homepage": "https://github.com/matusem/ipel-gamedev",
+  "license": "MIT",
+  "url": "https://github.com/matusem/ipel-gamedev/releases/download/gamedev-cli-v0.1.0/gamedev-cli-windows-x86_64.zip",
+  "hash": "REPLACE_WITH_SHA256",
+  "bin": "gamedev.exe",
+  "checkver": {
+    "github": "https://github.com/matusem/ipel-gamedev"
+  },
+  "autoupdate": {
+    "url": "https://github.com/matusem/ipel-gamedev/releases/download/gamedev-cli-v$version/gamedev-cli-windows-x86_64.zip"
+  }
+}

@@ -13,6 +13,6 @@ This directory contains frontend SDK packages for the framework.
 
 Canonical shared models are defined in `rust/shared-types` and can be exported with:
 
-`cargo run -p framework-sdk-shared-types --features typegen --bin export_ts`
+`cargo run -p upjs-gdd-shared-types --features typegen --bin export_ts`
 
 Generated files are written to `js/generated-types`.

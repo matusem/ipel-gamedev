@@ -1,4 +1,4 @@
-﻿use crate::api::*;
+use crate::api::*;
 use crate::components::ui::{Callout, CalloutVariant, ErrorBanner, Icon};
 use crate::models::{LoginData, RegisterUserData, SignUpData};
 use crate::stub::demo_mode;
@@ -16,7 +16,7 @@ pub fn AuthGate(on_ready: EventHandler<()>) -> Element {
     rsx! {
         div { class: "max-w-lg mx-auto px-4 py-12 sm:py-20",
             div { class: "text-center mb-10",
-                h1 { class: "font-manrope text-h1 text-on-surface", "IPEL GameDev" }
+                h1 { class: "font-manrope text-h1 text-on-surface", "UPJŠ GDD Platform" }
                 p { class: "mt-2 text-body-sm text-on-surface-variant",
                     "Guest, sign up, or log in to join lobbies."
                 }

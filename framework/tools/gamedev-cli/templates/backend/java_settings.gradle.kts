@@ -23,7 +23,7 @@ rootProject.name = "__ROOT_NAME__"
 
 includeBuild("__SDK_GAME_PATH__") {
     dependencySubstitution {
-        substitute(module("dev.ipel.gamedev:game")).using(project(":"))
+        substitute(module("sk.upjs.gdd:game")).using(project(":"))
     }
 }
 

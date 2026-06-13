@@ -23,7 +23,7 @@ rootProject.name = "my_game-java"
 
 includeBuild("../../../../sdk/java/game") {
     dependencySubstitution {
-        substitute(module("dev.ipel.gamedev:game")).using(project(":"))
+        substitute(module("sk.upjs.gdd:game")).using(project(":"))
     }
 }
 

@@ -2,9 +2,9 @@ package wit.worlds;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import dev.ipel.gamedev.game.PlayerEvent;
-import dev.ipel.gamedev.tictactoe.MoveEvent;
-import dev.ipel.gamedev.tictactoe.PlayerOutcome;
+import sk.upjs.gdd.game.PlayerEvent;
+import sk.upjs.gdd.tictactoe.MoveEvent;
+import sk.upjs.gdd.tictactoe.PlayerOutcome;
 
 /** Serde JSON matching Rust {@code PlayerEvent} (externally tagged {@code Event} / {@code GameOver}). */
 final class EventEncoding {

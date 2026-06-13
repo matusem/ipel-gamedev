@@ -20,7 +20,7 @@ async fn register_user_gets_welcome_notification() {
         .await
         .unwrap();
     assert_eq!(notes.len(), 1);
-    assert_eq!(notes[0].title, "Welcome to IPEL GameDev");
+    assert_eq!(notes[0].title, "Welcome to UPJŠ GDD Platform");
     assert!(notes[0].unread);
 }
 

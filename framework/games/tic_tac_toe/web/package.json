@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ipel/game-sdk": "file:../../../packages/game-sdk"
+    "@upjs-gdd/game-sdk": "file:../../../packages/game-sdk"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",

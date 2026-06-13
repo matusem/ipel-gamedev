@@ -1,14 +1,14 @@
-# IPEL GameDev — Refactor & UI Plan
+# UPJŠ GDD Platform — Refactor & UI Plan
 
 > Living document. Update the **Progress** section as work completes.
 
 ## Overview
 
-IPEL GameDev is a single-container multiplayer web game platform: Rust/Actix server, WASM game logic, Dioxus lobby SPA, GraphQL + WebSockets, SQLite.
+UPJŠ GDD Platform is a single-container multiplayer web game platform: Rust/Actix server, WASM game logic, Dioxus lobby SPA, GraphQL + WebSockets, SQLite.
 
 **Design reference:** `docs/ui-proposal/` — "Calm & Credible" design system (`Image 18.markdown`).
 
-**Brand:** IPEL GameDev (platform name in UI).
+**Brand:** UPJŠ GDD Platform (platform name in UI).
 
 ---
 
@@ -117,7 +117,7 @@ Screen rollout:
 ## Phase 5 — SDK & CLI
 
 - Single GraphQL operation source (codegen)
-- Merge/clarify `@ipel/game-sdk` vs `sdk/js`
+- Merge/clarify `@upjs-gdd/game-sdk` vs `sdk/js`
 - CLI: unsupported backend/frontend kinds fail at init/build; `--strict` on build; session login via `--display-name` + `--password`
 - Hide or implement stub CLI backends (C#, Unity, etc.) — **partial**: enum kept for serde; init/build reject unimplemented kinds
 

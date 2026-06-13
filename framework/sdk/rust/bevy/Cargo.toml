@@ -1,9 +1,12 @@
 [package]
-name = "framework-sdk-bevy"
+name = "upjs-gdd-bevy"
 version = "0.1.0"
 edition = "2024"
+description = "Bevy frontend helpers for UPJŠ GDD Platform"
+license = "MIT"
+repository = "https://github.com/matusem/ipel-gamedev"
 
 [dependencies]
 bevy = "0.15"
-framework-sdk-rust-shared = { path = "../shared" }
-framework-sdk-shared-types = { path = "../shared-types" }
+upjs-gdd-rust-shared = { path = "../shared" }
+upjs-gdd-shared-types = { path = "../shared-types" }

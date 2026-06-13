@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use framework_sdk_dioxus::use_realtime_controller;
+use upjs_gdd_dioxus::use_realtime_controller;
 
 fn main() {
     dioxus::launch(App);

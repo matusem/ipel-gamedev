@@ -1,6 +1,6 @@
 package wit.worlds;
 
-import dev.ipel.gamedev.tictactoe.Player;
-import dev.ipel.gamedev.tictactoe.Position;
+import sk.upjs.gdd.tictactoe.Player;
+import sk.upjs.gdd.tictactoe.Position;
 
 public record PlayerActionWire(Player player, Position action) {}

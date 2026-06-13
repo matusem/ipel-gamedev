@@ -1,7 +1,11 @@
 [package]
-name = "framework-sdk-shared-types"
+name = "upjs-gdd-shared-types"
 version = "0.1.0"
 edition = "2024"
+description = "Shared types for UPJŠ GDD Platform Rust SDK and TypeScript export"
+license = "MIT"
+repository = "https://github.com/matusem/ipel-gamedev"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1"

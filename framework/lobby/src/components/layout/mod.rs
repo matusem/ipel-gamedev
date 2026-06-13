@@ -144,7 +144,7 @@ pub fn AppShell(children: Element) -> Element {
                 class: "sticky top-0 w-full z-50 flex items-center justify-between px-4 sm:px-6 h-16 bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/40",
                 div { class: "flex items-center gap-4 md:pl-64 min-w-0",
                     span { class: "text-lg sm:text-xl font-manrope font-bold tracking-tighter text-on-surface shrink-0",
-                        "IPEL GameDev"
+                        "UPJŠ GDD Platform"
                     }
                 }
                 div { class: "flex items-center gap-2 shrink-0",
@@ -245,7 +245,7 @@ pub fn AppShell(children: Element) -> Element {
                             Icon { name: "terminal", filled: true }
                         }
                         div {
-                            h2 { class: "text-lg font-black text-on-surface uppercase tracking-widest font-manrope leading-none", "IPEL" }
+                            h2 { class: "text-lg font-black text-on-surface uppercase tracking-widest font-manrope leading-none", "UPJŠ GDD" }
                             p { class: "text-[10px] text-tertiary font-mono-code mt-0.5",
                                 "{server_status()} · {ping_ms()}ms"
                             }

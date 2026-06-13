@@ -22,7 +22,7 @@ export interface LobbyConfigBridgeOptions<TConfig extends JsonValue = JsonValue>
  *
  * - Origin must match `window.location.origin` (same as the lobby listener).
  * - Preview updates: call `sendPreview` with JSON text or an object; the lobby parses JSON and answers with
- *   `ipel-game-config-result` (`ok` / `errors`).
+ *   `upjs-gdd-game-config-result` (`ok` / `errors`).
  * - Saving to the server is done in the lobby (**Apply configuration**); the iframe only pushes previews.
  */
 export class LobbyConfigBridge<TConfig extends JsonValue = JsonValue> {

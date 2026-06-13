@@ -64,7 +64,7 @@ No separate DB server packages on host when a project uses embedded SQLite. Inst
 | Item | Requirement |
 |------|-------------|
 | **SSH** | Key-based login for deploy user(s); no shared passwords |
-| **Deploy user** | Dedicated user in `docker` group, e.g. `ipel-deploy` |
+| **Deploy user** | Dedicated user in `docker` group, e.g. `upjs-gdd-deploy` |
 | **Sudo** | `docker compose` + volume paths only, or rootless Docker policy per uni rules |
 | **Secrets** | OAuth client ID/secret, DB passwords, deploy keys — stored in uni secret store / env files on server, not in git |
 
@@ -98,7 +98,7 @@ No separate DB server packages on host when a project uses embedded SQLite. Inst
 
 ---
 
-## IPEL GameDev — `gdd.ics.upjs.sk`
+## UPJŠ GDD Platform — `gdd.ics.upjs.sk`
 
 Multiplayer web game platform. Authoritative game logic in WASM on server; lobby and clients in browser.
 
@@ -114,7 +114,7 @@ Multiplayer web game platform. Authoritative game logic in WASM on server; lobby
 | **Instances** | 1 | 1 | 1 (single-instance design) |
 
 ```
-Service:        IPEL GameDev — multiplayer web game platform
+Service:        UPJŠ GDD Platform — multiplayer web game platform
 URL:            https://gdd.ics.upjs.sk/
 Repository:     github.com/matusem/ipel-gamedev (framework/)
 Deployment:     1× Docker container
@@ -235,7 +235,7 @@ Copy one block per VM/service request.
 
 ```
 Hostname:       gdd.ics.upjs.sk
-Project:        IPEL GameDev
+Project:        UPJŠ GDD Platform
 OS:             Debian 14 amd64
 CPU / RAM / Disk: 4 vCPU, 16 GB RAM, 40 GB SSD
 Database:       SQLite (embedded, persistent volume)
@@ -251,7 +251,7 @@ Backup:         daily, volumes: app/data, app/games
 
 ```
 Hostname:       gdd.ics.upjs.sk
-Project:        IPEL GameDev
+Project:        UPJŠ GDD Platform
 OS:             Debian 14 amd64
 CPU / RAM / Disk: 2 vCPU, 8 GB RAM, 20 GB SSD
 Database:       SQLite (embedded, persistent volume)

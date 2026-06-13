@@ -64,7 +64,7 @@ Pri vloženej SQLite netreba na hoste samostatný DB server. DB balíky inštalo
 | Položka | Požiadavka |
 |---------|------------|
 | **SSH** | Prihlásenie kľúčom pre deploy používateľa(ov); žiadne zdieľané heslá |
-| **Deploy user** | Vyhradený používateľ v skupine `docker`, napr. `ipel-deploy` |
+| **Deploy user** | Vyhradený používateľ v skupine `docker`, napr. `upjs-gdd-deploy` |
 | **Sudo** | Len `docker compose` + cesty k volume, alebo rootless Docker podľa pravidiel uni |
 | **Tajomstvá** | OAuth client ID/secret, DB heslá, deploy kľúče — uni secret store / env súbory na serveri, nie v gite |
 
@@ -98,7 +98,7 @@ Pri vloženej SQLite netreba na hoste samostatný DB server. DB balíky inštalo
 
 ---
 
-## IPEL GameDev — `gdd.ics.upjs.sk`
+## UPJŠ GDD Platform — `gdd.ics.upjs.sk`
 
 Multiplayer webová herná platforma. Autoritatívna herná logika vo WASM na serveri; lobby a klienti v prehliadači.
 
@@ -114,7 +114,7 @@ Multiplayer webová herná platforma. Autoritatívna herná logika vo WASM na se
 | **Inštancie** | 1 | 1 | 1 (single-instance dizajn) |
 
 ```
-Služba:         IPEL GameDev — multiplayer webová herná platforma
+Služba:         UPJŠ GDD Platform — multiplayer webová herná platforma
 URL:            https://gdd.ics.upjs.sk/
 Repozitár:      github.com/matusem/ipel-gamedev (framework/)
 Nasadenie:      1× Docker kontajner
@@ -235,7 +235,7 @@ Skopírovať jeden blok na VM / požiadavku služby.
 
 ```
 Hostname:       gdd.ics.upjs.sk
-Projekt:        IPEL GameDev
+Projekt:        UPJŠ GDD Platform
 OS:             Debian 14 amd64
 CPU / RAM / Disk: 4 vCPU, 16 GB RAM, 40 GB SSD
 Databáza:       SQLite (vložená, perzistentný volume)
@@ -251,7 +251,7 @@ Záloha:         denne, volumes: app/data, app/games
 
 ```
 Hostname:       gdd.ics.upjs.sk
-Projekt:        IPEL GameDev
+Projekt:        UPJŠ GDD Platform
 OS:             Debian 14 amd64
 CPU / RAM / Disk: 2 vCPU, 8 GB RAM, 20 GB SSD
 Databáza:       SQLite (vložená, perzistentný volume)

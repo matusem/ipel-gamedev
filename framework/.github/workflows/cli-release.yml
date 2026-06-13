@@ -1,0 +1,118 @@
+name: CLI Release
+
+on:
+  push:
+    tags:
+      - "gamedev-cli-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+            asset_key: windows-x86_64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            asset_key: linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            asset_key: linux-aarch64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+            asset_key: macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+            asset_key: macos-aarch64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build gamedev-cli
+        run: cargo build --release -p gamedev-cli --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION#gamedev-cli-v}"
+          NAME="gamedev-cli-${{ matrix.asset_key }}"
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/gamedev-cli" "dist/gamedev"
+          chmod +x dist/gamedev
+          tar -czf "dist/${NAME}.tar.gz" -C dist gamedev
+          sha256sum "dist/${NAME}.tar.gz" | tee "dist/${NAME}.sha256"
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $VERSION = "${{ github.ref_name }}" -replace '^gamedev-cli-v','' -replace '^v',''
+          $Name = "gamedev-cli-${{ matrix.asset_key }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/gamedev-cli.exe" "dist/gamedev.exe"
+          Compress-Archive -Path dist/gamedev.exe -DestinationPath "dist/$Name.zip" -Force
+          $hash = (Get-FileHash "dist/$Name.zip" -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "dist/$Name.sha256" -Value "$hash  $Name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.asset_key }}
+          path: dist/*
+
+  release:
+    needs: build-cli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute manifest checksums
+        id: manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION#gamedev-cli-v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          python3 scripts/update-cli-manifest.py \
+            --version "$VERSION" \
+            --artifacts artifacts \
+            --out platform/manifest.json \
+            --cli-out tools/gamedev-cli/manifest.json
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: artifacts/*
+          generate_release_notes: true
+
+      - name: Upload CLI bundles to release assets folder
+        run: |
+          mkdir -p tools/gamedev-cli/v${{ steps.manifest.outputs.version }}
+          cp artifacts/* tools/gamedev-cli/v${{ steps.manifest.outputs.version }}/ || true

@@ -3,7 +3,7 @@ name = "lobby"
 default_platform = "web"
 
 [web.app]
-title = "IPEL GameDev"
+title = "UPJŠ GDD Platform"
 
 # `dx serve` runs on :8080; proxy HTTP API routes to the Actix server on :8081.
 # WebSockets bypass this proxy and connect directly to :8081 (see lobby/src/api/graphql.rs `ws_host`).

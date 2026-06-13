@@ -316,7 +316,7 @@ fn storefront(game: &str) -> Value {
     let (tagline, desc, tags, mins) = match game {
         "checkers" => (
             "Classic board combat — claim your seat",
-            "Traditional checkers rebuilt for the IPEL lobby. WASM game logic, real-time seats, and post-match leaderboards.\n\nPerfect for quick 1v1 sessions or tournament nights with friends.",
+            "Traditional checkers rebuilt for the UPJŠ GDD Platform lobby. WASM game logic, real-time seats, and post-match leaderboards.\n\nPerfect for quick 1v1 sessions or tournament nights with friends.",
             vec!["Board", "Turn-based", "1v1", "WASM"],
             14,
         ),
@@ -626,8 +626,8 @@ fn my_notifications() -> Value {
 
 fn my_tokens() -> Value {
     json!([
-        { "id": "tok-demo-1", "label": "CI Pipeline", "maskedKey": "ipel_••••••••4f2a", "createdAt": ago_days(14), "expiresAt": ago_days(-90) },
-        { "id": "tok-demo-2", "label": "Local Dev", "maskedKey": "ipel_••••••••9b1c", "createdAt": ago_days(45), "expiresAt": ago_days(-60) }
+        { "id": "tok-demo-1", "label": "CI Pipeline", "maskedKey": "gdd_••••••••4f2a", "createdAt": ago_days(14), "expiresAt": ago_days(-90) },
+        { "id": "tok-demo-2", "label": "Local Dev", "maskedKey": "gdd_••••••••9b1c", "createdAt": ago_days(45), "expiresAt": ago_days(-60) }
     ])
 }
 
@@ -790,7 +790,7 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         } else if q.contains("revokePublishToken") {
             json!({ "revokePublishToken": true })
         } else if q.contains("createPublishToken") {
-            json!({ "createPublishToken": { "token": "ipel_demo_key_do_not_share", "expiresAt": ago_days(-90) } })
+            json!({ "createPublishToken": { "token": "gdd_demo_key_do_not_share", "expiresAt": ago_days(-90) } })
         } else if q.contains("uploadGameZip") {
             json!({ "uploadGameZip": { "report": { "ok": true, "errors": 0, "warnings": 1, "infos": 2, "requiredIndexHtml": true, "requiredConfigHtml": true, "requiredResultHtml": true, "requiredAboutHtml": true, "diagnostics": [
                 { "severity": "info", "code": "DEMO", "message": "Demo mode — upload simulated", "path": null, "hint": null }

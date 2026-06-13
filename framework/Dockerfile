@@ -54,7 +54,7 @@ WORKDIR /app
 
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -69,12 +69,20 @@ COPY --from=builder /app/lobby-dist/ /app/lobby/
 
 COPY --from=builder /app/games-bundle/tic_tac_toe/ /app/games/tic_tac_toe/
 
+COPY platform/ /app/platform/
+COPY tools/gamedev-cli/manifest.json /app/tools/gamedev-cli/manifest.json
+COPY tools/gamedev-cli/install.ps1 /app/tools/gamedev-cli/install.ps1
+COPY tools/gamedev-cli/install.sh /app/tools/gamedev-cli/install.sh
+RUN chmod +x /app/tools/gamedev-cli/install.sh
+
 ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV DATABASE_URL=sqlite:///app/data/app.db
 ENV GAMES_DIR=/app/games
 ENV LOBBY_DIR=/app/lobby
 ENV LIB_DIR=/app/lib
+ENV PLATFORM_MANIFEST_DIR=/app/platform
+ENV TOOLS_DIR=/app/tools
 
 EXPOSE 8080
 

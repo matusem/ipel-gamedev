@@ -1,9 +1,12 @@
 [package]
-name = "framework-sdk-dioxus"
+name = "upjs-gdd-dioxus"
 version = "0.1.0"
 edition = "2024"
+description = "Dioxus frontend helpers for UPJŠ GDD Platform"
+license = "MIT"
+repository = "https://github.com/matusem/ipel-gamedev"
 
 [dependencies]
 dioxus = "0.6"
-framework-sdk-rust-shared = { path = "../shared" }
-framework-sdk-shared-types = { path = "../shared-types" }
+upjs-gdd-rust-shared = { path = "../shared" }
+upjs-gdd-shared-types = { path = "../shared-types" }

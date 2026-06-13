@@ -1,10 +1,10 @@
 package wit.worlds;
 
-import dev.ipel.gamedev.game.PlayerEvent;
-import dev.ipel.gamedev.game.SpectatorEvent;
-import dev.ipel.gamedev.tictactoe.GameOutcome;
-import dev.ipel.gamedev.tictactoe.MoveEvent;
-import dev.ipel.gamedev.tictactoe.PlayerOutcome;
+import sk.upjs.gdd.game.PlayerEvent;
+import sk.upjs.gdd.game.SpectatorEvent;
+import sk.upjs.gdd.tictactoe.GameOutcome;
+import sk.upjs.gdd.tictactoe.MoveEvent;
+import sk.upjs.gdd.tictactoe.PlayerOutcome;
 
 /** Serde JSON matching Rust {@code PlayerEvent} (externally tagged {@code Event} / {@code GameOver}). */
 final class EventEncoding {

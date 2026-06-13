@@ -1,4 +1,4 @@
-use framework_sdk_shared_types::ValidationReport;
+use upjs_gdd_shared_types::ValidationReport;
 
 #[test]
 fn report_shape_matches_expected_fields() {

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.5.0.schema.json
+
+PackageIdentifier: UPJS.GDD.GamedevCli
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: UPJŠ GDD
+PackageName: gamedev-cli
+License: MIT
+ShortDescription: UPJŠ GDD Platform developer CLI for building and deploying games
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    InstallerUrl: https://github.com/matusem/ipel-gamedev/releases/download/gamedev-cli-v0.1.0/gamedev-cli-windows-x86_64.zip
+    InstallerSha256: REPLACE_WITH_SHA256
+ManifestType: singleton
+ManifestVersion: 1.5.0

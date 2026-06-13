@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 bevy = "0.15"
-framework-sdk-bevy = { path = "../../rust/bevy" }
+upjs-gdd-bevy = { path = "../../rust/bevy" }

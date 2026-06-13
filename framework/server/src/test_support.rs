@@ -38,7 +38,7 @@ impl TestEnv {
         let game_store = Arc::new(GameInstanceStore::new(pool.clone()));
         let component_db = ComponentDb::new();
         let games_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/games");
-        let drafts_dir = std::env::temp_dir().join("ipel-test-drafts");
+        let drafts_dir = std::env::temp_dir().join("upjs-gdd-test-drafts");
         let registry = Arc::new(RwLock::new(GameRegistry::load(&games_dir, &component_db)));
         let schema = build_schema();
 

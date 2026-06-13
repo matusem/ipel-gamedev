@@ -1,0 +1,70 @@
+# Example nginx site for gdd.ics.upjs.sk (or your domain).
+# Place on the public server; upstream points at the Pi/tunnel target.
+
+upstream upjs_gdd {
+    # Tunnel or private IP of the Raspberry Pi host running docker compose.
+    server 127.0.0.1:8080;
+    # server 100.x.x.x:8080;   # Tailscale / WireGuard
+    # server 10.0.0.5:8080;    # LAN
+    keepalive 32;
+}
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name gdd.ics.upjs.sk;
+
+  # ssl_certificate     /etc/letsencrypt/live/gdd.ics.upjs.sk/fullchain.pem;
+  # ssl_certificate_key /etc/letsencrypt/live/gdd.ics.upjs.sk/privkey.pem;
+
+    client_max_body_size 64m;
+
+    location / {
+        proxy_pass http://upjs_gdd;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # GraphQL HTTP + subscriptions (WebSocket)
+    location /graphql {
+        proxy_pass http://upjs_gdd;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Game WebSocket
+    location /game {
+        proxy_pass http://upjs_gdd;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+
+server {
+    listen 80;
+    server_name gdd.ics.upjs.sk;
+    return 301 https://$host$request_uri;
+}

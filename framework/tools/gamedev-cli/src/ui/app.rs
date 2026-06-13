@@ -729,6 +729,7 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
                 stack.pop();
                 Ok(Some(UiCommand::Doctor(DoctorArgs {
                     project_dir: None,
+                    platform: None,
                 })))
             }
             _ => Ok(None),

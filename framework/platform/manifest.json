@@ -1,0 +1,44 @@
+{
+  "framework_version": "0.1.0",
+  "wit_version": "game-core-v1",
+  "wasmtime_version": "37.0.2",
+  "released_at": "2026-06-13",
+  "require_built_with_metadata": false,
+  "cli": {
+    "version": "0.1.0",
+    "min_supported": "0.1.0",
+    "released_at": "2026-06-13",
+    "assets": {
+      "windows-x86_64": {
+        "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-windows-x86_64.zip",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "linux-x86_64": {
+        "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-linux-x86_64.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "linux-aarch64": {
+        "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-linux-aarch64.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "macos-x86_64": {
+        "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-macos-x86_64.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "macos-aarch64": {
+        "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-macos-aarch64.tar.gz",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "notes": "Download matching CLI for this platform release. Run gamedev-cli doctor --platform <url> to verify."
+  },
+  "sdk_versions": {
+    "upjs-gdd-shared-types": "0.1.0",
+    "upjs-gdd-rust-shared": "0.1.0",
+    "upjs-gdd-bevy": "0.1.0",
+    "upjs-gdd-dioxus": "0.1.0",
+    "@upjs-gdd/game-sdk": "0.1.0",
+    "@upjs-gdd/sdk-js": "0.1.0",
+    "sk.upjs.gdd:game": "0.1.0"
+  }
+}

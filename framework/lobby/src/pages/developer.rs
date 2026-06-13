@@ -331,6 +331,30 @@ pub fn DeveloperUploadsPage() -> Element {
                 }
 
                 section { class: "section-card",
+                    h2 { class: "card-title text-lg mb-4", "Download CLI" }
+                    p { class: "text-body-sm text-on-surface-variant mb-4",
+                        "Install the platform-matching gamedev-cli. Manifest: /tools/gamedev-cli/manifest.json"
+                    }
+                    div { class: "space-y-3",
+                        div { class: "rounded-lg border border-outline-variant/30 bg-surface-container-low px-4 py-3",
+                            p { class: "text-label-caps font-label-caps text-outline uppercase", "Windows" }
+                            p { class: "font-mono-code text-body-sm text-on-surface mt-1 break-all",
+                                "irm /tools/gamedev-cli/install.ps1 | iex"
+                            }
+                        }
+                        div { class: "rounded-lg border border-outline-variant/30 bg-surface-container-low px-4 py-3",
+                            p { class: "text-label-caps font-label-caps text-outline uppercase", "macOS / Linux" }
+                            p { class: "font-mono-code text-body-sm text-on-surface mt-1 break-all",
+                                "curl -fsSL /tools/gamedev-cli/install.sh | bash"
+                            }
+                        }
+                        p { class: "text-body-sm text-outline",
+                            "After install: gamedev-cli doctor --platform <this-site-url>"
+                        }
+                    }
+                }
+
+                section { class: "section-card",
                     h2 { class: "card-title text-lg mb-4", "CLI quick-start" }
                     div { class: "space-y-3",
                         for (label, cmd) in CLI_COMMANDS {

@@ -1,0 +1,28 @@
+# Production stack for Raspberry Pi 5 / single-node hosts.
+# Bind the app to localhost only; expose HTTPS via nginx on the public server (see deploy/).
+
+services:
+  gamedev:
+    image: ${GAMEDEV_IMAGE:-ghcr.io/matusem/upjs-gdd:latest}
+    container_name: upjs-gdd
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Loopback only — reverse proxy on the public host forwards here.
+      - "127.0.0.1:${PORT:-8080}:8080"
+    volumes:
+      - upjs-gdd-data:/app/data
+      - upjs-gdd-games:/app/games
+      - upjs-gdd-drafts:/app/drafts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  upjs-gdd-data:
+  upjs-gdd-games:
+  upjs-gdd-drafts:

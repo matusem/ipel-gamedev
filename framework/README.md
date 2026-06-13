@@ -1,4 +1,4 @@
-# IPEL GameDev Framework
+# UPJŠ GDD Platform
 
 Multiplayer web game platform for university deployment. Hosts WASM game logic, serves a Dioxus lobby SPA, and exposes GraphQL + WebSocket APIs for real-time play.
 
@@ -124,11 +124,11 @@ Install CLI to match the lobby crate: `cargo install dioxus-cli --locked --versi
 ## Docker
 
 ```bash
-docker build -t ipel-gamedev .
+docker build -t upjs-gdd .
 docker run -p 8080:8080 \
-  -v ipel-data:/app/data \
-  -v ipel-games:/app/games \
-  ipel-gamedev
+  -v upjs-gdd-data:/app/data \
+  -v upjs-gdd-games:/app/games \
+  upjs-gdd
 ```
 
 ## Developer CLI

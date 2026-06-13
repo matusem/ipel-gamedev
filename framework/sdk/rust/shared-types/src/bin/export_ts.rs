@@ -1,6 +1,6 @@
 use anyhow::Result;
 #[cfg(feature = "typegen")]
-use framework_sdk_shared_types::{
+use upjs_gdd_shared_types::{
     DraftLite, GameManifest, PublishToken, RealtimeEnvelope, UploadGameZipResponse, ValidationDiagnostic,
     ValidationReport,
 };

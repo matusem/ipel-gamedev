@@ -2,7 +2,7 @@
 
 Notes for hosting download links on the Platform, version checks against production, and optional self-update.
 
-**Status:** planned (not implemented). Today devs run `cargo run -p gamedev-cli` from the framework repo. The lobby Developer page shows real CLI commands (copy via clipboard) aligned with `gamedev-cli` subcommands; hosted download manifest is still future work.
+**Status:** implemented (platform manifests, install scripts, CI release workflows). Hosted checksums update on `gamedev-cli-v*` tags via `scripts/update-cli-manifest.py`.
 
 ---
 

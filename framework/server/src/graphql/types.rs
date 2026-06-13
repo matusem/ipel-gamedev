@@ -76,6 +76,24 @@ pub struct DeploymentGql {
 }
 
 #[derive(SimpleObject, Clone)]
+pub struct CliReleaseGql {
+    pub version: String,
+    pub min_supported: String,
+    pub released_at: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct PlatformManifestGql {
+    pub framework_version: String,
+    pub wit_version: String,
+    pub wasmtime_version: Option<String>,
+    pub released_at: Option<String>,
+    pub cli: CliReleaseGql,
+    pub sdk_versions_json: String,
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct PlatformStatsGql {
     pub active_lobbies: i32,
     pub published_game_types: i32,

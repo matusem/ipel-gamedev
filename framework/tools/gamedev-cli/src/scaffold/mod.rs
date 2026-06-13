@@ -421,9 +421,9 @@ fn scaffold_bevy_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool) 
     fs::create_dir_all(bevy.join("src"))?;
     let crate_name = cfg.name.replace('-', "_");
     let shared_types_name = format!("{crate_name}_shared_types");
-    let sdk_line = project::find_framework_sdk_rust_crate(root, "bevy")
+    let sdk_line = project::find_upjs_gdd_rust_crate(root, "bevy")
         .and_then(|sdk| project::relative_path_from(&bevy, &sdk))
-        .map(|rel| format!("framework-sdk-bevy = {{ path = \"{rel}\" }}"))
+        .map(|rel| format!("upjs-gdd-bevy = {{ path = \"{rel}\" }}"))
         .unwrap_or_default();
     let mut cargo = include_str!("../../templates/frontend/bevy_Cargo.toml")
         .replace("__SHARED_TYPES_NAME__", &shared_types_name)
@@ -457,9 +457,9 @@ fn scaffold_dioxus_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool
     fs::create_dir_all(dioxus.join("src"))?;
     let crate_name = cfg.name.replace('-', "_");
     let shared_types_name = format!("{crate_name}_shared_types");
-    let sdk_line = project::find_framework_sdk_rust_crate(root, "dioxus")
+    let sdk_line = project::find_upjs_gdd_rust_crate(root, "dioxus")
         .and_then(|sdk| project::relative_path_from(&dioxus, &sdk))
-        .map(|rel| format!("framework-sdk-dioxus = {{ path = \"{rel}\" }}"))
+        .map(|rel| format!("upjs-gdd-dioxus = {{ path = \"{rel}\" }}"))
         .unwrap_or_default();
     let mut cargo = include_str!("../../templates/frontend/dioxus_Cargo.toml")
         .replace("__SHARED_TYPES_NAME__", &shared_types_name)
@@ -492,7 +492,7 @@ fn scaffold_dioxus_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool
 }
 
 fn wire_sdk_js_package_json(pkg: &str, web_dir: &Path, root: &Path) -> Result<String> {
-    let Some(sdk_js) = project::find_framework_sdk_js(root) else {
+    let Some(sdk_js) = project::find_upjs_gdd_js(root) else {
         return Ok(pkg.to_string());
     };
     let Some(rel) = project::relative_path_from(web_dir, &sdk_js) else {
@@ -507,7 +507,7 @@ fn wire_sdk_js_package_json(pkg: &str, web_dir: &Path, root: &Path) -> Result<St
         .or_insert_with(|| serde_json::json!({}));
     if let Some(deps_obj) = deps.as_object_mut() {
         deps_obj.insert(
-            "@framework/sdk-js".to_string(),
+            "@upjs-gdd/sdk-js".to_string(),
             serde_json::json!({ "version": format!("file:{rel}") }),
         );
     }

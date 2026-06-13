@@ -28,13 +28,13 @@
         if (ev.origin !== window.location.origin) return;
         var d = ev.data;
         if (!d || typeof d !== "object") return;
-        if (d.source === "ipel-game-config-result" && d.game === game) {
+        if (d.source === "upjs-gdd-game-config-result" && d.game === game) {
           if (d.ok) errEl.textContent = "";
           else errEl.textContent = (d.errors && d.errors.length ? d.errors.join("; ") : "Config rejected.");
         }
       });
       document.getElementById("apply").addEventListener("click", function () {
-        window.parent.postMessage({ source: "ipel-game-config", game: game, config: "null" }, window.location.origin);
+        window.parent.postMessage({ source: "upjs-gdd-game-config", game: game, config: "null" }, window.location.origin);
       });
     })();
   </script>

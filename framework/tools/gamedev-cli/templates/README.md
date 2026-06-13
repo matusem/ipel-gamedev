@@ -29,13 +29,13 @@ Unsupported in `init` today: C#, C++, Unity, Godot, Three.js.
 
 - Workspace: `backend/rust/*`, `frontend/bevy`, `client/`
 - `build` compiles the Wasm component and runs `wasm-bindgen` for the Bevy web client into `client/`
-- When created under the framework tree, `frontend/bevy` links `framework-sdk-bevy` automatically
+- When created under the framework tree, `frontend/bevy` links `upjs-gdd-bevy` automatically
 
 ### Rust + Dioxus (nested layout)
 
 - Workspace: `backend/rust/*`, `frontend/dioxus`, `client/`
 - `build` compiles the Wasm component and runs `wasm-bindgen` for the Dioxus web client into `client/`
-- When created under the framework tree, `frontend/dioxus` links `framework-sdk-dioxus` automatically
+- When created under the framework tree, `frontend/dioxus` links `upjs-gdd-dioxus` automatically
 
 ### Java + JS / TS
 
@@ -47,4 +47,4 @@ Unsupported in `init` today: C#, C++, Unity, Godot, Three.js.
 
 - Sources live in `frontend/web/`
 - `build` runs `npm run build` when possible and merges output into `client/` for packaging
-- When created under the framework tree, `package.json` links `@framework/sdk-js` via a local `file:` dependency
+- When created under the framework tree, `package.json` links `@upjs-gdd/sdk-js` via a local `file:` dependency

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_GRAPHQL_URL: &str = "http://localhost:8080/graphql";
 
 #[derive(Parser)]
-#[command(name = "gamedev-cli")]
+#[command(name = "gamedev-cli", version, about = "UPJŠ GDD Platform developer CLI")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -26,6 +26,8 @@ pub enum Commands {
     Test(TestArgs),
     Doctor(DoctorArgs),
     Validate(ValidateArgs),
+    /// Download and install the platform-matching CLI release
+    Update(UpdateArgs),
 }
 
 #[derive(Args)]
@@ -123,6 +125,19 @@ pub struct TestArgs {
 pub struct DoctorArgs {
     #[arg(long)]
     pub project_dir: Option<PathBuf>,
+    /// Platform base URL (e.g. https://gdd.ics.upjs.sk) — checks CLI/SDK versions against production
+    #[arg(long)]
+    pub platform: Option<String>,
+}
+
+#[derive(Args)]
+pub struct UpdateArgs {
+    /// GraphQL or platform base URL (default: production)
+    #[arg(long, default_value = "https://gdd.ics.upjs.sk")]
+    pub platform: String,
+    /// Exit with error if an update is available (CI-friendly)
+    #[arg(long)]
+    pub check: bool,
 }
 
 #[derive(Args)]

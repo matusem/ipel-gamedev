@@ -3,7 +3,7 @@
  * (`pom.xml`), not the upstream `org.teavm` Gradle plugin (browser Wasm GC).
  *
  * Uses the **Maven Wrapper** (`mvnw` / `mvnw.cmd`) in this directory (no global `mvn`).
- * Requires a composite `:game:jar` for `dev.ipel.gamedev:game`.
+ * Requires a composite `:game:jar` for `sk.upjs.gdd:game`.
  *
  * TeaVM 0.2.x cannot parse JDK 21 bootstrap classes (major 65); `mavenPackage` runs Maven with **JDK 17** via toolchains.
  */

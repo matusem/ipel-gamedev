@@ -326,6 +326,9 @@ pub async fn validate_and_stage_zip_bytes(
                     if m.max_players < m.min_players {
                         diagnostics.push(diag("error", "E_MANIFEST_MAX_PLAYERS_INVALID", "manifest.max_players must be >= min_players", Some("manifest.json"), None));
                     }
+                    diagnostics.extend(crate::platform_manifest::validate_built_with_from_manifest_json(
+                        &manifest_path,
+                    ));
                     manifest = Some(m);
                 }
                 Err(e) => diagnostics.push(diag(

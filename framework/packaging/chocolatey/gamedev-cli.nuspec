@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>gamedev-cli</id>
+    <version>0.1.0</version>
+    <title>UPJŠ GDD Platform CLI</title>
+    <authors>UPJŠ GDD</authors>
+    <projectUrl>https://github.com/matusem/ipel-gamedev</projectUrl>
+    <licenseUrl>https://github.com/matusem/ipel-gamedev/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <summary>Developer CLI for the UPJŠ GDD Platform multiplayer platform</summary>
+    <description>Build, validate, and deploy game bundles to the UPJŠ GDD Platform platform.</description>
+    <tags>gamedev cli rust wasm</tags>
+  </metadata>
+  <files>
+    <file src="tools\gamedev.exe" target="tools\gamedev.exe" />
+  </files>
+</package>

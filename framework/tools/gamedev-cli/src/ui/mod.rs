@@ -106,7 +106,7 @@ fn run_fallback() -> Result<UiCommand> {
             server_url: DEFAULT_GRAPHQL_URL.to_string(),
         }),
         7 => UiCommand::Test(TestArgs { project_dir: None }),
-        8 => UiCommand::Doctor(DoctorArgs { project_dir: None }),
+        8 => UiCommand::Doctor(DoctorArgs { project_dir: None, platform: None }),
         _ => UiCommand::ExitProgram,
     };
     Ok(cmd)

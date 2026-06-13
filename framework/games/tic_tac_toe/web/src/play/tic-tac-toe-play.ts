@@ -13,7 +13,7 @@
  * - Normalize `player` identifiers the same way the lobby encodes them in the URL (see `decodePlayerParam`).
  */
 
-import { GameClient } from "@ipel/game-sdk";
+import { GameClient } from "@upjs-gdd/game-sdk";
 
 type PlayerMark = "X" | "O" | null;
 

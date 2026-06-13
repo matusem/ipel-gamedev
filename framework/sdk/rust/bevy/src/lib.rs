@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use framework_sdk_rust_shared::realtime::{RealtimeClient, RealtimeConfig};
+use upjs_gdd_rust_shared::realtime::{RealtimeClient, RealtimeConfig};
 
 #[derive(Resource)]
 pub struct RealtimeResource {

@@ -1,0 +1,28 @@
+{
+  "version": "0.1.0",
+  "min_supported": "0.1.0",
+  "released_at": "2026-06-13",
+  "assets": {
+    "windows-x86_64": {
+      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-windows-x86_64.zip",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "linux-x86_64": {
+      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-linux-x86_64.tar.gz",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "linux-aarch64": {
+      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-linux-aarch64.tar.gz",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "macos-x86_64": {
+      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-macos-x86_64.tar.gz",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "macos-aarch64": {
+      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-macos-aarch64.tar.gz",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "notes": "Platform-hosted CLI release. See /platform/manifest.json for full compatibility matrix."
+}

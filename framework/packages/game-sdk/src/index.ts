@@ -1,5 +1,5 @@
 /**
- * @ipel/game-sdk — shared browser utilities for IPeL game iframes:
+ * @upjs-gdd/game-sdk — shared browser utilities for UPJŠ GDD game iframes:
  * - WebSocket `GameClient` (play)
  * - Lobby `postMessage` bridge (config)
  * - Wire helpers and protocol constants

@@ -3,7 +3,7 @@
  * If your game needs charts or links, keep parsing here thin and push logic into `result-view.ts`.
  */
 import "../styles/main.css";
-import { readResultPayload } from "@ipel/game-sdk";
+import { readResultPayload } from "@upjs-gdd/game-sdk";
 import { escapeHtml, renderMatchResult, type ResultPayload } from "./result-view.js";
 
 function main(): void {

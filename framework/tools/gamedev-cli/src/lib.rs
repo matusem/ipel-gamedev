@@ -7,9 +7,12 @@ pub mod cli;
 pub mod commands;
 pub mod doctor;
 pub mod pack;
+pub mod platform;
 pub mod project;
 pub mod scaffold;
 pub mod ui;
+pub mod update;
+pub mod version;
 
 use anyhow::Result;
 use clap::Parser;
@@ -29,6 +32,7 @@ pub fn run_cli() -> Result<()> {
             Commands::Test(args) => commands::run_test(args),
             Commands::Doctor(args) => commands::run_doctor(args),
             Commands::Validate(args) => commands::run_validate(args),
+            Commands::Update(args) => commands::run_update(args),
         };
     }
     loop {

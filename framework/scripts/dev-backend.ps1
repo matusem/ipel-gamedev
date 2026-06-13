@@ -4,7 +4,7 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 $env:PORT = "8081"
-Write-Host "Starting IPEL GameDev backend on http://127.0.0.1:8081 ..."
+Write-Host "Starting UPJŠ GDD Platform backend on http://127.0.0.1:8081 ..."
 Write-Host "Keep this window open. In another terminal: cd lobby && dx serve --platform web"
 Write-Host ""
 

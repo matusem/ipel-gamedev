@@ -4,7 +4,7 @@
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>dev.ipel.gamedev</groupId>
+  <groupId>sk.upjs.gdd</groupId>
   <artifactId>game-logic-component</artifactId>
   <version>0.1.0</version>
   <packaging>jar</packaging>
@@ -31,7 +31,7 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>dev.ipel.gamedev</groupId>
+      <groupId>sk.upjs.gdd</groupId>
       <artifactId>game</artifactId>
       <version>0.1.0</version>
       <scope>system</scope>

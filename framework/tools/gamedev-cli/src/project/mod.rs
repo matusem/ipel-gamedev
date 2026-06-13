@@ -110,11 +110,11 @@ pub fn find_framework_root(from: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn find_framework_sdk_js(from: &Path) -> Option<PathBuf> {
+pub fn find_upjs_gdd_js(from: &Path) -> Option<PathBuf> {
     find_framework_root(from).map(|fw| fw.join("sdk/js"))
 }
 
-pub fn find_framework_sdk_rust_crate(from: &Path, crate_dir: &str) -> Option<PathBuf> {
+pub fn find_upjs_gdd_rust_crate(from: &Path, crate_dir: &str) -> Option<PathBuf> {
     find_framework_root(from).map(|fw| fw.join("sdk/rust").join(crate_dir))
 }
 
