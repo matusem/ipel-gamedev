@@ -7,11 +7,69 @@ Production runs as a **single Docker container** on the Pi, bound to `127.0.0.1:
 ```bash
 # One-time host setup (Debian / Raspberry Pi OS)
 sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-plugin curl
+sudo apt-get install -y docker.io docker-compose-plugin curl git
 
 sudo usermod -aG docker $USER
 # log out and back in
 
+sudo mkdir -p /opt/upjs-gdd
+sudo chown upjs-gdd-deploy:upjs-gdd-deploy /opt/upjs-gdd   # if using deploy user
+```
+
+### Clone via SSH (deploy user)
+
+`upjs-gdd-deploy` needs its **own** GitHub deploy key (do not reuse your personal `pi` user key).
+
+On the Pi as root:
+
+```bash
+sudo -u upjs-gdd-deploy mkdir -p /home/upjs-gdd-deploy/.ssh
+sudo chmod 700 /home/upjs-gdd-deploy/.ssh
+
+sudo -u upjs-gdd-deploy ssh-keygen -t ed25519 -f /home/upjs-gdd-deploy/.ssh/id_ed25519_github -N "" -C "upjs-gdd-deploy@arianagrande"
+sudo -u upjs-gdd-deploy cat /home/upjs-gdd-deploy/.ssh/id_ed25519_github.pub
+```
+
+Copy the printed public key → GitHub repo **Settings → Deploy keys → Add deploy key** (read-only is enough).
+
+Pin GitHub’s host key and use the deploy key:
+
+```bash
+sudo -u upjs-gdd-deploy bash -c 'cat >> /home/upjs-gdd-deploy/.ssh/config << EOF
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_github
+  IdentitiesOnly yes
+EOF'
+sudo chmod 600 /home/upjs-gdd-deploy/.ssh/config
+
+sudo -u upjs-gdd-deploy ssh-keyscan github.com >> /home/upjs-gdd-deploy/.ssh/known_hosts
+sudo chmod 644 /home/upjs-gdd-deploy/.ssh/known_hosts
+```
+
+Test, then clone:
+
+```bash
+sudo -u upjs-gdd-deploy ssh -T git@github.com
+# expect: "Hi matusem/ipel-gamedev! You've successfully authenticated..."
+
+sudo -u upjs-gdd-deploy git clone git@github.com:matusem/ipel-gamedev.git /opt/upjs-gdd/ipel-gamedev
+sudo -u upjs-gdd-deploy cp /opt/upjs-gdd/ipel-gamedev/framework/.env.example /opt/upjs-gdd/ipel-gamedev/framework/.env
+```
+
+Edit `GAMEDEV_IMAGE` in `.env`, then:
+
+```bash
+cd /opt/upjs-gdd/ipel-gamedev/framework
+sudo -u upjs-gdd-deploy docker compose pull
+sudo -u upjs-gdd-deploy docker compose up -d
+curl -s http://127.0.0.1:8080/health
+```
+
+### Clone via HTTPS (alternative)
+
+```bash
 git clone https://github.com/matusem/ipel-gamedev.git
 cd ipel-gamedev/framework
 cp .env.example .env
