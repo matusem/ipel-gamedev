@@ -8,9 +8,12 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # App always listens on 8080 inside the container; HOST_PORT is the Pi loopback bind.
+      PORT: "8080"
     ports:
       # Loopback only — reverse proxy on the public host forwards here.
-      - "127.0.0.1:${PORT:-8080}:8080"
+      - "127.0.0.1:${HOST_PORT:-8080}:8080"
     volumes:
       - upjs-gdd-data:/app/data
       - upjs-gdd-games:/app/games

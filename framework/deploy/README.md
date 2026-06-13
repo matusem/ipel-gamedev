@@ -58,13 +58,13 @@ sudo -u upjs-gdd-deploy git clone git@github.com:matusem/ipel-gamedev.git /opt/u
 sudo -u upjs-gdd-deploy cp /opt/upjs-gdd/ipel-gamedev/framework/.env.example /opt/upjs-gdd/ipel-gamedev/framework/.env
 ```
 
-Edit `GAMEDEV_IMAGE` in `.env`, then:
+Edit `GAMEDEV_IMAGE` and `HOST_PORT` in `.env` (default host bind `8090`), then:
 
 ```bash
 cd /opt/upjs-gdd/ipel-gamedev/framework
 sudo -u upjs-gdd-deploy docker compose pull
 sudo -u upjs-gdd-deploy docker compose up -d
-curl -s http://127.0.0.1:8080/health
+curl -s http://127.0.0.1:8090/health
 ```
 
 ### Clone via HTTPS (alternative)
@@ -77,7 +77,7 @@ cp .env.example .env
 
 docker compose pull
 docker compose up -d
-curl -s http://127.0.0.1:8080/health
+curl -s http://127.0.0.1:8090/health
 ```
 
 ## Architecture
