@@ -1,8 +1,8 @@
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
+use sha2::{Digest, Sha256};
 use sqlx::Row;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use std::str::FromStr;
 use uuid::Uuid;
-use sha2::{Digest, Sha256};
 
 #[derive(Clone)]
 pub struct GameInstanceStore {
@@ -49,14 +49,12 @@ impl GameInstanceStore {
 
     pub async fn update_game_state(&self, id: Uuid, state_json: &str) -> Result<(), sqlx::Error> {
         let now = Self::now_secs();
-        sqlx::query(
-            "UPDATE game_instances SET state = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(state_json)
-        .bind(now)
-        .bind(id.to_string())
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE game_instances SET state = ?, updated_at = ? WHERE id = ?")
+            .bind(state_json)
+            .bind(now)
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -133,10 +131,12 @@ pub async fn get_finished_game(
     pool: &SqlitePool,
     id: Uuid,
 ) -> Result<Option<FinishedGameRow>, sqlx::Error> {
-    let row = sqlx::query(&format!("{FINISHED_SELECT} WHERE id = ? AND status = 'finished'"))
-        .bind(id.to_string())
-        .fetch_optional(pool)
-        .await?;
+    let row = sqlx::query(&format!(
+        "{FINISHED_SELECT} WHERE id = ? AND status = 'finished'"
+    ))
+    .bind(id.to_string())
+    .fetch_optional(pool)
+    .await?;
     Ok(row.and_then(map_finished_row))
 }
 
@@ -198,7 +198,10 @@ pub async fn update_user_display_name(
     Ok(res.rows_affected() > 0)
 }
 
-pub async fn count_finished_games_since(pool: &SqlitePool, since_ts: i64) -> Result<i64, sqlx::Error> {
+pub async fn count_finished_games_since(
+    pool: &SqlitePool,
+    since_ts: i64,
+) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM game_instances WHERE status = 'finished' AND finished_at >= ?",
     )
@@ -207,7 +210,10 @@ pub async fn count_finished_games_since(pool: &SqlitePool, since_ts: i64) -> Res
     .await
 }
 
-pub async fn list_published_deployments(pool: &SqlitePool, limit: i64) -> Result<Vec<GameDraftRow>, sqlx::Error> {
+pub async fn list_published_deployments(
+    pool: &SqlitePool,
+    limit: i64,
+) -> Result<Vec<GameDraftRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE status = 'published' ORDER BY published_at DESC LIMIT ?",
     )
@@ -217,7 +223,10 @@ pub async fn list_published_deployments(pool: &SqlitePool, limit: i64) -> Result
     Ok(rows.into_iter().filter_map(map_draft_row).collect())
 }
 
-pub async fn count_published_drafts_for_user(pool: &SqlitePool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+pub async fn count_published_drafts_for_user(
+    pool: &SqlitePool,
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM game_drafts WHERE owner_user_id = ? AND status = 'published'",
     )
@@ -226,7 +235,10 @@ pub async fn count_published_drafts_for_user(pool: &SqlitePool, user_id: Uuid) -
     .await
 }
 
-pub async fn count_user_finished_matches(pool: &SqlitePool, user_id: Uuid) -> Result<i64, sqlx::Error> {
+pub async fn count_user_finished_matches(
+    pool: &SqlitePool,
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
     let needle = user_id.to_string();
     sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM game_instances WHERE status = 'finished' AND seats_snapshot_json LIKE ?",
@@ -271,7 +283,10 @@ pub async fn sign_up(
     Ok((id, display_name.to_string(), now))
 }
 
-pub async fn get_user(pool: &SqlitePool, id: Uuid) -> Result<Option<(Uuid, String, i64)>, sqlx::Error> {
+pub async fn get_user(
+    pool: &SqlitePool,
+    id: Uuid,
+) -> Result<Option<(Uuid, String, i64)>, sqlx::Error> {
     let row = sqlx::query("SELECT id, display_name, created_at FROM users WHERE id = ?")
         .bind(id.to_string())
         .fetch_optional(pool)
@@ -284,7 +299,10 @@ pub async fn get_user(pool: &SqlitePool, id: Uuid) -> Result<Option<(Uuid, Strin
     }))
 }
 
-pub async fn list_users(pool: &SqlitePool, limit: i64) -> Result<Vec<(Uuid, String, i64)>, sqlx::Error> {
+pub async fn list_users(
+    pool: &SqlitePool,
+    limit: i64,
+) -> Result<Vec<(Uuid, String, i64)>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, display_name, created_at FROM users ORDER BY created_at DESC LIMIT ?",
     )
@@ -313,10 +331,11 @@ pub async fn connect_and_migrate(database_url: &str) -> Result<SqlitePool, sqlx:
 }
 
 pub async fn get_password_hash(pool: &SqlitePool, id: Uuid) -> Result<Option<String>, sqlx::Error> {
-    let v: Option<Option<String>> = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = ?")
-        .bind(id.to_string())
-        .fetch_optional(pool)
-        .await?;
+    let v: Option<Option<String>> =
+        sqlx::query_scalar("SELECT password_hash FROM users WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(pool)
+            .await?;
     Ok(v.flatten())
 }
 
@@ -346,13 +365,18 @@ pub struct GameDraftRow {
     pub published_at: Option<i64>,
 }
 
-pub async fn user_has_role(pool: &SqlitePool, user_id: Uuid, role: &str) -> Result<bool, sqlx::Error> {
-    let c: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_roles WHERE user_id = ? AND role = ?")
-        .bind(user_id.to_string())
-        .bind(role)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+pub async fn user_has_role(
+    pool: &SqlitePool,
+    user_id: Uuid,
+    role: &str,
+) -> Result<bool, sqlx::Error> {
+    let c: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM user_roles WHERE user_id = ? AND role = ?")
+            .bind(user_id.to_string())
+            .bind(role)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
     Ok(c > 0)
 }
 
@@ -442,7 +466,11 @@ pub async fn list_publish_tokens_for_user(
     Ok(out)
 }
 
-pub async fn revoke_publish_token(pool: &SqlitePool, user_id: Uuid, token_id: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn revoke_publish_token(
+    pool: &SqlitePool,
+    user_id: Uuid,
+    token_id: Uuid,
+) -> Result<bool, sqlx::Error> {
     let now = GameInstanceStore::now_secs();
     let res = sqlx::query(
         "UPDATE publish_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
@@ -513,7 +541,10 @@ pub struct NewDraft<'a> {
     pub storage_path: &'a str,
 }
 
-pub async fn insert_game_draft(pool: &SqlitePool, draft: NewDraft<'_>) -> Result<Uuid, sqlx::Error> {
+pub async fn insert_game_draft(
+    pool: &SqlitePool,
+    draft: NewDraft<'_>,
+) -> Result<Uuid, sqlx::Error> {
     let id = Uuid::new_v4();
     let now = GameInstanceStore::now_secs();
     sqlx::query(
@@ -559,7 +590,10 @@ fn map_draft_row(r: sqlx::sqlite::SqliteRow) -> Option<GameDraftRow> {
     })
 }
 
-pub async fn list_game_drafts_for_owner(pool: &SqlitePool, owner_user_id: Uuid) -> Result<Vec<GameDraftRow>, sqlx::Error> {
+pub async fn list_game_drafts_for_owner(
+    pool: &SqlitePool,
+    owner_user_id: Uuid,
+) -> Result<Vec<GameDraftRow>, sqlx::Error> {
     let rows = sqlx::query(
         "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE owner_user_id = ? ORDER BY created_at DESC",
     )
@@ -569,7 +603,10 @@ pub async fn list_game_drafts_for_owner(pool: &SqlitePool, owner_user_id: Uuid) 
     Ok(rows.into_iter().filter_map(map_draft_row).collect())
 }
 
-pub async fn get_game_draft(pool: &SqlitePool, draft_id: Uuid) -> Result<Option<GameDraftRow>, sqlx::Error> {
+pub async fn get_game_draft(
+    pool: &SqlitePool,
+    draft_id: Uuid,
+) -> Result<Option<GameDraftRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE id = ?",
     )
@@ -614,7 +651,10 @@ pub async fn max_published_at_for_game_name(
 
 /// Set every `published` draft for `game_name` back to `ready` and clear `published_at`
 /// (live folder was removed; no row should stay `published` for that folder id).
-pub async fn demote_all_published_for_game_name(pool: &SqlitePool, game_name: &str) -> Result<(), sqlx::Error> {
+pub async fn demote_all_published_for_game_name(
+    pool: &SqlitePool,
+    game_name: &str,
+) -> Result<(), sqlx::Error> {
     let now = GameInstanceStore::now_secs();
     sqlx::query(
         "UPDATE game_drafts SET status = 'ready', published_at = NULL, updated_at = ? WHERE game_name = ? AND status = 'published'",
@@ -627,7 +667,10 @@ pub async fn demote_all_published_for_game_name(pool: &SqlitePool, game_name: &s
 }
 
 /// Set a single `published` draft back to `ready` (older published row while a newer version is live).
-pub async fn demote_single_published_draft(pool: &SqlitePool, draft_id: Uuid) -> Result<(), sqlx::Error> {
+pub async fn demote_single_published_draft(
+    pool: &SqlitePool,
+    draft_id: Uuid,
+) -> Result<(), sqlx::Error> {
     let now = GameInstanceStore::now_secs();
     sqlx::query(
         "UPDATE game_drafts SET status = 'ready', published_at = NULL, updated_at = ? WHERE id = ? AND status = 'published'",

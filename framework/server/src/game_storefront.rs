@@ -109,7 +109,10 @@ fn screenshots_need_refresh(shots: &[Screenshot]) -> bool {
     if shots.is_empty() {
         return true;
     }
-    if shots.iter().all(|s| s.image_url.as_deref().unwrap_or("").is_empty()) {
+    if shots
+        .iter()
+        .all(|s| s.image_url.as_deref().unwrap_or("").is_empty())
+    {
         return true;
     }
     shots.iter().any(|s| {
@@ -255,7 +258,10 @@ fn default_storefront(game_name: &str) -> StorefrontRow {
     }
 }
 
-pub async fn ensure_storefront(pool: &SqlitePool, game_name: &str) -> Result<StorefrontRow, sqlx::Error> {
+pub async fn ensure_storefront(
+    pool: &SqlitePool,
+    game_name: &str,
+) -> Result<StorefrontRow, sqlx::Error> {
     if let Some(row) = get_storefront(pool, game_name).await? {
         return Ok(row);
     }
@@ -273,7 +279,10 @@ pub fn demo_seed_enabled() -> bool {
         .unwrap_or(false)
 }
 
-pub async fn seed_demo_storefront_content(pool: &SqlitePool, game_name: &str) -> Result<(), sqlx::Error> {
+pub async fn seed_demo_storefront_content(
+    pool: &SqlitePool,
+    game_name: &str,
+) -> Result<(), sqlx::Error> {
     let _ = ensure_storefront(pool, game_name).await?;
     seed_reviews_and_comments(pool, game_name).await
 }
@@ -301,7 +310,10 @@ async fn insert_storefront(pool: &SqlitePool, s: &StorefrontRow) -> Result<(), s
     Ok(())
 }
 
-pub async fn get_storefront(pool: &SqlitePool, game_name: &str) -> Result<Option<StorefrontRow>, sqlx::Error> {
+pub async fn get_storefront(
+    pool: &SqlitePool,
+    game_name: &str,
+) -> Result<Option<StorefrontRow>, sqlx::Error> {
     let row = sqlx::query(
         "SELECT game_name, owner_user_id, short_tagline, long_description, screenshots_json, patch_notes_json, tags_json, avg_session_mins, featured, creator_display_name, updated_at FROM game_storefront WHERE game_name = ?",
     )
@@ -359,7 +371,11 @@ pub async fn update_storefront(
     Ok(res.rows_affected() > 0)
 }
 
-pub async fn user_can_edit_storefront(pool: &SqlitePool, user_id: Uuid, game_name: &str) -> Result<bool, sqlx::Error> {
+pub async fn user_can_edit_storefront(
+    pool: &SqlitePool,
+    user_id: Uuid,
+    game_name: &str,
+) -> Result<bool, sqlx::Error> {
     let row = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM game_drafts WHERE owner_user_id = ? AND game_name = ? AND status IN ('ready', 'published')",
     )
@@ -380,9 +396,39 @@ async fn seed_reviews_and_comments(pool: &SqlitePool, game_name: &str) -> Result
     }
     let now = GameInstanceStore::now_secs();
     let reviews = [
-        ("NovaPilot", "Solid quick matches. Config UI is clean.", AspectRatings { gameplay: 5.0, balance: 4.0, visuals: 4.0, social: 5.0, depth: 3.0 }),
-        ("CipherFox", "Great for lunch-break games with friends.", AspectRatings { gameplay: 4.0, balance: 4.5, visuals: 3.5, social: 4.5, depth: 3.5 }),
-        ("ByteRunner", "Would love more board sizes in ranked mode.", AspectRatings { gameplay: 4.5, balance: 3.5, visuals: 4.0, social: 4.0, depth: 4.0 }),
+        (
+            "NovaPilot",
+            "Solid quick matches. Config UI is clean.",
+            AspectRatings {
+                gameplay: 5.0,
+                balance: 4.0,
+                visuals: 4.0,
+                social: 5.0,
+                depth: 3.0,
+            },
+        ),
+        (
+            "CipherFox",
+            "Great for lunch-break games with friends.",
+            AspectRatings {
+                gameplay: 4.0,
+                balance: 4.5,
+                visuals: 3.5,
+                social: 4.5,
+                depth: 3.5,
+            },
+        ),
+        (
+            "ByteRunner",
+            "Would love more board sizes in ranked mode.",
+            AspectRatings {
+                gameplay: 4.5,
+                balance: 3.5,
+                visuals: 4.0,
+                social: 4.0,
+                depth: 4.0,
+            },
+        ),
     ];
     for (i, (name, body, aspects)) in reviews.iter().enumerate() {
         let aspects_json = serde_json::to_string(aspects).unwrap_or_default();
@@ -403,7 +449,10 @@ async fn seed_reviews_and_comments(pool: &SqlitePool, game_name: &str) -> Result
     let comments = [
         ("GridLock", "Anyone up for a 5x5 win-4 lobby tonight?"),
         ("Guest", "First win — loving the seat/ready flow."),
-        ("NovaPilot", "Dev: changelog for 1.0.0 is accurate, nice polish."),
+        (
+            "NovaPilot",
+            "Dev: changelog for 1.0.0 is accurate, nice polish.",
+        ),
     ];
     for (i, (name, body)) in comments.iter().enumerate() {
         sqlx::query(
@@ -421,7 +470,11 @@ async fn seed_reviews_and_comments(pool: &SqlitePool, game_name: &str) -> Result
     Ok(())
 }
 
-pub async fn list_reviews(pool: &SqlitePool, game_name: &str, limit: i64) -> Result<Vec<ReviewRow>, sqlx::Error> {
+pub async fn list_reviews(
+    pool: &SqlitePool,
+    game_name: &str,
+    limit: i64,
+) -> Result<Vec<ReviewRow>, sqlx::Error> {
     let _ = ensure_storefront(pool, game_name).await?;
     let rows = sqlx::query(
         "SELECT id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
@@ -449,7 +502,11 @@ fn map_review(r: sqlx::sqlite::SqliteRow) -> Option<ReviewRow> {
     })
 }
 
-pub async fn list_comments(pool: &SqlitePool, game_name: &str, limit: i64) -> Result<Vec<CommentRow>, sqlx::Error> {
+pub async fn list_comments(
+    pool: &SqlitePool,
+    game_name: &str,
+    limit: i64,
+) -> Result<Vec<CommentRow>, sqlx::Error> {
     let _ = ensure_storefront(pool, game_name).await?;
     let rows = sqlx::query(
         "SELECT id, game_name, user_id, display_name, body, created_at FROM game_comments WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
@@ -473,7 +530,10 @@ pub async fn list_comments(pool: &SqlitePool, game_name: &str, limit: i64) -> Re
         .collect())
 }
 
-pub async fn aggregate_aspect_ratings(pool: &SqlitePool, game_name: &str) -> Result<AspectRatings, sqlx::Error> {
+pub async fn aggregate_aspect_ratings(
+    pool: &SqlitePool,
+    game_name: &str,
+) -> Result<AspectRatings, sqlx::Error> {
     let reviews = list_reviews(pool, game_name, 100).await?;
     if reviews.is_empty() {
         return Ok(AspectRatings::default());

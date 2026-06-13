@@ -14,8 +14,9 @@ use anyhow::{Context, Result, bail};
 use crate::cli::{BackendKind, BuildArgs, FrontendKind};
 use crate::pack::{copy_dir_recursive, create_zip};
 use crate::project::{
-    cargo_target_roots, find_built_component_wasm, find_built_java_logic_wasm, game_cargo_command, load_config,
-    read_package_name, resolve_bevy_dir, resolve_component_dir, resolve_dioxus_dir, resolve_java_backend_dir,
+    cargo_target_roots, find_built_component_wasm, find_built_java_logic_wasm, game_cargo_command,
+    load_config, read_package_name, resolve_bevy_dir, resolve_component_dir, resolve_dioxus_dir,
+    resolve_java_backend_dir,
 };
 
 pub use validate::{
@@ -89,7 +90,11 @@ pub fn run(args: BuildArgs) -> Result<()> {
                 Command::new("gradle")
             };
             cmd.current_dir(&java_dir);
-            let export_task = if java_dir.join("component").join("build.gradle.kts").is_file() {
+            let export_task = if java_dir
+                .join("component")
+                .join("build.gradle.kts")
+                .is_file()
+            {
                 ":component:exportLogicComponent"
             } else {
                 "exportLogicComponent"
@@ -257,7 +262,11 @@ fn ensure_wasm_browser_tooling(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn merge_frontend_web_build_into_client(root: &Path, stage_root: &Path, strict: bool) -> Result<()> {
+fn merge_frontend_web_build_into_client(
+    root: &Path,
+    stage_root: &Path,
+    strict: bool,
+) -> Result<()> {
     let web_dir = root.join("frontend").join("web");
     if !web_dir.exists() {
         return Ok(());
@@ -272,19 +281,32 @@ fn merge_frontend_web_build_into_client(root: &Path, stage_root: &Path, strict: 
 
     let mut dist_ready = false;
     if npm_ok {
-        let install_status = Command::new("npm").arg("install").current_dir(&web_dir).status();
-        if install_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
+        let install_status = Command::new("npm")
+            .arg("install")
+            .current_dir(&web_dir)
+            .status();
+        if install_status
+            .as_ref()
+            .map(|s| !s.success())
+            .unwrap_or(true)
+        {
             if strict {
                 bail!("npm install failed in frontend/web");
             }
             println!("warning: npm install failed, falling back to static frontend/web merge");
         } else {
-            let build_status = Command::new("npm").arg("run").arg("build").current_dir(&web_dir).status();
+            let build_status = Command::new("npm")
+                .arg("run")
+                .arg("build")
+                .current_dir(&web_dir)
+                .status();
             if build_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
                 if strict {
                     bail!("npm run build failed in frontend/web");
                 }
-                println!("warning: npm run build failed, falling back to static frontend/web merge");
+                println!(
+                    "warning: npm run build failed, falling back to static frontend/web merge"
+                );
             } else {
                 let dist_dir = web_dir.join("dist");
                 if dist_dir.is_dir() {

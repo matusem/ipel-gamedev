@@ -1,5 +1,5 @@
-use sqlx::SqlitePool;
 use sqlx::Row;
+use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -106,7 +106,10 @@ pub async fn list_active_lobbies(pool: &SqlitePool) -> Result<Vec<LobbySummary>,
     Ok(out)
 }
 
-pub async fn get_lobby(pool: &SqlitePool, lobby_id: Uuid) -> Result<Option<LobbyDetail>, sqlx::Error> {
+pub async fn get_lobby(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+) -> Result<Option<LobbyDetail>, sqlx::Error> {
     let row = sqlx::query(
         r#"SELECT l.id, l.owner_user_id, u.display_name, l.game_type, l.config, l.status,
                   l.game_instance_id, l.created_at, l.updated_at
@@ -164,7 +167,12 @@ pub async fn get_lobby(pool: &SqlitePool, lobby_id: Uuid) -> Result<Option<Lobby
 }
 
 /// Create lobby: game type only, no seats, `config` NULL, status `configuring`.
-pub async fn insert_lobby_skeleton(pool: &SqlitePool, id: Uuid, owner: Uuid, game_type: &str) -> Result<(), sqlx::Error> {
+pub async fn insert_lobby_skeleton(
+    pool: &SqlitePool,
+    id: Uuid,
+    owner: Uuid,
+    game_type: &str,
+) -> Result<(), sqlx::Error> {
     let now = now_secs();
     sqlx::query(
         r#"INSERT INTO pregame_lobbies (id, owner_user_id, game_type, config, status, game_instance_id, created_at, updated_at)
@@ -286,13 +294,15 @@ pub async fn owner_replace_config_and_seats(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-    sqlx::query("UPDATE pregame_lobbies SET config = ?, status = 'waiting', updated_at = ? WHERE id = ?")
-        .bind(config)
-        .bind(now)
-        .bind(lobby_id.to_string())
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    sqlx::query(
+        "UPDATE pregame_lobbies SET config = ?, status = 'waiting', updated_at = ? WHERE id = ?",
+    )
+    .bind(config)
+    .bind(now)
+    .bind(lobby_id.to_string())
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
     for (i, ident) in identities.iter().enumerate() {
         sqlx::query(
             "INSERT INTO lobby_seats (lobby_id, seat_index, player_identity, claimed_by_user_id, ready) VALUES (?, ?, ?, NULL, 0)",
@@ -395,7 +405,11 @@ pub async fn transfer_lobby_ownership(
     Ok(())
 }
 
-pub async fn release_user_seats(pool: &SqlitePool, lobby_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
+pub async fn release_user_seats(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE lobby_seats SET claimed_by_user_id = NULL, ready = 0 WHERE lobby_id = ? AND claimed_by_user_id = ?",
     )
@@ -468,7 +482,10 @@ pub async fn mark_lobby_finished(pool: &SqlitePool, lobby_id: Uuid) -> Result<()
     Ok(())
 }
 
-pub async fn reopen_lobby_after_game(pool: &SqlitePool, lobby_id: Uuid) -> Result<bool, sqlx::Error> {
+pub async fn reopen_lobby_after_game(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+) -> Result<bool, sqlx::Error> {
     let now = now_secs();
     let r = sqlx::query(
         "UPDATE pregame_lobbies SET status = 'waiting', game_instance_id = NULL, updated_at = ? WHERE id = ? AND status IN ('in_game', 'finished')",
@@ -489,7 +506,11 @@ pub async fn cancel_lobby(pool: &SqlitePool, lobby_id: Uuid) -> Result<(), sqlx:
     Ok(())
 }
 
-pub async fn list_lobby_messages(pool: &SqlitePool, lobby_id: Uuid, limit: i64) -> Result<Vec<LobbyMessage>, sqlx::Error> {
+pub async fn list_lobby_messages(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+    limit: i64,
+) -> Result<Vec<LobbyMessage>, sqlx::Error> {
     let rows = sqlx::query(
         r#"SELECT m.id, m.user_id, u.display_name, m.body, m.created_at
            FROM lobby_messages m

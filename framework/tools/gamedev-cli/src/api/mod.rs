@@ -72,11 +72,7 @@ pub fn gql_login_with_password(
     password: &str,
 ) -> Result<AuthSessionResp> {
     let q = r#"mutation($n: String!, $p: String!) { loginWithPassword(displayName: $n, password: $p) { sessionToken user { id createdAt } } }"#;
-    let body = gql_raw_anonymous(
-        server_url,
-        q,
-        json!({ "n": display_name, "p": password }),
-    )?;
+    let body = gql_raw_anonymous(server_url, q, json!({ "n": display_name, "p": password }))?;
     let v: serde_json::Value = serde_json::from_str(&body)?;
     if let Some(errs) = v.get("errors") {
         bail!("graphql errors: {errs}");
@@ -128,7 +124,12 @@ pub fn gql_upload_game_zip(server_url: &str, token: &str, zip: &Path) -> Result<
     Ok(parsed.data.context("missing data")?.upload_game_zip)
 }
 
-pub fn gql_simple_mutation(server_url: &str, token: &str, field: &str, draft_id: &str) -> Result<()> {
+pub fn gql_simple_mutation(
+    server_url: &str,
+    token: &str,
+    field: &str,
+    draft_id: &str,
+) -> Result<()> {
     let q = format!(
         "mutation($draftId: ID!) {{ {}(draftId: $draftId) {{ id status }} }}",
         field

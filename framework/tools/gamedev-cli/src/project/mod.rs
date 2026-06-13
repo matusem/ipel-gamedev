@@ -41,10 +41,20 @@ pub fn detect_layout(root: &Path) -> ProjectLayout {
     {
         return ProjectLayout::FlatRustBevy;
     }
-    if root.join("backend").join("rust").join("logic").join("Cargo.toml").is_file() {
+    if root
+        .join("backend")
+        .join("rust")
+        .join("logic")
+        .join("Cargo.toml")
+        .is_file()
+    {
         return ProjectLayout::NestedRust;
     }
-    if root.join("backend").join("java").join("settings.gradle.kts").is_file()
+    if root
+        .join("backend")
+        .join("java")
+        .join("settings.gradle.kts")
+        .is_file()
         || root.join("java").join("settings.gradle.kts").is_file()
     {
         return ProjectLayout::NestedJava;
@@ -131,14 +141,23 @@ pub fn resolve_java_backend_dir(root: &Path) -> PathBuf {
 }
 
 pub fn find_built_java_logic_wasm(java_backend: &Path) -> Result<PathBuf> {
-    let component = if java_backend.join("component").join("build.gradle.kts").is_file() {
+    let component = if java_backend
+        .join("component")
+        .join("build.gradle.kts")
+        .is_file()
+    {
         java_backend.join("component")
     } else {
         java_backend.to_path_buf()
     };
     let candidates = [
         component.join("build").join("out").join("logic.wasm"),
-        component.join("build").join("generated").join("teavm").join("wasm-gc").join("logic.wasm"),
+        component
+            .join("build")
+            .join("generated")
+            .join("teavm")
+            .join("wasm-gc")
+            .join("logic.wasm"),
         component
             .join("target")
             .join("generated")
@@ -239,8 +258,8 @@ pub fn find_framework_game_wasm_host_crate(from: &Path) -> Option<PathBuf> {
 
 /// Read `[package].name` without parsing the full manifest as `toml::Value`.
 pub fn read_package_name(cargo_toml: &Path) -> Result<String> {
-    let s = fs::read_to_string(cargo_toml)
-        .with_context(|| format!("read {}", cargo_toml.display()))?;
+    let s =
+        fs::read_to_string(cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
     let mut in_package = false;
     for raw_line in s.lines() {
         let line = raw_line
@@ -260,10 +279,7 @@ pub fn read_package_name(cargo_toml: &Path) -> Result<String> {
                 continue;
             }
             let val = val.trim();
-            let Some(inner) = val
-                .strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
-            else {
+            let Some(inner) = val.strip_prefix('"').and_then(|v| v.strip_suffix('"')) else {
                 continue;
             };
             if !inner.is_empty() && !inner.contains('"') {
@@ -296,7 +312,11 @@ mod tests {
         let root = tmp.path();
         fs::create_dir_all(root.join("logic/src")).unwrap();
         fs::create_dir_all(root.join("tests/src")).unwrap();
-        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"tests\"]\n").unwrap();
+        fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"tests\"]\n",
+        )
+        .unwrap();
         fs::write(root.join("tests/Cargo.toml"), "[package]\nname = \"t\"\n").unwrap();
         assert_eq!(resolve_test_dir(root), root);
     }

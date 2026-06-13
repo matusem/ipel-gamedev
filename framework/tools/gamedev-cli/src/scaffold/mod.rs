@@ -13,7 +13,11 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
         None => std::env::current_dir()?,
     };
     fs::create_dir_all(&root).with_context(|| format!("create dir {}", root.display()))?;
-    let name = root.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let name = root
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let backend = args.backend.unwrap_or(BackendKind::Rust);
     let frontend = args.frontend.unwrap_or(FrontendKind::Js);
     let cfg = ProjectConfig {
@@ -43,7 +47,8 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
     )
     .with_context(|| format!("write {}", root.join("manifest.json").display()))?;
 
-    let rust_bevy_flat = matches!(backend, BackendKind::Rust) && matches!(frontend, FrontendKind::Bevy);
+    let rust_bevy_flat =
+        matches!(backend, BackendKind::Rust) && matches!(frontend, FrontendKind::Bevy);
     if rust_bevy_flat {
         for d in ["logic", "component", "bevy", "tests", "client"] {
             fs::create_dir_all(root.join(d))
@@ -60,21 +65,39 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
             .with_context(|| format!("create dir {}", root.join("tests").display()))?;
     }
 
-    fs::write(root.join("client/index.html"), include_str!("../../templates/client/index.html"))
-        .with_context(|| format!("write {}", root.join("client/index.html").display()))?;
-    fs::write(root.join("client/config.html"), include_str!("../../templates/client/config.html"))
-        .with_context(|| format!("write {}", root.join("client/config.html").display()))?;
-    fs::write(root.join("client/result.html"), include_str!("../../templates/client/result.html"))
-        .with_context(|| format!("write {}", root.join("client/result.html").display()))?;
-    fs::write(root.join("client/about.html"), include_str!("../../templates/client/about.html"))
-        .with_context(|| format!("write {}", root.join("client/about.html").display()))?;
+    fs::write(
+        root.join("client/index.html"),
+        include_str!("../../templates/client/index.html"),
+    )
+    .with_context(|| format!("write {}", root.join("client/index.html").display()))?;
+    fs::write(
+        root.join("client/config.html"),
+        include_str!("../../templates/client/config.html"),
+    )
+    .with_context(|| format!("write {}", root.join("client/config.html").display()))?;
+    fs::write(
+        root.join("client/result.html"),
+        include_str!("../../templates/client/result.html"),
+    )
+    .with_context(|| format!("write {}", root.join("client/result.html").display()))?;
+    fs::write(
+        root.join("client/about.html"),
+        include_str!("../../templates/client/about.html"),
+    )
+    .with_context(|| format!("write {}", root.join("client/about.html").display()))?;
     if rust_bevy_flat {
         scaffold_tests_crate(&root, &cfg)?;
-        fs::write(root.join(".gitignore"), include_str!("../../templates/gitignore_dist.txt"))
-            .with_context(|| format!("write {}", root.join(".gitignore").display()))?;
+        fs::write(
+            root.join(".gitignore"),
+            include_str!("../../templates/gitignore_dist.txt"),
+        )
+        .with_context(|| format!("write {}", root.join(".gitignore").display()))?;
     } else if matches!(cfg.backend, BackendKind::Rust) {
-        fs::write(root.join("tests/logic_test.rs"), include_str!("../../templates/tests/logic_test.rs"))
-            .with_context(|| format!("write {}", root.join("tests/logic_test.rs").display()))?;
+        fs::write(
+            root.join("tests/logic_test.rs"),
+            include_str!("../../templates/tests/logic_test.rs"),
+        )
+        .with_context(|| format!("write {}", root.join("tests/logic_test.rs").display()))?;
     }
 
     if rust_bevy_flat {
@@ -108,8 +131,11 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
         _ => {}
     }
 
-    fs::write(root.join("README.md"), include_str!("../../templates/README.md"))
-        .with_context(|| format!("write {}", root.join("README.md").display()))?;
+    fs::write(
+        root.join("README.md"),
+        include_str!("../../templates/README.md"),
+    )
+    .with_context(|| format!("write {}", root.join("README.md").display()))?;
     let layout = project::detect_layout(&root);
     println!("Initialized game project at {}", root.display());
     print_init_next_steps(&root, &cfg, layout);
@@ -170,8 +196,8 @@ fn scaffold_rust_bevy_flat(root: &Path, cfg: &ProjectConfig) -> Result<()> {
     let host_dep_path = project::find_framework_game_wasm_host_crate(root)
         .and_then(|p| pathdiff::diff_paths(p, &component_dir))
         .unwrap_or_else(|| PathBuf::from("../../game-wasm-host"));
-    let logic_rel_for_component =
-        pathdiff::diff_paths(&logic_dir, &component_dir).unwrap_or_else(|| PathBuf::from("../logic"));
+    let logic_rel_for_component = pathdiff::diff_paths(&logic_dir, &component_dir)
+        .unwrap_or_else(|| PathBuf::from("../logic"));
     let logic_rel_for_bevy =
         pathdiff::diff_paths(&logic_dir, &bevy_dir).unwrap_or_else(|| PathBuf::from("../logic"));
     let game_dep_path_bevy = project::find_framework_game_crate(root)
@@ -204,7 +230,8 @@ fn scaffold_rust_bevy_flat(root: &Path, cfg: &ProjectConfig) -> Result<()> {
     fs::write(component_dir.join("Cargo.toml"), component_cargo)?;
     fs::write(
         component_dir.join("src/lib.rs"),
-        include_str!("../../templates/backend/rust_component_lib.rs").replace("__LOGIC_NAME__", &logic_name),
+        include_str!("../../templates/backend/rust_component_lib.rs")
+            .replace("__LOGIC_NAME__", &logic_name),
     )?;
 
     let bevy_cargo = include_str!("../../templates/frontend/bevy_flat_Cargo.toml")
@@ -215,12 +242,12 @@ fn scaffold_rust_bevy_flat(root: &Path, cfg: &ProjectConfig) -> Result<()> {
     fs::write(bevy_dir.join("Cargo.toml"), bevy_cargo)?;
     fs::write(
         bevy_dir.join("src/main.rs"),
-        include_str!("../../templates/frontend/bevy_flat_main.rs").replace("__LOGIC_NAME__", &logic_name),
+        include_str!("../../templates/frontend/bevy_flat_main.rs")
+            .replace("__LOGIC_NAME__", &logic_name),
     )?;
 
     let dot_cargo = root.join(".cargo");
-    fs::create_dir_all(&dot_cargo)
-        .with_context(|| format!("create {}", dot_cargo.display()))?;
+    fs::create_dir_all(&dot_cargo).with_context(|| format!("create {}", dot_cargo.display()))?;
     fs::write(
         dot_cargo.join("config.toml"),
         include_str!("../../templates/misc/dot_cargo_config_wasm.toml"),
@@ -249,13 +276,17 @@ fn scaffold_tests_crate(root: &Path, cfg: &ProjectConfig) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("../../../game"));
     let game_dep_path_tests = game_dep_path_tests.to_string_lossy().replace('\\', "/");
     let cargo = include_str!("../../templates/tests/rust_tests_Cargo.toml")
-        .replace("__TESTS_NAME__", &format!("{}_tests", cfg.name.replace('-', "_")))
+        .replace(
+            "__TESTS_NAME__",
+            &format!("{}_tests", cfg.name.replace('-', "_")),
+        )
         .replace("__LOGIC_NAME__", &logic_name)
         .replace("__GAME_PATH__", &game_dep_path_tests);
     fs::write(tests_dir.join("Cargo.toml"), cargo)?;
     fs::write(
         tests_dir.join("src/lib.rs"),
-        include_str!("../../templates/tests/rust_tests_lib.rs").replace("__LOGIC_NAME__", &logic_name),
+        include_str!("../../templates/tests/rust_tests_lib.rs")
+            .replace("__LOGIC_NAME__", &logic_name),
     )?;
     Ok(())
 }
@@ -276,8 +307,7 @@ fn scaffold_java_backend(root: &Path, cfg: &ProjectConfig) -> Result<()> {
     fs::copy(fw.join("test.wit"), component_dst.join("game-core.wit"))
         .with_context(|| format!("copy {}", fw.join("test.wit").display()))?;
     let gradle_kts = fs::read_to_string(component_dst.join("build.gradle.kts"))?;
-    let marker =
-        "val wit = layout.projectDirectory.dir(\"../../..\").file(\"test.wit\").asFile";
+    let marker = "val wit = layout.projectDirectory.dir(\"../../..\").file(\"test.wit\").asFile";
     let replacement = "val wit = layout.projectDirectory.file(\"game-core.wit\").asFile";
     if !gradle_kts.contains(marker) {
         anyhow::bail!(
@@ -299,7 +329,11 @@ fn scaffold_java_backend(root: &Path, cfg: &ProjectConfig) -> Result<()> {
     Ok(())
 }
 
-fn scaffold_rust_backend(root: &Path, cfg: &ProjectConfig, include_rust_frontend: bool) -> Result<()> {
+fn scaffold_rust_backend(
+    root: &Path,
+    cfg: &ProjectConfig,
+    include_rust_frontend: bool,
+) -> Result<()> {
     let rust_root = root.join("backend").join("rust");
     let logic_dir = rust_root.join("logic");
     let component_dir = rust_root.join("component");
@@ -315,8 +349,8 @@ fn scaffold_rust_backend(root: &Path, cfg: &ProjectConfig, include_rust_frontend
     let host_dep_path = project::find_framework_game_wasm_host_crate(root)
         .and_then(|p| pathdiff::diff_paths(p, &component_dir))
         .unwrap_or_else(|| PathBuf::from("../../../../game-wasm-host"));
-    let logic_rel_for_component =
-        pathdiff::diff_paths(&logic_dir, &component_dir).unwrap_or_else(|| PathBuf::from("../logic"));
+    let logic_rel_for_component = pathdiff::diff_paths(&logic_dir, &component_dir)
+        .unwrap_or_else(|| PathBuf::from("../logic"));
     let game_dep_path = game_dep_path.to_string_lossy().replace('\\', "/");
     let host_dep_path = host_dep_path.to_string_lossy().replace('\\', "/");
     let logic_rel_for_component = logic_rel_for_component.to_string_lossy().replace('\\', "/");
@@ -331,8 +365,10 @@ fn scaffold_rust_backend(root: &Path, cfg: &ProjectConfig, include_rust_frontend
         include_str!("../../templates/backend/rust_shared_types_lib.rs"),
     )?;
     fs::create_dir_all(shared_types_dir.join("src/bin"))?;
-    let export_ts = include_str!("../../templates/backend/rust_shared_types_export_ts.rs")
-        .replace("__SHARED_TYPES_CRATE__", &shared_types_name.replace('-', "_"));
+    let export_ts = include_str!("../../templates/backend/rust_shared_types_export_ts.rs").replace(
+        "__SHARED_TYPES_CRATE__",
+        &shared_types_name.replace('-', "_"),
+    );
     fs::write(shared_types_dir.join("src/bin/export_ts.rs"), export_ts)?;
 
     let logic_cargo = include_str!("../../templates/backend/rust_logic_flat_Cargo.toml")
@@ -383,21 +419,36 @@ fn scaffold_rust_backend(root: &Path, cfg: &ProjectConfig, include_rust_frontend
     Ok(())
 }
 
-fn scaffold_js_frontend(root: &Path, template: JsTemplate, use_ts: bool, rust_backend: bool) -> Result<()> {
+fn scaffold_js_frontend(
+    root: &Path,
+    template: JsTemplate,
+    use_ts: bool,
+    rust_backend: bool,
+) -> Result<()> {
     let web = root.join("frontend").join("web");
     fs::create_dir_all(web.join("src"))?;
 
     let pkg = match template {
-        JsTemplate::VanillaVite => include_str!("../../templates/frontend/vanilla_vite_package.json"),
-        JsTemplate::PlainStatic => include_str!("../../templates/frontend/plain_static_package.json"),
+        JsTemplate::VanillaVite => {
+            include_str!("../../templates/frontend/vanilla_vite_package.json")
+        }
+        JsTemplate::PlainStatic => {
+            include_str!("../../templates/frontend/plain_static_package.json")
+        }
     };
     let pkg = wire_sdk_js_package_json(pkg, &web, root)?;
     fs::write(web.join("package.json"), pkg)?;
 
     let (entry_path, entry_source) = if use_ts {
-        ("src/main.ts", include_str!("../../templates/frontend/main.ts"))
+        (
+            "src/main.ts",
+            include_str!("../../templates/frontend/main.ts"),
+        )
     } else {
-        ("src/main.js", include_str!("../../templates/frontend/main.js"))
+        (
+            "src/main.js",
+            include_str!("../../templates/frontend/main.js"),
+        )
     };
     fs::write(web.join(entry_path), entry_source)?;
     let index_html =
@@ -433,11 +484,13 @@ fn scaffold_bevy_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool) 
         cargo.push_str("\n[workspace]\n");
     }
     fs::write(bevy.join("Cargo.toml"), cargo)?;
-    fs::write(bevy.join("src/main.rs"), include_str!("../../templates/frontend/bevy_main.rs"))?;
+    fs::write(
+        bevy.join("src/main.rs"),
+        include_str!("../../templates/frontend/bevy_main.rs"),
+    )?;
 
     let dot_cargo = root.join(".cargo");
-    fs::create_dir_all(&dot_cargo)
-        .with_context(|| format!("create {}", dot_cargo.display()))?;
+    fs::create_dir_all(&dot_cargo).with_context(|| format!("create {}", dot_cargo.display()))?;
     fs::write(
         dot_cargo.join("config.toml"),
         include_str!("../../templates/misc/dot_cargo_config_wasm.toml"),
@@ -475,8 +528,7 @@ fn scaffold_dioxus_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool
     )?;
 
     let dot_cargo = root.join(".cargo");
-    fs::create_dir_all(&dot_cargo)
-        .with_context(|| format!("create {}", dot_cargo.display()))?;
+    fs::create_dir_all(&dot_cargo).with_context(|| format!("create {}", dot_cargo.display()))?;
     fs::write(
         dot_cargo.join("config.toml"),
         include_str!("../../templates/misc/dot_cargo_config_wasm.toml"),

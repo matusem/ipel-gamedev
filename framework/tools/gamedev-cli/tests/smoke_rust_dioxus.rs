@@ -130,7 +130,10 @@ fn smoke_rust_dioxus_init_test_build() -> Result<()> {
         js_template: None,
     })?;
 
-    assert!(game_root.join("gamedev.toml").is_file(), "gamedev.toml missing after init");
+    assert!(
+        game_root.join("gamedev.toml").is_file(),
+        "gamedev.toml missing after init"
+    );
     assert!(
         game_root.join("frontend/dioxus/Cargo.toml").is_file(),
         "dioxus frontend missing after init"

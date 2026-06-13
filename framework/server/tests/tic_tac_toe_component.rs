@@ -4,8 +4,8 @@ use server::component_db::ComponentDb;
 
 #[tokio::test]
 async fn tic_tac_toe_logic_wasm_instantiates_game_core() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../games/tic_tac_toe/logic.wasm");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../games/tic_tac_toe/logic.wasm");
     if !path.is_file() {
         eprintln!(
             "skip: build with `cargo component build --release` in games/tic_tac_toe/rust/component"

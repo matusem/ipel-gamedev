@@ -94,7 +94,8 @@ impl GameRegistry {
 
             match std::fs::read(&logic_path) {
                 Ok(wasm_bytes) => {
-                    match component_db.insert_components_as_wasm_bytes(&manifest.name, &wasm_bytes) {
+                    match component_db.insert_components_as_wasm_bytes(&manifest.name, &wasm_bytes)
+                    {
                         Ok(_) => tracing::info!(
                             display_name = %manifest.display_name,
                             game_type = %manifest.name,
@@ -169,5 +170,4 @@ impl GameRegistry {
             .find(|gt| gt.manifest.name == name)
             .map(|gt| gt.client_dir.as_path())
     }
-
 }

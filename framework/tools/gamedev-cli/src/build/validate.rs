@@ -34,8 +34,7 @@ pub fn validate_logic_component_file(path: &Path) -> Result<()> {
 }
 
 pub fn validate_logic_wasm_file(path: &Path) -> Result<()> {
-    let mut f = fs::File::open(path)
-        .with_context(|| format!("open {}", path.display()))?;
+    let mut f = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut magic = [0u8; 4];
     f.read_exact(&mut magic)
         .context("logic.wasm too small or unreadable")?;
@@ -139,8 +138,8 @@ fn validate_index_html_js_imports_resolve(client_dir: &Path, frontend: FrontendK
         FrontendKind::Dioxus => "Dioxus",
         _ => "wasm-bindgen",
     };
-    let html = fs::read_to_string(client_dir.join("index.html"))
-        .context("read client/index.html")?;
+    let html =
+        fs::read_to_string(client_dir.join("index.html")).context("read client/index.html")?;
     let refs = extract_quoted_from_imports(&html);
     let js_refs: Vec<_> = refs.into_iter().filter(|r| r.ends_with(".js")).collect();
     if js_refs.is_empty() {
@@ -161,8 +160,8 @@ fn validate_index_html_js_imports_resolve(client_dir: &Path, frontend: FrontendK
 }
 
 fn validate_vite_or_static_client_has_js(client_dir: &Path) -> Result<()> {
-    let html = fs::read_to_string(client_dir.join("index.html"))
-        .context("read client/index.html")?;
+    let html =
+        fs::read_to_string(client_dir.join("index.html")).context("read client/index.html")?;
     let refs = extract_quoted_from_imports(&html);
     let js_refs: Vec<_> = refs.into_iter().filter(|r| r.ends_with(".js")).collect();
     for r in &js_refs {

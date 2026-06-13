@@ -2,8 +2,8 @@ use crate::db::GameInstanceStore;
 use crate::game_core::{self, Buffer, Game, GameCore, NewPlayerState, Player, TakeActionResult};
 use crate::lobby_db::{self, LobbyListNotify};
 use actix_web::ResponseError;
-use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::SqlitePool;
@@ -131,7 +131,8 @@ pub struct GameRunPersistence {
 }
 
 fn player_identity_utf8(buf: &[u8]) -> String {
-    serde_json::from_slice::<String>(buf).unwrap_or_else(|_| String::from_utf8_lossy(buf).into_owned())
+    serde_json::from_slice::<String>(buf)
+        .unwrap_or_else(|_| String::from_utf8_lossy(buf).into_owned())
 }
 
 fn game_over_from_event_json(raw: &[u8]) -> Option<String> {
@@ -154,7 +155,9 @@ fn game_over_from_event_json(raw: &[u8]) -> Option<String> {
 }
 
 /// If this action tick ended the game, map seat identity (JSON string) → outcome label (Win / Loss / Draw).
-fn terminal_outcomes_this_tick(player_states: &[NewPlayerState]) -> Option<HashMap<String, String>> {
+fn terminal_outcomes_this_tick(
+    player_states: &[NewPlayerState],
+) -> Option<HashMap<String, String>> {
     let mut map = HashMap::new();
     for nps in player_states {
         let ident = player_identity_utf8(&nps.state.player);
@@ -164,21 +167,14 @@ fn terminal_outcomes_this_tick(player_states: &[NewPlayerState]) -> Option<HashM
             }
         }
     }
-    if map.is_empty() {
-        None
-    } else {
-        Some(map)
-    }
+    if map.is_empty() { None } else { Some(map) }
 }
 
 fn float_scores_from_outcomes(outcomes: &HashMap<String, String>) -> HashMap<String, f64> {
     let n = outcomes.len().max(1) as f64;
     let all_draw = outcomes.values().all(|x| x == "Draw");
     if all_draw {
-        return outcomes
-            .keys()
-            .map(|k| (k.clone(), 1.0 / n))
-            .collect();
+        return outcomes.keys().map(|k| (k.clone(), 1.0 / n)).collect();
     }
     let wins = outcomes.values().filter(|x| *x == "Win").count();
     if wins == 1 {
@@ -187,10 +183,7 @@ fn float_scores_from_outcomes(outcomes: &HashMap<String, String>) -> HashMap<Str
             .map(|(k, o)| (k.clone(), if o == "Win" { 1.0 } else { 0.0 }))
             .collect();
     }
-    outcomes
-        .keys()
-        .map(|k| (k.clone(), 1.0 / n))
-        .collect()
+    outcomes.keys().map(|k| (k.clone(), 1.0 / n)).collect()
 }
 
 #[derive(Clone)]
@@ -231,8 +224,7 @@ impl GameInstance {
                     .iter()
                     .map(|ps| {
                         let raw = String::from_utf8_lossy(&ps.player);
-                        serde_json::from_str::<String>(&raw)
-                            .unwrap_or_else(|_| raw.to_string())
+                        serde_json::from_str::<String>(&raw).unwrap_or_else(|_| raw.to_string())
                     })
                     .collect()
             })
@@ -275,7 +267,11 @@ impl GameInstance {
                 .flatten();
 
             tracing::debug!(
-                outcome = if result.is_ok() { "succeeded" } else { "failed" },
+                outcome = if result.is_ok() {
+                    "succeeded"
+                } else {
+                    "failed"
+                },
                 "game action processed"
             );
 
@@ -297,11 +293,10 @@ impl GameInstance {
                         spectator_state,
                     };
 
-                    let snap = encode_game_snapshot(&new_game)
-                        .unwrap_or_else(|e| {
-                            tracing::error!(error = %e, "encode_game_snapshot failed");
-                            "{}".to_string()
-                        });
+                    let snap = encode_game_snapshot(&new_game).unwrap_or_else(|e| {
+                        tracing::error!(error = %e, "encode_game_snapshot failed");
+                        "{}".to_string()
+                    });
 
                     *game = new_game;
 

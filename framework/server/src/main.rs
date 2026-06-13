@@ -1,23 +1,25 @@
+use actix_files::{Files, NamedFile};
+use actix_web::dev::{ServiceRequest, ServiceResponse, fn_service};
+use actix_web::guard;
+use actix_web::http::header;
+use actix_web::{
+    App, Error, HttpRequest, HttpResponse, HttpServer, Result as ActixResult, rt, web,
+};
+use async_graphql::Data as GqlData;
+use async_graphql::http::{GraphQLPlaygroundConfig, playground_source};
+use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use server::game_core::Buffer;
 use server::game_db::GameDb;
 use server::game_registry::GameRegistry;
 use server::graphql::{AppSchema, DraftsDir, GamesDir, RequestUser};
 use server::lobby_db::LobbyListNotify;
 use server::{component_db::ComponentDb, db};
-use actix_files::{Files, NamedFile};
-use actix_web::dev::{fn_service, ServiceRequest, ServiceResponse};
-use actix_web::guard;
-use actix_web::http::header;
-use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Result as ActixResult, rt};
-use tracing_actix_web::TracingLogger;
-use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
-use async_graphql::Data as GqlData;
-use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::sync::broadcast;
+use tracing_actix_web::TracingLogger;
 use uuid::Uuid;
 
 fn player_identity_from_query_param(param: &str) -> Buffer {
@@ -285,7 +287,9 @@ async fn cli_manifest() -> ActixResult<HttpResponse> {
 }
 
 async fn graphql_playground() -> ActixResult<HttpResponse> {
-    let html = playground_source(GraphQLPlaygroundConfig::new("/graphql").subscription_endpoint("/graphql"));
+    let html = playground_source(
+        GraphQLPlaygroundConfig::new("/graphql").subscription_endpoint("/graphql"),
+    );
     Ok(HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .body(html))
@@ -354,7 +358,11 @@ async fn game_asset(
     registry: web::Data<Arc<RwLock<GameRegistry>>>,
 ) -> Result<NamedFile, Error> {
     let (game_name, tail) = path.into_inner();
-    let tail = if tail.is_empty() { "index.html".to_string() } else { tail };
+    let tail = if tail.is_empty() {
+        "index.html".to_string()
+    } else {
+        tail
+    };
     let rel = std::path::Path::new(&tail);
     if rel.is_absolute() || tail.contains("..") {
         return Err(actix_web::error::ErrorBadRequest("invalid asset path"));
@@ -421,10 +429,7 @@ fn cleanup_old_drafts(drafts_dir: &std::path::Path) {
         let Ok(modified) = meta.modified() else {
             continue;
         };
-        let age = now
-            .duration_since(modified)
-            .unwrap_or_default()
-            .as_secs();
+        let age = now.duration_since(modified).unwrap_or_default().as_secs();
         if age > ttl_secs {
             let _ = std::fs::remove_dir_all(&p);
         }
@@ -450,7 +455,8 @@ async fn main() -> std::io::Result<()> {
         .expect("database connect/migrate");
 
     let games_dir = PathBuf::from(std::env::var("GAMES_DIR").unwrap_or_else(|_| "./games".into()));
-    let drafts_dir = PathBuf::from(std::env::var("DRAFTS_DIR").unwrap_or_else(|_| "./drafts".into()));
+    let drafts_dir =
+        PathBuf::from(std::env::var("DRAFTS_DIR").unwrap_or_else(|_| "./drafts".into()));
     let lobby_dir = PathBuf::from(std::env::var("LOBBY_DIR").unwrap_or_else(|_| "./lobby".into()));
     let lib_dir = PathBuf::from(std::env::var("LIB_DIR").unwrap_or_else(|_| "./client-lib".into()));
     let tools_dir = PathBuf::from(std::env::var("TOOLS_DIR").unwrap_or_else(|_| "./tools".into()));

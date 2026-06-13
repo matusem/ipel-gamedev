@@ -11,10 +11,7 @@ pub fn cli_version() -> &'static str {
 
 pub fn sdk_versions() -> HashMap<String, String> {
     HashMap::from([
-        (
-            "upjs-gdd-shared-types".into(),
-            "0.1.0".into(),
-        ),
+        ("upjs-gdd-shared-types".into(), "0.1.0".into()),
         ("upjs-gdd-rust-shared".into(), "0.1.0".into()),
         ("upjs-gdd-bevy".into(), "0.1.0".into()),
         ("upjs-gdd-dioxus".into(), "0.1.0".into()),

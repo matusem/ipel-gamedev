@@ -149,11 +149,14 @@ pub async fn validate_and_stage_zip_bytes(
             None,
             Some("Upload a .zip archive with game files."),
         ));
-        return Err(serde_json::to_string(&summarize(diagnostics, false, false, false, false)).unwrap_or_else(|_| "invalid zip".to_string()));
+        return Err(
+            serde_json::to_string(&summarize(diagnostics, false, false, false, false))
+                .unwrap_or_else(|_| "invalid zip".to_string()),
+        );
     }
 
-    let mut archive = ZipArchive::new(Cursor::new(zip_bytes))
-        .map_err(|e| format!("Invalid zip archive: {e}"))?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(zip_bytes)).map_err(|e| format!("Invalid zip archive: {e}"))?;
     let tmp = tempdir().map_err(|e| format!("create temp dir: {e}"))?;
     let extract_root = tmp.path().join("extract");
     fs::create_dir_all(&extract_root).map_err(|e| format!("create extract dir: {e}"))?;
@@ -172,14 +175,20 @@ pub async fn validate_and_stage_zip_bytes(
         diagnostics.push(diag(
             "error",
             "E_ZIP_TOO_MANY_ENTRIES",
-            format!("zip contains too many entries: {} > {}", archive.len(), max_entries),
+            format!(
+                "zip contains too many entries: {} > {}",
+                archive.len(),
+                max_entries
+            ),
             None,
             None,
         ));
     }
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| format!("zip entry read failed: {e}"))?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| format!("zip entry read failed: {e}"))?;
         let Some(rel) = file.enclosed_name() else {
             diagnostics.push(diag(
                 "error",
@@ -196,7 +205,8 @@ pub async fn validate_and_stage_zip_bytes(
             continue;
         }
         if let Some(parent) = out.parent() {
-            fs::create_dir_all(parent).map_err(|e| format!("create parent '{}': {e}", parent.display()))?;
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("create parent '{}': {e}", parent.display()))?;
         }
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)
@@ -303,42 +313,70 @@ pub async fn validate_and_stage_zip_bytes(
     let mut manifest: Option<GameManifest> = None;
     if manifest_path.is_file() {
         match fs::read_to_string(&manifest_path) {
-            Ok(s) => match serde_json::from_str::<GameManifest>(&s) {
-                Ok(m) => {
-                    if let Err(msg) = validate_game_folder_name(&m.name) {
-                        diagnostics.push(diag(
+            Ok(s) => {
+                match serde_json::from_str::<GameManifest>(&s) {
+                    Ok(m) => {
+                        if let Err(msg) = validate_game_folder_name(&m.name) {
+                            diagnostics.push(diag(
                             "error",
                             "E_MANIFEST_NAME_INVALID",
                             format!("manifest.name invalid: {msg}"),
                             Some("manifest.json"),
                             Some("Use letters, digits, underscore, and hyphen only (max 64 chars)."),
                         ));
+                        }
+                        if m.display_name.trim().is_empty() {
+                            diagnostics.push(diag(
+                                "error",
+                                "E_MANIFEST_DISPLAY_NAME_EMPTY",
+                                "manifest.display_name must be non-empty",
+                                Some("manifest.json"),
+                                None,
+                            ));
+                        }
+                        if m.version.trim().is_empty() {
+                            diagnostics.push(diag(
+                                "error",
+                                "E_MANIFEST_VERSION_MISSING",
+                                "manifest.version must be non-empty",
+                                Some("manifest.json"),
+                                None,
+                            ));
+                        }
+                        if m.min_players == 0 {
+                            diagnostics.push(diag(
+                                "error",
+                                "E_MANIFEST_MIN_PLAYERS_INVALID",
+                                "manifest.min_players must be >= 1",
+                                Some("manifest.json"),
+                                None,
+                            ));
+                        }
+                        if m.max_players < m.min_players {
+                            diagnostics.push(diag(
+                                "error",
+                                "E_MANIFEST_MAX_PLAYERS_INVALID",
+                                "manifest.max_players must be >= min_players",
+                                Some("manifest.json"),
+                                None,
+                            ));
+                        }
+                        diagnostics.extend(
+                            crate::platform_manifest::validate_built_with_from_manifest_json(
+                                &manifest_path,
+                            ),
+                        );
+                        manifest = Some(m);
                     }
-                    if m.display_name.trim().is_empty() {
-                        diagnostics.push(diag("error", "E_MANIFEST_DISPLAY_NAME_EMPTY", "manifest.display_name must be non-empty", Some("manifest.json"), None));
-                    }
-                    if m.version.trim().is_empty() {
-                        diagnostics.push(diag("error", "E_MANIFEST_VERSION_MISSING", "manifest.version must be non-empty", Some("manifest.json"), None));
-                    }
-                    if m.min_players == 0 {
-                        diagnostics.push(diag("error", "E_MANIFEST_MIN_PLAYERS_INVALID", "manifest.min_players must be >= 1", Some("manifest.json"), None));
-                    }
-                    if m.max_players < m.min_players {
-                        diagnostics.push(diag("error", "E_MANIFEST_MAX_PLAYERS_INVALID", "manifest.max_players must be >= min_players", Some("manifest.json"), None));
-                    }
-                    diagnostics.extend(crate::platform_manifest::validate_built_with_from_manifest_json(
-                        &manifest_path,
-                    ));
-                    manifest = Some(m);
+                    Err(e) => diagnostics.push(diag(
+                        "error",
+                        "E_MANIFEST_INVALID_JSON",
+                        format!("manifest.json parse error: {e}"),
+                        Some("manifest.json"),
+                        None,
+                    )),
                 }
-                Err(e) => diagnostics.push(diag(
-                    "error",
-                    "E_MANIFEST_INVALID_JSON",
-                    format!("manifest.json parse error: {e}"),
-                    Some("manifest.json"),
-                    None,
-                )),
-            },
+            }
             Err(e) => diagnostics.push(diag(
                 "error",
                 "E_MANIFEST_READ_FAILED",
@@ -385,11 +423,13 @@ pub async fn validate_and_stage_zip_bytes(
     let Some(manifest_ref) = manifest.as_ref() else {
         let report = summarize(diagnostics, has_index, has_config, has_result, has_about);
         if !report.ok {
-            return Err(
-                serde_json::to_string(&report).unwrap_or_else(|_| "{\"ok\":false,\"errors\":1}".to_string())
-            );
+            return Err(serde_json::to_string(&report)
+                .unwrap_or_else(|_| "{\"ok\":false,\"errors\":1}".to_string()));
         }
-        return Err("{\"ok\":false,\"errors\":1,\"diagnostics\":[{\"code\":\"E_MANIFEST_MISSING\"}]}".to_string());
+        return Err(
+            "{\"ok\":false,\"errors\":1,\"diagnostics\":[{\"code\":\"E_MANIFEST_MISSING\"}]}"
+                .to_string(),
+        );
     };
 
     if let Some(gdir) = games_dir_for_collision_check {
@@ -409,12 +449,14 @@ pub async fn validate_and_stage_zip_bytes(
 
     let report = summarize(diagnostics, has_index, has_config, has_result, has_about);
     if !report.ok {
-        return Err(
-            serde_json::to_string(&report).unwrap_or_else(|_| "{\"ok\":false,\"errors\":1}".to_string())
-        );
+        return Err(serde_json::to_string(&report)
+            .unwrap_or_else(|_| "{\"ok\":false,\"errors\":1}".to_string()));
     }
     let Some(manifest) = manifest else {
-        return Err("{\"ok\":false,\"errors\":1,\"diagnostics\":[{\"code\":\"E_MANIFEST_MISSING\"}]}".to_string());
+        return Err(
+            "{\"ok\":false,\"errors\":1,\"diagnostics\":[{\"code\":\"E_MANIFEST_MISSING\"}]}"
+                .to_string(),
+        );
     };
 
     fs::create_dir_all(drafts_root)
@@ -428,9 +470,13 @@ pub async fn validate_and_stage_zip_bytes(
     })
 }
 
-pub fn write_manifest_to_staged_dir(staged_dir: &Path, manifest: &GameManifest) -> Result<(), String> {
+pub fn write_manifest_to_staged_dir(
+    staged_dir: &Path,
+    manifest: &GameManifest,
+) -> Result<(), String> {
     let path = staged_dir.join("manifest.json");
-    let s = serde_json::to_string_pretty(manifest).map_err(|e| format!("serialize manifest: {e}"))?;
+    let s =
+        serde_json::to_string_pretty(manifest).map_err(|e| format!("serialize manifest: {e}"))?;
     fs::write(&path, s).map_err(|e| format!("write '{}': {e}", path.display()))
 }
 
@@ -445,18 +491,25 @@ pub fn remove_published_game_dir(games_dir: &Path, game_name: &str) -> Result<()
     Ok(())
 }
 
-pub fn publish_staged_game(staged_dir: &Path, games_dir: &Path, game_name: &str) -> Result<PathBuf, String> {
+pub fn publish_staged_game(
+    staged_dir: &Path,
+    games_dir: &Path,
+    game_name: &str,
+) -> Result<PathBuf, String> {
     let live_dir = games_dir.join(game_name);
     let tmp_live = games_dir.join(format!(".tmp_publish_{}", Uuid::new_v4()));
     if tmp_live.exists() {
         fs::remove_dir_all(&tmp_live).map_err(|e| e.to_string())?;
     }
-    fs::create_dir_all(games_dir).map_err(|e| format!("create games dir '{}': {e}", games_dir.display()))?;
+    fs::create_dir_all(games_dir)
+        .map_err(|e| format!("create games dir '{}': {e}", games_dir.display()))?;
     copy_dir_recursive(staged_dir, &tmp_live)?;
     if live_dir.exists() {
-        fs::remove_dir_all(&live_dir).map_err(|e| format!("remove old game dir '{}': {e}", live_dir.display()))?;
+        fs::remove_dir_all(&live_dir)
+            .map_err(|e| format!("remove old game dir '{}': {e}", live_dir.display()))?;
     }
-    fs::rename(&tmp_live, &live_dir).map_err(|e| format!("activate game dir '{}': {e}", live_dir.display()))?;
+    fs::rename(&tmp_live, &live_dir)
+        .map_err(|e| format!("activate game dir '{}': {e}", live_dir.display()))?;
     Ok(live_dir)
 }
 

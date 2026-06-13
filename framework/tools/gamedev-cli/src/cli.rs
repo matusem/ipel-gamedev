@@ -9,7 +9,11 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_GRAPHQL_URL: &str = "http://localhost:8080/graphql";
 
 #[derive(Parser)]
-#[command(name = "gamedev-cli", version, about = "UPJŠ GDD Platform developer CLI")]
+#[command(
+    name = "gamedev-cli",
+    version,
+    about = "UPJŠ GDD Platform developer CLI"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,

@@ -54,5 +54,7 @@ pub fn current_user_label() -> Option<String> {
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
         .as_secs() as i64;
-    db.into_iter().find(|e| e.expires_at > now).map(|e| e.user_id)
+    db.into_iter()
+        .find(|e| e.expires_at > now)
+        .map(|e| e.user_id)
 }

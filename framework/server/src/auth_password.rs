@@ -1,7 +1,7 @@
 //! Password hashing for optional account protection. OAuth / SSO is not implemented yet.
 
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
+use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use password_hash::rand_core::OsRng;
 
 pub fn hash_password(password: &str) -> Result<String, String> {

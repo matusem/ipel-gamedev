@@ -28,7 +28,9 @@ pub struct DraftsDir(pub PathBuf);
 pub(crate) async fn require_user(ctx: &Context<'_>) -> Result<Uuid> {
     let RequestUser(raw) = ctx.data::<RequestUser>()?;
     let Some(raw) = raw.as_ref() else {
-        return Err(Error::new("login required: send Authorization: Bearer <sessionToken>"));
+        return Err(Error::new(
+            "login required: send Authorization: Bearer <sessionToken>",
+        ));
     };
     let pool = ctx.data::<SqlitePool>()?;
     if let Some(uid) = auth_sessions::resolve_session(pool, raw)
@@ -76,7 +78,11 @@ pub(crate) async fn require_developer_user(ctx: &Context<'_>) -> Result<Uuid> {
     let open_uploads = std::env::var("OPEN_DEVELOPER_UPLOADS")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
-    if open_uploads || db::user_has_role(pool, uid, "developer").await.unwrap_or(false) {
+    if open_uploads
+        || db::user_has_role(pool, uid, "developer")
+            .await
+            .unwrap_or(false)
+    {
         return Ok(uid);
     }
     Err(Error::new("developer permission required"))

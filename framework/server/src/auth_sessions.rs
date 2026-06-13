@@ -38,13 +38,12 @@ pub async fn resolve_session(pool: &SqlitePool, token: &str) -> Result<Option<Uu
         return Ok(None);
     }
     let now = GameInstanceStore::now_secs();
-    let row = sqlx::query(
-        "SELECT user_id FROM auth_sessions WHERE token_hash = ? AND expires_at > ?",
-    )
-    .bind(hash_token(token))
-    .bind(now)
-    .fetch_optional(pool)
-    .await?;
+    let row =
+        sqlx::query("SELECT user_id FROM auth_sessions WHERE token_hash = ? AND expires_at > ?")
+            .bind(hash_token(token))
+            .bind(now)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.and_then(|r| {
         let uid: String = r.get(0);
         Uuid::parse_str(&uid).ok()

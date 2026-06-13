@@ -1,4 +1,4 @@
-﻿use std::pin::Pin;
+use std::pin::Pin;
 
 use async_graphql::{Context, Error, Result, Subscription};
 use futures_util::stream::{self, Stream, StreamExt};
@@ -9,8 +9,8 @@ use crate::game_db::GameDb;
 use crate::lobby_db::{self, LobbyListNotify};
 
 use super::{
-    lobby_to_gql, map_game_entries, map_summary, require_registered_user, GameInstanceGql, LobbyGql,
-    LobbySummaryGql,
+    GameInstanceGql, LobbyGql, LobbySummaryGql, lobby_to_gql, map_game_entries, map_summary,
+    require_registered_user,
 };
 pub struct SubscriptionRoot;
 
@@ -22,9 +22,9 @@ type LobbyRoomStream = Pin<Box<dyn Stream<Item = LobbyGql> + Send>>;
 impl SubscriptionRoot {
     async fn game_instances_updated(&self, ctx: &Context<'_>) -> Result<GameListStream> {
         let db = ctx.data::<GameDb>()?.clone();
-        let rx = db.subscribe_game_list().ok_or_else(|| {
-            Error::new("game list subscriptions are not configured")
-        })?;
+        let rx = db
+            .subscribe_game_list()
+            .ok_or_else(|| Error::new("game list subscriptions are not configured"))?;
         let first = map_game_entries(&db);
         let tail = stream::unfold((rx, db), |(mut rx, db)| async move {
             match rx.recv().await {
@@ -96,4 +96,3 @@ impl SubscriptionRoot {
         Ok(Box::pin(stream::once(async move { first }).chain(tail)))
     }
 }
-

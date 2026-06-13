@@ -7,8 +7,8 @@ use anyhow::Result;
 
 use crate::cli::{BackendKind, FrontendKind};
 use crate::project::{
-    detect_layout, is_game_project, load_config, resolve_bevy_dir, resolve_component_dir,
-    resolve_dioxus_dir, resolve_logic_dir, ProjectLayout,
+    ProjectLayout, detect_layout, is_game_project, load_config, resolve_bevy_dir,
+    resolve_component_dir, resolve_dioxus_dir, resolve_logic_dir,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,7 +107,12 @@ pub fn run(root: &Path) -> Result<Vec<CheckResult>> {
     }
 
     checks.extend(toolchain_checks(Some(&cfg.backend), Some(&cfg.frontend)));
-    checks.extend(layout_tooling_checks(root, &cfg.backend, &cfg.frontend, layout));
+    checks.extend(layout_tooling_checks(
+        root,
+        &cfg.backend,
+        &cfg.frontend,
+        layout,
+    ));
 
     Ok(checks)
 }
@@ -208,11 +213,14 @@ fn layout_tooling_checks(
     out
 }
 
-fn toolchain_checks(backend: Option<&BackendKind>, frontend: Option<&FrontendKind>) -> Vec<CheckResult> {
+fn toolchain_checks(
+    backend: Option<&BackendKind>,
+    frontend: Option<&FrontendKind>,
+) -> Vec<CheckResult> {
     let mut out = Vec::new();
     let need_cargo = backend.is_none() || matches!(backend, Some(BackendKind::Rust));
-    let need_wasm_frontend = frontend
-        .is_some_and(|f| matches!(f, FrontendKind::Bevy | FrontendKind::Dioxus));
+    let need_wasm_frontend =
+        frontend.is_some_and(|f| matches!(f, FrontendKind::Bevy | FrontendKind::Dioxus));
     if need_cargo || need_wasm_frontend {
         out.push(if command_ok("cargo", &["--version"]) {
             ok("cargo", "available")
@@ -290,7 +298,9 @@ pub fn print_report(checks: &[CheckResult]) {
     }
     println!();
     if fails > 0 {
-        println!("Doctor: {fails} failure(s), {warns} warning(s). Fix FAIL items before build/deploy.");
+        println!(
+            "Doctor: {fails} failure(s), {warns} warning(s). Fix FAIL items before build/deploy."
+        );
     } else if warns > 0 {
         println!("Doctor: all required checks passed; {warns} warning(s).");
     } else {

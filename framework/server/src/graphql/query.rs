@@ -1,4 +1,4 @@
-﻿use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock};
 
 use async_graphql::{Context, Error, Object, Result};
 use sqlx::SqlitePool;
@@ -13,12 +13,13 @@ use crate::platform_stats;
 use crate::user_engagement;
 
 use super::{
-    map_aspect_ratings, map_draft, map_finished_row, map_game_entries, map_summary, lobby_to_gql,
-    require_developer_user, require_registered_user, ActivityEventGql, BadgeGql, DeploymentGql,
-    FinishedGameGql, GameCommentGql, GameDraftGql, GameInstanceGql, GamePatchNoteGql, GameReviewGql,
-    GameScreenshotGql, GameSessionGql, GameStorefrontGql, GameTypeGql, LeaderboardEntryGql, LobbyGql,
-    LobbySummaryGql, NotificationGql, PlatformManifestGql, PlatformStatsGql, PlayTimeLeaderboardEntryGql,
-    PublishTokenSummaryGql, UserGql, UserProfileGql, CliReleaseGql,
+    ActivityEventGql, BadgeGql, CliReleaseGql, DeploymentGql, FinishedGameGql, GameCommentGql,
+    GameDraftGql, GameInstanceGql, GamePatchNoteGql, GameReviewGql, GameScreenshotGql,
+    GameSessionGql, GameStorefrontGql, GameTypeGql, LeaderboardEntryGql, LobbyGql, LobbySummaryGql,
+    NotificationGql, PlatformManifestGql, PlatformStatsGql, PlayTimeLeaderboardEntryGql,
+    PublishTokenSummaryGql, UserGql, UserProfileGql, lobby_to_gql, map_aspect_ratings, map_draft,
+    map_finished_row, map_game_entries, map_summary, require_developer_user,
+    require_registered_user,
 };
 /// Root query.
 pub struct QueryRoot;
@@ -38,8 +39,7 @@ impl QueryRoot {
         let mut live_players: std::collections::HashMap<String, i32> =
             std::collections::HashMap::new();
         for entry in map_game_entries(game_db) {
-            *live_players.entry(entry.game_type).or_insert(0) +=
-                entry.connected_players as i32;
+            *live_players.entry(entry.game_type).or_insert(0) += entry.connected_players as i32;
         }
         let mut out = Vec::new();
         for gt in game_types {
@@ -118,10 +118,13 @@ impl QueryRoot {
             .collect())
     }
 
-    async fn user(&self, ctx: &Context<'_>, id: async_graphql::types::ID) -> Result<Option<UserGql>> {
+    async fn user(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::types::ID,
+    ) -> Result<Option<UserGql>> {
         let pool = ctx.data::<SqlitePool>()?;
-        let uid = Uuid::parse_str(id.as_str())
-            .map_err(|_| Error::new("invalid user id"))?;
+        let uid = Uuid::parse_str(id.as_str()).map_err(|_| Error::new("invalid user id"))?;
         let row = db::get_user(pool, uid)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
@@ -157,7 +160,11 @@ impl QueryRoot {
         Ok(rows.into_iter().map(map_summary).collect())
     }
 
-    async fn lobby(&self, ctx: &Context<'_>, id: async_graphql::types::ID) -> Result<Option<LobbyGql>> {
+    async fn lobby(
+        &self,
+        ctx: &Context<'_>,
+        id: async_graphql::types::ID,
+    ) -> Result<Option<LobbyGql>> {
         let _uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         let lid = Uuid::parse_str(id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
@@ -211,9 +218,7 @@ impl QueryRoot {
         let row = db::get_game_draft(pool, did)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
-        Ok(row
-            .filter(|d| d.owner_user_id == uid)
-            .map(map_draft))
+        Ok(row.filter(|d| d.owner_user_id == uid).map(map_draft))
     }
 
     async fn my_publish_tokens(&self, ctx: &Context<'_>) -> Result<Vec<PublishTokenSummaryGql>> {
@@ -316,7 +321,10 @@ impl QueryRoot {
             .into_iter()
             .filter_map(|d| {
                 let deployed_at = d.published_at?;
-                let status = if live_versions.get(&d.game_name).is_some_and(|v| v == &d.version) {
+                let status = if live_versions
+                    .get(&d.game_name)
+                    .is_some_and(|v| v == &d.version)
+                {
                     "Live".into()
                 } else {
                     "Archived".into()
@@ -454,7 +462,11 @@ impl QueryRoot {
         }))
     }
 
-    async fn game_storefront(&self, ctx: &Context<'_>, game_type: String) -> Result<GameStorefrontGql> {
+    async fn game_storefront(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+    ) -> Result<GameStorefrontGql> {
         let pool = ctx.data::<SqlitePool>()?;
         let can_edit = if let Ok(uid) = require_registered_user(ctx).await {
             game_storefront::user_can_edit_storefront(pool, uid, &game_type)
@@ -581,7 +593,8 @@ impl QueryRoot {
         let rows = db::list_finished_games_by_type(pool, &game_type, 200)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
-        let entries = game_storefront::compute_playtime_leaderboard(&rows, sf.avg_session_mins, lim as usize);
+        let entries =
+            game_storefront::compute_playtime_leaderboard(&rows, sf.avg_session_mins, lim as usize);
         Ok(entries
             .into_iter()
             .enumerate()
@@ -644,4 +657,3 @@ impl QueryRoot {
             .map_err(|e| Error::new(format!("db: {e}")))
     }
 }
-

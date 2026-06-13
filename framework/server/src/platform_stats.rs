@@ -76,12 +76,7 @@ fn winner_from_result(result_json: &str, id_to_name: &HashMap<String, String>) -
     let mut winners = Vec::new();
     for (pid, outcome) in outcomes {
         if outcome.as_str() == Some("Win") {
-            winners.push(
-                id_to_name
-                    .get(pid)
-                    .cloned()
-                    .unwrap_or_else(|| pid.clone()),
-            );
+            winners.push(id_to_name.get(pid).cloned().unwrap_or_else(|| pid.clone()));
         }
     }
     if winners.len() == 1 {
@@ -116,14 +111,12 @@ pub fn compute_leaderboard(rows: &[FinishedGameRow], limit: usize) -> Vec<Leader
     for row in rows {
         let id_to_name = identity_display_map(&row.seats_snapshot_json);
         let winner = winner_from_result(&row.result_json, &id_to_name);
-        let Ok(scores) = serde_json::from_str::<HashMap<String, f64>>(&row.player_scores_json) else {
+        let Ok(scores) = serde_json::from_str::<HashMap<String, f64>>(&row.player_scores_json)
+        else {
             continue;
         };
         for (pid, score) in scores {
-            let name = id_to_name
-                .get(&pid)
-                .cloned()
-                .unwrap_or_else(|| pid.clone());
+            let name = id_to_name.get(&pid).cloned().unwrap_or_else(|| pid.clone());
             let entry = by_name.entry(name.clone()).or_insert(LeaderboardEntry {
                 display_name: name.clone(),
                 total_score: 0,
@@ -138,11 +131,7 @@ pub fn compute_leaderboard(rows: &[FinishedGameRow], limit: usize) -> Vec<Leader
         }
     }
     let mut list: Vec<_> = by_name.into_values().collect();
-    list.sort_by(|a, b| {
-        b.wins
-            .cmp(&a.wins)
-            .then(b.total_score.cmp(&a.total_score))
-    });
+    list.sort_by(|a, b| b.wins.cmp(&a.wins).then(b.total_score.cmp(&a.total_score)));
     list.truncate(limit);
     list
 }
@@ -170,7 +159,8 @@ fn count_wins_for_user(rows: &[FinishedGameRow], user_id: Uuid) -> u32 {
         let Some(user_display) = user_display else {
             continue;
         };
-        if winner_from_result(&row.result_json, &id_to_name).as_deref() == Some(user_display.as_str())
+        if winner_from_result(&row.result_json, &id_to_name).as_deref()
+            == Some(user_display.as_str())
         {
             wins += 1;
         }
@@ -178,7 +168,10 @@ fn count_wins_for_user(rows: &[FinishedGameRow], user_id: Uuid) -> u32 {
     wins
 }
 
-pub async fn build_activity_feed(pool: &SqlitePool, limit: usize) -> Result<Vec<ActivityEventRow>, sqlx::Error> {
+pub async fn build_activity_feed(
+    pool: &SqlitePool,
+    limit: usize,
+) -> Result<Vec<ActivityEventRow>, sqlx::Error> {
     let mut events = Vec::new();
 
     let finished = db::list_recent_finished_games(pool, 8).await?;

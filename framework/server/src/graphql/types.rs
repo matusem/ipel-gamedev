@@ -1,4 +1,4 @@
-﻿use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock};
 
 use async_graphql::{Error, Result, SimpleObject};
 use sqlx::SqlitePool;
@@ -308,7 +308,10 @@ pub struct FinishedGameGql {
     pub result_ui_path: Option<String>,
 }
 
-pub(crate) fn map_finished_row(r: FinishedGameRow, registry: &Arc<RwLock<GameRegistry>>) -> FinishedGameGql {
+pub(crate) fn map_finished_row(
+    r: FinishedGameRow,
+    registry: &Arc<RwLock<GameRegistry>>,
+) -> FinishedGameGql {
     let result_ui_path = registry
         .read()
         .ok()
@@ -483,4 +486,3 @@ pub(crate) fn map_game_entries(db: &GameDb) -> Vec<GameInstanceGql> {
         })
         .collect()
 }
-

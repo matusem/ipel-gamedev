@@ -34,11 +34,29 @@ pub struct NotificationRow {
 
 const BADGE_SEEDS: &[(&str, &str, &str, &str, i32)] = &[
     ("veteran", "Veteran", "Gold", "Play 10+ matches", 1),
-    ("publisher", "Publisher", "Silver", "Publish your first game", 2),
+    (
+        "publisher",
+        "Publisher",
+        "Silver",
+        "Publish your first game",
+        2,
+    ),
     ("streak", "Win Streak", "Bronze", "Win 3+ matches", 3),
     ("elite", "Elite Operator", "Elite", "Reach 500 rep score", 4),
-    ("architect", "Architect", "Elite", "Publish 3+ games as a developer", 5),
-    ("mentor", "Mentor", "Gold", "Help the community (coming soon)", 6),
+    (
+        "architect",
+        "Architect",
+        "Elite",
+        "Publish 3+ games as a developer",
+        5,
+    ),
+    (
+        "mentor",
+        "Mentor",
+        "Gold",
+        "Help the community (coming soon)",
+        6,
+    ),
 ];
 
 pub async fn ensure_badge_catalog(pool: &SqlitePool) -> Result<(), sqlx::Error> {
@@ -157,21 +175,16 @@ pub async fn mark_read(
 
 pub async fn mark_all_read(pool: &SqlitePool, user_id: Uuid) -> Result<i32, sqlx::Error> {
     let now = GameInstanceStore::now_secs();
-    let r = sqlx::query(
-        "UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL",
-    )
-    .bind(now)
-    .bind(user_id.to_string())
-    .execute(pool)
-    .await?;
+    let r =
+        sqlx::query("UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL")
+            .bind(now)
+            .bind(user_id.to_string())
+            .execute(pool)
+            .await?;
     Ok(r.rows_affected() as i32)
 }
 
-async fn award_badge(
-    pool: &SqlitePool,
-    user_id: Uuid,
-    badge_id: &str,
-) -> Result<(), sqlx::Error> {
+async fn award_badge(pool: &SqlitePool, user_id: Uuid, badge_id: &str) -> Result<(), sqlx::Error> {
     let now = GameInstanceStore::now_secs();
     sqlx::query(
         r#"INSERT INTO user_badges (user_id, badge_id, earned_at)

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
-use upjs_gdd_shared_types::{GameManifest, PublishToken, UploadGameZipResponse};
 use reqwest::blocking::Client;
 use serde_json::json;
+use upjs_gdd_shared_types::{GameManifest, PublishToken, UploadGameZipResponse};
 
 #[derive(Clone)]
 pub struct SdkApiClient {
@@ -29,7 +29,12 @@ impl SdkApiClient {
         })
     }
 
-    pub fn upload_game_zip_base64(&self, token: &str, filename: &str, zip_base64: &str) -> Result<UploadGameZipResponse> {
+    pub fn upload_game_zip_base64(
+        &self,
+        token: &str,
+        filename: &str,
+        zip_base64: &str,
+    ) -> Result<UploadGameZipResponse> {
         let query = r#"mutation($filename: String!, $zipBase64: String!) {
           uploadGameZip(filename: $filename, zipBase64: $zipBase64) {
             uploadId
@@ -46,25 +51,32 @@ impl SdkApiClient {
         let upload = &v["data"]["uploadGameZip"];
         Ok(UploadGameZipResponse {
             upload_id: upload["uploadId"].as_str().unwrap_or_default().to_string(),
-            draft: upload["draft"].as_object().map(|d| upjs_gdd_shared_types::DraftLite {
-                id: d.get("id").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-                game_name: d
-                    .get("gameName")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-                version: d
-                    .get("version")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-                status: d
-                    .get("status")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or_default()
-                    .to_string(),
-            }),
-            report: serde_json::from_value(upload["report"].clone()).context("invalid report payload")?,
+            draft: upload["draft"]
+                .as_object()
+                .map(|d| upjs_gdd_shared_types::DraftLite {
+                    id: d
+                        .get("id")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    game_name: d
+                        .get("gameName")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    version: d
+                        .get("version")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    status: d
+                        .get("status")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                }),
+            report: serde_json::from_value(upload["report"].clone())
+                .context("invalid report payload")?,
         })
     }
 

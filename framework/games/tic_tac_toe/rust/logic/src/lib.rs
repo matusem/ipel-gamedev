@@ -446,7 +446,10 @@ impl GameCore for TicTacToe {
         }
     }
 
-    fn derive_spectator_result(_state: &Self::State, result: &Self::Result) -> Self::SpectatorResult {
+    fn derive_spectator_result(
+        _state: &Self::State,
+        result: &Self::Result,
+    ) -> Self::SpectatorResult {
         *result
     }
 
@@ -471,9 +474,18 @@ mod tests {
         let win: PlayerEvent<TicTacToe> = PlayerEvent::GameOver(PlayerOutcome::Win);
         let loss: PlayerEvent<TicTacToe> = PlayerEvent::GameOver(PlayerOutcome::Loss);
         let draw: PlayerEvent<TicTacToe> = PlayerEvent::GameOver(PlayerOutcome::Draw);
-        assert_eq!(serde_json::to_string(&win).unwrap(), r#"{"GameOver":"Win"}"#);
-        assert_eq!(serde_json::to_string(&loss).unwrap(), r#"{"GameOver":"Loss"}"#);
-        assert_eq!(serde_json::to_string(&draw).unwrap(), r#"{"GameOver":"Draw"}"#);
+        assert_eq!(
+            serde_json::to_string(&win).unwrap(),
+            r#"{"GameOver":"Win"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&loss).unwrap(),
+            r#"{"GameOver":"Loss"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&draw).unwrap(),
+            r#"{"GameOver":"Draw"}"#
+        );
     }
 
     #[test]

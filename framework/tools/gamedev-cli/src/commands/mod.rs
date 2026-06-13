@@ -59,7 +59,9 @@ pub fn run_deploy(args: DeployArgs) -> Result<()> {
     if let Ok(m) = crate::platform::fetch_platform_manifest(&base) {
         crate::platform::check_local_toolchain_against_platform(&m)?;
     } else {
-        eprintln!("warning: could not fetch platform manifest from {base} — skipping version check");
+        eprintln!(
+            "warning: could not fetch platform manifest from {base} — skipping version check"
+        );
     }
     run_build(BuildArgs {
         project_dir: Some(root.clone()),
@@ -98,14 +100,20 @@ pub fn run_drafts(args: DraftsArgs) -> Result<()> {
     match args.command {
         DraftsSubcommands::List => {
             let q = r#"query { myGameDrafts { id gameName version status } }"#;
-            println!("{}", api::gql_raw(&args.server_url, &tok.token, q, json!({}))?);
+            println!(
+                "{}",
+                api::gql_raw(&args.server_url, &tok.token, q, json!({}))?
+            );
         }
         DraftsSubcommands::Publish { draft_id } => {
             api::gql_simple_mutation(&args.server_url, &tok.token, "publishGameDraft", &draft_id)?
         }
-        DraftsSubcommands::Unpublish { draft_id } => {
-            api::gql_simple_mutation(&args.server_url, &tok.token, "unpublishGameDraft", &draft_id)?
-        }
+        DraftsSubcommands::Unpublish { draft_id } => api::gql_simple_mutation(
+            &args.server_url,
+            &tok.token,
+            "unpublishGameDraft",
+            &draft_id,
+        )?,
         DraftsSubcommands::Discard { draft_id } => {
             api::gql_simple_mutation(&args.server_url, &tok.token, "discardGameDraft", &draft_id)?
         }
@@ -229,7 +237,10 @@ pub fn run_test(args: TestArgs) -> Result<()> {
             build::ensure_java_for_gradle()?;
             let java_dir = resolve_java_backend_dir(&root);
             if !java_dir.join("settings.gradle.kts").is_file() {
-                bail!("Java backend missing {}", java_dir.join("settings.gradle.kts").display());
+                bail!(
+                    "Java backend missing {}",
+                    java_dir.join("settings.gradle.kts").display()
+                );
             }
             let gradlew = java_dir.join("gradlew.bat");
             let gradlew_unix = java_dir.join("gradlew");

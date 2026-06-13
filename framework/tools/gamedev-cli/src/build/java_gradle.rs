@@ -41,7 +41,12 @@ pub(crate) fn ensure_java_for_gradle() -> Result<()> {
     let output = Command::new(&java)
         .arg("-version")
         .output()
-        .with_context(|| format!("failed to run `{} -version`; install a JDK and/or fix JAVA_HOME", java.display()))?;
+        .with_context(|| {
+            format!(
+                "failed to run `{} -version`; install a JDK and/or fix JAVA_HOME",
+                java.display()
+            )
+        })?;
 
     let text = String::from_utf8_lossy(&output.stderr);
     let major = java_major_from_version_output(&text).or_else(|| {

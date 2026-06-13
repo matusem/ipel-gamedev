@@ -3,560 +3,621 @@
 #[repr(u8)]
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SerializationFormat {
-  Json,
-  MessagePack,
+    Json,
+    MessagePack,
 }
 impl ::core::fmt::Debug for SerializationFormat {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    match self {
-      SerializationFormat::Json => {
-        f.debug_tuple("SerializationFormat::Json").finish()
-      }
-      SerializationFormat::MessagePack => {
-        f.debug_tuple("SerializationFormat::MessagePack").finish()
-      }
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        match self {
+            SerializationFormat::Json => f.debug_tuple("SerializationFormat::Json").finish(),
+            SerializationFormat::MessagePack => {
+                f.debug_tuple("SerializationFormat::MessagePack").finish()
+            }
+        }
     }
-  }
 }
 
-impl SerializationFormat{
-  #[doc(hidden)]
-  pub unsafe fn _lift(val: u8) -> SerializationFormat{
-    if !cfg!(debug_assertions) {
-      return ::core::mem::transmute(val);
-    }
+impl SerializationFormat {
+    #[doc(hidden)]
+    pub unsafe fn _lift(val: u8) -> SerializationFormat {
+        if !cfg!(debug_assertions) {
+            return ::core::mem::transmute(val);
+        }
 
-    match val {
-      0 => SerializationFormat::Json,
-      1 => SerializationFormat::MessagePack,
+        match val {
+            0 => SerializationFormat::Json,
+            1 => SerializationFormat::MessagePack,
 
-      _ => panic!("invalid enum discriminant"),
+            _ => panic!("invalid enum discriminant"),
+        }
     }
-  }
 }
 
-pub type Buffer = _rt::Vec::<u8>;
+pub type Buffer = _rt::Vec<u8>;
 #[derive(Clone)]
 pub enum GameCoreError {
-  Deserialize(_rt::String),
-  Serialize(_rt::String),
-  Processing(_rt::String),
-  GameCore(Buffer),
+    Deserialize(_rt::String),
+    Serialize(_rt::String),
+    Processing(_rt::String),
+    GameCore(Buffer),
 }
 impl ::core::fmt::Debug for GameCoreError {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    match self {
-      GameCoreError::Deserialize(e) => {
-        f.debug_tuple("GameCoreError::Deserialize").field(e).finish()
-      }
-      GameCoreError::Serialize(e) => {
-        f.debug_tuple("GameCoreError::Serialize").field(e).finish()
-      }
-      GameCoreError::Processing(e) => {
-        f.debug_tuple("GameCoreError::Processing").field(e).finish()
-      }
-      GameCoreError::GameCore(e) => {
-        f.debug_tuple("GameCoreError::GameCore").field(e).finish()
-      }
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        match self {
+            GameCoreError::Deserialize(e) => f
+                .debug_tuple("GameCoreError::Deserialize")
+                .field(e)
+                .finish(),
+            GameCoreError::Serialize(e) => {
+                f.debug_tuple("GameCoreError::Serialize").field(e).finish()
+            }
+            GameCoreError::Processing(e) => {
+                f.debug_tuple("GameCoreError::Processing").field(e).finish()
+            }
+            GameCoreError::GameCore(e) => {
+                f.debug_tuple("GameCoreError::GameCore").field(e).finish()
+            }
+        }
     }
-  }
 }
 impl ::core::fmt::Display for GameCoreError {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    write!(f, "{:?}", self)
-  }
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl std::error::Error for GameCoreError {}
 pub type Player = Buffer;
-pub type PlayerAction = (Player,Buffer,);
+pub type PlayerAction = (Player, Buffer);
 #[derive(Clone)]
 pub struct PlayerState {
-  pub player: Player,
-  pub state: Buffer,
+    pub player: Player,
+    pub state: Buffer,
 }
 impl ::core::fmt::Debug for PlayerState {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    f.debug_struct("PlayerState").field("player", &self.player).field("state", &self.state).finish()
-  }
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("PlayerState")
+            .field("player", &self.player)
+            .field("state", &self.state)
+            .finish()
+    }
 }
 #[derive(Clone)]
 pub struct NewPlayerState {
-  pub state: PlayerState,
-  pub events: _rt::Vec::<Buffer>,
+    pub state: PlayerState,
+    pub events: _rt::Vec<Buffer>,
 }
 impl ::core::fmt::Debug for NewPlayerState {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    f.debug_struct("NewPlayerState").field("state", &self.state).field("events", &self.events).finish()
-  }
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("NewPlayerState")
+            .field("state", &self.state)
+            .field("events", &self.events)
+            .finish()
+    }
 }
 #[derive(Clone)]
 pub struct Game {
-  pub full_state: Buffer,
-  pub player_states: _rt::Vec::<PlayerState>,
-  pub spectator_state: Buffer,
+    pub full_state: Buffer,
+    pub player_states: _rt::Vec<PlayerState>,
+    pub spectator_state: Buffer,
 }
 impl ::core::fmt::Debug for Game {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    f.debug_struct("Game").field("full-state", &self.full_state).field("player-states", &self.player_states).field("spectator-state", &self.spectator_state).finish()
-  }
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("Game")
+            .field("full-state", &self.full_state)
+            .field("player-states", &self.player_states)
+            .field("spectator-state", &self.spectator_state)
+            .finish()
+    }
 }
 #[derive(Clone)]
 pub struct TakeActionResult {
-  pub new_game_full_state: Buffer,
-  pub player_states: _rt::Vec::<NewPlayerState>,
-  pub spectator_events: _rt::Vec::<Buffer>,
-  pub spectator_state: Buffer,
+    pub new_game_full_state: Buffer,
+    pub player_states: _rt::Vec<NewPlayerState>,
+    pub spectator_events: _rt::Vec<Buffer>,
+    pub spectator_state: Buffer,
 }
 impl ::core::fmt::Debug for TakeActionResult {
-  fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-    f.debug_struct("TakeActionResult").field("new-game-full-state", &self.new_game_full_state).field("player-states", &self.player_states).field("spectator-events", &self.spectator_events).field("spectator-state", &self.spectator_state).finish()
-  }
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("TakeActionResult")
+            .field("new-game-full-state", &self.new_game_full_state)
+            .field("player-states", &self.player_states)
+            .field("spectator-events", &self.spectator_events)
+            .field("spectator-state", &self.spectator_state)
+            .finish()
+    }
 }
 #[doc(hidden)]
 #[allow(non_snake_case)]
-pub unsafe fn _export_init_cabi<T: Guest>(arg0: i32,arg1: *mut u8,arg2: usize,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let len0 = arg2;
-let result1 = T::init(SerializationFormat::_lift(arg0 as u8), _rt::Vec::from_raw_parts(arg1.cast(), len0, len0));
-let ptr2 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
-match result1 {
-  Ok(e) => { {
-    *ptr2.add(0).cast::<u8>() = (0i32) as u8;
-    let Game{ full_state:full_state3, player_states:player_states3, spectator_state:spectator_state3, } = e;
-    let vec4 = (full_state3).into_boxed_slice();
-    let ptr4 = vec4.as_ptr().cast::<u8>();
-    let len4 = vec4.len();
-    ::core::mem::forget(vec4);
-    *ptr2.add(8).cast::<usize>() = len4;
-    *ptr2.add(4).cast::<*mut u8>() = ptr4.cast_mut();
-    let vec8 = player_states3;
-    let len8 = vec8.len();
-    let layout8 = _rt::alloc::Layout::from_size_align_unchecked(vec8.len() * 16, 4);
-    let result8 = if layout8.size() != 0 {
-      let ptr = _rt::alloc::alloc(layout8).cast::<u8>();
-      if ptr.is_null()
-      {
-        _rt::alloc::handle_alloc_error(layout8);
-      }
-      ptr
-    }else {
-      ::core::ptr::null_mut()
-    };
-    for (i, e) in vec8.into_iter().enumerate() {
-      let base = result8.add(i * 16);
-      {
-        let PlayerState{ player:player5, state:state5, } = e;
-        let vec6 = (player5).into_boxed_slice();
-        let ptr6 = vec6.as_ptr().cast::<u8>();
-        let len6 = vec6.len();
-        ::core::mem::forget(vec6);
-        *base.add(4).cast::<usize>() = len6;
-        *base.add(0).cast::<*mut u8>() = ptr6.cast_mut();
-        let vec7 = (state5).into_boxed_slice();
-        let ptr7 = vec7.as_ptr().cast::<u8>();
-        let len7 = vec7.len();
-        ::core::mem::forget(vec7);
-        *base.add(12).cast::<usize>() = len7;
-        *base.add(8).cast::<*mut u8>() = ptr7.cast_mut();
-      }
-    }
-    *ptr2.add(16).cast::<usize>() = len8;
-    *ptr2.add(12).cast::<*mut u8>() = result8;
-    let vec9 = (spectator_state3).into_boxed_slice();
-    let ptr9 = vec9.as_ptr().cast::<u8>();
-    let len9 = vec9.len();
-    ::core::mem::forget(vec9);
-    *ptr2.add(24).cast::<usize>() = len9;
-    *ptr2.add(20).cast::<*mut u8>() = ptr9.cast_mut();
-  } },
-  Err(e) => { {
-    *ptr2.add(0).cast::<u8>() = (1i32) as u8;
-    match e {
-      GameCoreError::Deserialize(e) => {
-        *ptr2.add(4).cast::<u8>() = (0i32) as u8;
-        let vec10 = (e.into_bytes()).into_boxed_slice();
-        let ptr10 = vec10.as_ptr().cast::<u8>();
-        let len10 = vec10.len();
-        ::core::mem::forget(vec10);
-        *ptr2.add(12).cast::<usize>() = len10;
-        *ptr2.add(8).cast::<*mut u8>() = ptr10.cast_mut();
-      },
-      GameCoreError::Serialize(e) => {
-        *ptr2.add(4).cast::<u8>() = (1i32) as u8;
-        let vec11 = (e.into_bytes()).into_boxed_slice();
-        let ptr11 = vec11.as_ptr().cast::<u8>();
-        let len11 = vec11.len();
-        ::core::mem::forget(vec11);
-        *ptr2.add(12).cast::<usize>() = len11;
-        *ptr2.add(8).cast::<*mut u8>() = ptr11.cast_mut();
-      },
-      GameCoreError::Processing(e) => {
-        *ptr2.add(4).cast::<u8>() = (2i32) as u8;
-        let vec12 = (e.into_bytes()).into_boxed_slice();
-        let ptr12 = vec12.as_ptr().cast::<u8>();
-        let len12 = vec12.len();
-        ::core::mem::forget(vec12);
-        *ptr2.add(12).cast::<usize>() = len12;
-        *ptr2.add(8).cast::<*mut u8>() = ptr12.cast_mut();
-      },
-      GameCoreError::GameCore(e) => {
-        *ptr2.add(4).cast::<u8>() = (3i32) as u8;
-        let vec13 = (e).into_boxed_slice();
-        let ptr13 = vec13.as_ptr().cast::<u8>();
-        let len13 = vec13.len();
-        ::core::mem::forget(vec13);
-        *ptr2.add(12).cast::<usize>() = len13;
-        *ptr2.add(8).cast::<*mut u8>() = ptr13.cast_mut();
-      },
-    }
-  } },
-};ptr2
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn __post_return_init<T: Guest>(arg0: *mut u8,) {
-  let l0 = i32::from(*arg0.add(0).cast::<u8>());
-  match l0 {
-    0 => {
-      let l1 = *arg0.add(4).cast::<*mut u8>();
-      let l2 = *arg0.add(8).cast::<usize>();
-      let base3 = l1;
-      let len3 = l2;
-      _rt::cabi_dealloc(base3, len3 * 1, 1);
-      let l4 = *arg0.add(12).cast::<*mut u8>();
-      let l5 = *arg0.add(16).cast::<usize>();
-      let base12 = l4;
-      let len12 = l5;
-      for i in 0..len12 {
-        let base = base12.add(i * 16);
-        {
-          let l6 = *base.add(0).cast::<*mut u8>();
-          let l7 = *base.add(4).cast::<usize>();
-          let base8 = l6;
-          let len8 = l7;
-          _rt::cabi_dealloc(base8, len8 * 1, 1);
-          let l9 = *base.add(8).cast::<*mut u8>();
-          let l10 = *base.add(12).cast::<usize>();
-          let base11 = l9;
-          let len11 = l10;
-          _rt::cabi_dealloc(base11, len11 * 1, 1);
-        }
-      }
-      _rt::cabi_dealloc(base12, len12 * 16, 4);
-      let l13 = *arg0.add(20).cast::<*mut u8>();
-      let l14 = *arg0.add(24).cast::<usize>();
-      let base15 = l13;
-      let len15 = l14;
-      _rt::cabi_dealloc(base15, len15 * 1, 1);
-    },
-    _ => {
-      let l16 = i32::from(*arg0.add(4).cast::<u8>());
-      match l16 {
-        0 => {
-          let l17 = *arg0.add(8).cast::<*mut u8>();
-          let l18 = *arg0.add(12).cast::<usize>();
-          _rt::cabi_dealloc(l17, l18, 1);
-        },
-        1 => {
-          let l19 = *arg0.add(8).cast::<*mut u8>();
-          let l20 = *arg0.add(12).cast::<usize>();
-          _rt::cabi_dealloc(l19, l20, 1);
-        },
-        2 => {
-          let l21 = *arg0.add(8).cast::<*mut u8>();
-          let l22 = *arg0.add(12).cast::<usize>();
-          _rt::cabi_dealloc(l21, l22, 1);
-        },
-        _ => {
-          let l23 = *arg0.add(8).cast::<*mut u8>();
-          let l24 = *arg0.add(12).cast::<usize>();
-          let base25 = l23;
-          let len25 = l24;
-          _rt::cabi_dealloc(base25, len25 * 1, 1);
-        },
-      }
-    },
-  }
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn _export_take_action_cabi<T: Guest>(arg0: i32,arg1: *mut u8,arg2: usize,arg3: *mut u8,arg4: usize,arg5: *mut u8,arg6: usize,arg7: *mut u8,arg8: usize,arg9: *mut u8,arg10: usize,) -> *mut u8 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let len0 = arg2;
-let base7 = arg3;
-let len7 = arg4;
-let mut result7 = _rt::Vec::with_capacity(len7);
-for i in 0..len7 {
-  let base = base7.add(i * 16);
-  let e7 = {
-    let l1 = *base.add(0).cast::<*mut u8>();
-    let l2 = *base.add(4).cast::<usize>();
-    let len3 = l2;
-    let l4 = *base.add(8).cast::<*mut u8>();
-    let l5 = *base.add(12).cast::<usize>();
-    let len6 = l5;
-
-    PlayerState{
-      player: _rt::Vec::from_raw_parts(l1.cast(), len3, len3),
-      state: _rt::Vec::from_raw_parts(l4.cast(), len6, len6),
-    }
-  };
-  result7.push(e7);
-}
-_rt::cabi_dealloc(base7, len7 * 16, 4);
-let len8 = arg6;
-let len9 = arg8;
-let len10 = arg10;
-let result11 = T::take_action(SerializationFormat::_lift(arg0 as u8), Game{
-  full_state: _rt::Vec::from_raw_parts(arg1.cast(), len0, len0),
-  player_states: result7,
-  spectator_state: _rt::Vec::from_raw_parts(arg5.cast(), len8, len8),
-}, (_rt::Vec::from_raw_parts(arg7.cast(), len9, len9), _rt::Vec::from_raw_parts(arg9.cast(), len10, len10)));
-let ptr12 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
-match result11 {
-  Ok(e) => { {
-    *ptr12.add(0).cast::<u8>() = (0i32) as u8;
-    let TakeActionResult{ new_game_full_state:new_game_full_state13, player_states:player_states13, spectator_events:spectator_events13, spectator_state:spectator_state13, } = e;
-    let vec14 = (new_game_full_state13).into_boxed_slice();
-    let ptr14 = vec14.as_ptr().cast::<u8>();
-    let len14 = vec14.len();
-    ::core::mem::forget(vec14);
-    *ptr12.add(8).cast::<usize>() = len14;
-    *ptr12.add(4).cast::<*mut u8>() = ptr14.cast_mut();
-    let vec21 = player_states13;
-    let len21 = vec21.len();
-    let layout21 = _rt::alloc::Layout::from_size_align_unchecked(vec21.len() * 24, 4);
-    let result21 = if layout21.size() != 0 {
-      let ptr = _rt::alloc::alloc(layout21).cast::<u8>();
-      if ptr.is_null()
-      {
-        _rt::alloc::handle_alloc_error(layout21);
-      }
-      ptr
-    }else {
-      ::core::ptr::null_mut()
-    };
-    for (i, e) in vec21.into_iter().enumerate() {
-      let base = result21.add(i * 24);
-      {
-        let NewPlayerState{ state:state15, events:events15, } = e;
-        let PlayerState{ player:player16, state:state16, } = state15;
-        let vec17 = (player16).into_boxed_slice();
-        let ptr17 = vec17.as_ptr().cast::<u8>();
-        let len17 = vec17.len();
-        ::core::mem::forget(vec17);
-        *base.add(4).cast::<usize>() = len17;
-        *base.add(0).cast::<*mut u8>() = ptr17.cast_mut();
-        let vec18 = (state16).into_boxed_slice();
-        let ptr18 = vec18.as_ptr().cast::<u8>();
-        let len18 = vec18.len();
-        ::core::mem::forget(vec18);
-        *base.add(12).cast::<usize>() = len18;
-        *base.add(8).cast::<*mut u8>() = ptr18.cast_mut();
-        let vec20 = events15;
-        let len20 = vec20.len();
-        let layout20 = _rt::alloc::Layout::from_size_align_unchecked(vec20.len() * 8, 4);
-        let result20 = if layout20.size() != 0 {
-          let ptr = _rt::alloc::alloc(layout20).cast::<u8>();
-          if ptr.is_null()
-          {
-            _rt::alloc::handle_alloc_error(layout20);
-          }
-          ptr
-        }else {
-          ::core::ptr::null_mut()
-        };
-        for (i, e) in vec20.into_iter().enumerate() {
-          let base = result20.add(i * 8);
-          {
-            let vec19 = (e).into_boxed_slice();
-            let ptr19 = vec19.as_ptr().cast::<u8>();
-            let len19 = vec19.len();
-            ::core::mem::forget(vec19);
-            *base.add(4).cast::<usize>() = len19;
-            *base.add(0).cast::<*mut u8>() = ptr19.cast_mut();
-          }
-        }
-        *base.add(20).cast::<usize>() = len20;
-        *base.add(16).cast::<*mut u8>() = result20;
-      }
-    }
-    *ptr12.add(16).cast::<usize>() = len21;
-    *ptr12.add(12).cast::<*mut u8>() = result21;
-    let vec23 = spectator_events13;
-    let len23 = vec23.len();
-    let layout23 = _rt::alloc::Layout::from_size_align_unchecked(vec23.len() * 8, 4);
-    let result23 = if layout23.size() != 0 {
-      let ptr = _rt::alloc::alloc(layout23).cast::<u8>();
-      if ptr.is_null()
-      {
-        _rt::alloc::handle_alloc_error(layout23);
-      }
-      ptr
-    }else {
-      ::core::ptr::null_mut()
-    };
-    for (i, e) in vec23.into_iter().enumerate() {
-      let base = result23.add(i * 8);
-      {
-        let vec22 = (e).into_boxed_slice();
-        let ptr22 = vec22.as_ptr().cast::<u8>();
-        let len22 = vec22.len();
-        ::core::mem::forget(vec22);
-        *base.add(4).cast::<usize>() = len22;
-        *base.add(0).cast::<*mut u8>() = ptr22.cast_mut();
-      }
-    }
-    *ptr12.add(24).cast::<usize>() = len23;
-    *ptr12.add(20).cast::<*mut u8>() = result23;
-    let vec24 = (spectator_state13).into_boxed_slice();
-    let ptr24 = vec24.as_ptr().cast::<u8>();
-    let len24 = vec24.len();
-    ::core::mem::forget(vec24);
-    *ptr12.add(32).cast::<usize>() = len24;
-    *ptr12.add(28).cast::<*mut u8>() = ptr24.cast_mut();
-  } },
-  Err(e) => { {
-    *ptr12.add(0).cast::<u8>() = (1i32) as u8;
-    match e {
-      GameCoreError::Deserialize(e) => {
-        *ptr12.add(4).cast::<u8>() = (0i32) as u8;
-        let vec25 = (e.into_bytes()).into_boxed_slice();
-        let ptr25 = vec25.as_ptr().cast::<u8>();
-        let len25 = vec25.len();
-        ::core::mem::forget(vec25);
-        *ptr12.add(12).cast::<usize>() = len25;
-        *ptr12.add(8).cast::<*mut u8>() = ptr25.cast_mut();
-      },
-      GameCoreError::Serialize(e) => {
-        *ptr12.add(4).cast::<u8>() = (1i32) as u8;
-        let vec26 = (e.into_bytes()).into_boxed_slice();
-        let ptr26 = vec26.as_ptr().cast::<u8>();
-        let len26 = vec26.len();
-        ::core::mem::forget(vec26);
-        *ptr12.add(12).cast::<usize>() = len26;
-        *ptr12.add(8).cast::<*mut u8>() = ptr26.cast_mut();
-      },
-      GameCoreError::Processing(e) => {
-        *ptr12.add(4).cast::<u8>() = (2i32) as u8;
-        let vec27 = (e.into_bytes()).into_boxed_slice();
-        let ptr27 = vec27.as_ptr().cast::<u8>();
-        let len27 = vec27.len();
-        ::core::mem::forget(vec27);
-        *ptr12.add(12).cast::<usize>() = len27;
-        *ptr12.add(8).cast::<*mut u8>() = ptr27.cast_mut();
-      },
-      GameCoreError::GameCore(e) => {
-        *ptr12.add(4).cast::<u8>() = (3i32) as u8;
-        let vec28 = (e).into_boxed_slice();
-        let ptr28 = vec28.as_ptr().cast::<u8>();
-        let len28 = vec28.len();
-        ::core::mem::forget(vec28);
-        *ptr12.add(12).cast::<usize>() = len28;
-        *ptr12.add(8).cast::<*mut u8>() = ptr28.cast_mut();
-      },
-    }
-  } },
-};ptr12
-}
-#[doc(hidden)]
-#[allow(non_snake_case)]
-pub unsafe fn __post_return_take_action<T: Guest>(arg0: *mut u8,) {
-  let l0 = i32::from(*arg0.add(0).cast::<u8>());
-  match l0 {
-    0 => {
-      let l1 = *arg0.add(4).cast::<*mut u8>();
-      let l2 = *arg0.add(8).cast::<usize>();
-      let base3 = l1;
-      let len3 = l2;
-      _rt::cabi_dealloc(base3, len3 * 1, 1);
-      let l4 = *arg0.add(12).cast::<*mut u8>();
-      let l5 = *arg0.add(16).cast::<usize>();
-      let base18 = l4;
-      let len18 = l5;
-      for i in 0..len18 {
-        let base = base18.add(i * 24);
-        {
-          let l6 = *base.add(0).cast::<*mut u8>();
-          let l7 = *base.add(4).cast::<usize>();
-          let base8 = l6;
-          let len8 = l7;
-          _rt::cabi_dealloc(base8, len8 * 1, 1);
-          let l9 = *base.add(8).cast::<*mut u8>();
-          let l10 = *base.add(12).cast::<usize>();
-          let base11 = l9;
-          let len11 = l10;
-          _rt::cabi_dealloc(base11, len11 * 1, 1);
-          let l12 = *base.add(16).cast::<*mut u8>();
-          let l13 = *base.add(20).cast::<usize>();
-          let base17 = l12;
-          let len17 = l13;
-          for i in 0..len17 {
-            let base = base17.add(i * 8);
-            {
-              let l14 = *base.add(0).cast::<*mut u8>();
-              let l15 = *base.add(4).cast::<usize>();
-              let base16 = l14;
-              let len16 = l15;
-              _rt::cabi_dealloc(base16, len16 * 1, 1);
+pub unsafe fn _export_init_cabi<T: Guest>(arg0: i32, arg1: *mut u8, arg2: usize) -> *mut u8 {
+    #[cfg(target_arch = "wasm32")]
+    _rt::run_ctors_once();
+    let len0 = arg2;
+    let result1 = T::init(
+        SerializationFormat::_lift(arg0 as u8),
+        _rt::Vec::from_raw_parts(arg1.cast(), len0, len0),
+    );
+    let ptr2 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
+    match result1 {
+        Ok(e) => {
+            *ptr2.add(0).cast::<u8>() = (0i32) as u8;
+            let Game {
+                full_state: full_state3,
+                player_states: player_states3,
+                spectator_state: spectator_state3,
+            } = e;
+            let vec4 = (full_state3).into_boxed_slice();
+            let ptr4 = vec4.as_ptr().cast::<u8>();
+            let len4 = vec4.len();
+            ::core::mem::forget(vec4);
+            *ptr2.add(8).cast::<usize>() = len4;
+            *ptr2.add(4).cast::<*mut u8>() = ptr4.cast_mut();
+            let vec8 = player_states3;
+            let len8 = vec8.len();
+            let layout8 = _rt::alloc::Layout::from_size_align_unchecked(vec8.len() * 16, 4);
+            let result8 = if layout8.size() != 0 {
+                let ptr = _rt::alloc::alloc(layout8).cast::<u8>();
+                if ptr.is_null() {
+                    _rt::alloc::handle_alloc_error(layout8);
+                }
+                ptr
+            } else {
+                ::core::ptr::null_mut()
+            };
+            for (i, e) in vec8.into_iter().enumerate() {
+                let base = result8.add(i * 16);
+                {
+                    let PlayerState {
+                        player: player5,
+                        state: state5,
+                    } = e;
+                    let vec6 = (player5).into_boxed_slice();
+                    let ptr6 = vec6.as_ptr().cast::<u8>();
+                    let len6 = vec6.len();
+                    ::core::mem::forget(vec6);
+                    *base.add(4).cast::<usize>() = len6;
+                    *base.add(0).cast::<*mut u8>() = ptr6.cast_mut();
+                    let vec7 = (state5).into_boxed_slice();
+                    let ptr7 = vec7.as_ptr().cast::<u8>();
+                    let len7 = vec7.len();
+                    ::core::mem::forget(vec7);
+                    *base.add(12).cast::<usize>() = len7;
+                    *base.add(8).cast::<*mut u8>() = ptr7.cast_mut();
+                }
             }
-          }
-          _rt::cabi_dealloc(base17, len17 * 8, 4);
+            *ptr2.add(16).cast::<usize>() = len8;
+            *ptr2.add(12).cast::<*mut u8>() = result8;
+            let vec9 = (spectator_state3).into_boxed_slice();
+            let ptr9 = vec9.as_ptr().cast::<u8>();
+            let len9 = vec9.len();
+            ::core::mem::forget(vec9);
+            *ptr2.add(24).cast::<usize>() = len9;
+            *ptr2.add(20).cast::<*mut u8>() = ptr9.cast_mut();
         }
-      }
-      _rt::cabi_dealloc(base18, len18 * 24, 4);
-      let l19 = *arg0.add(20).cast::<*mut u8>();
-      let l20 = *arg0.add(24).cast::<usize>();
-      let base24 = l19;
-      let len24 = l20;
-      for i in 0..len24 {
-        let base = base24.add(i * 8);
-        {
-          let l21 = *base.add(0).cast::<*mut u8>();
-          let l22 = *base.add(4).cast::<usize>();
-          let base23 = l21;
-          let len23 = l22;
-          _rt::cabi_dealloc(base23, len23 * 1, 1);
+        Err(e) => {
+            *ptr2.add(0).cast::<u8>() = (1i32) as u8;
+            match e {
+                GameCoreError::Deserialize(e) => {
+                    *ptr2.add(4).cast::<u8>() = (0i32) as u8;
+                    let vec10 = (e.into_bytes()).into_boxed_slice();
+                    let ptr10 = vec10.as_ptr().cast::<u8>();
+                    let len10 = vec10.len();
+                    ::core::mem::forget(vec10);
+                    *ptr2.add(12).cast::<usize>() = len10;
+                    *ptr2.add(8).cast::<*mut u8>() = ptr10.cast_mut();
+                }
+                GameCoreError::Serialize(e) => {
+                    *ptr2.add(4).cast::<u8>() = (1i32) as u8;
+                    let vec11 = (e.into_bytes()).into_boxed_slice();
+                    let ptr11 = vec11.as_ptr().cast::<u8>();
+                    let len11 = vec11.len();
+                    ::core::mem::forget(vec11);
+                    *ptr2.add(12).cast::<usize>() = len11;
+                    *ptr2.add(8).cast::<*mut u8>() = ptr11.cast_mut();
+                }
+                GameCoreError::Processing(e) => {
+                    *ptr2.add(4).cast::<u8>() = (2i32) as u8;
+                    let vec12 = (e.into_bytes()).into_boxed_slice();
+                    let ptr12 = vec12.as_ptr().cast::<u8>();
+                    let len12 = vec12.len();
+                    ::core::mem::forget(vec12);
+                    *ptr2.add(12).cast::<usize>() = len12;
+                    *ptr2.add(8).cast::<*mut u8>() = ptr12.cast_mut();
+                }
+                GameCoreError::GameCore(e) => {
+                    *ptr2.add(4).cast::<u8>() = (3i32) as u8;
+                    let vec13 = (e).into_boxed_slice();
+                    let ptr13 = vec13.as_ptr().cast::<u8>();
+                    let len13 = vec13.len();
+                    ::core::mem::forget(vec13);
+                    *ptr2.add(12).cast::<usize>() = len13;
+                    *ptr2.add(8).cast::<*mut u8>() = ptr13.cast_mut();
+                }
+            }
         }
-      }
-      _rt::cabi_dealloc(base24, len24 * 8, 4);
-      let l25 = *arg0.add(28).cast::<*mut u8>();
-      let l26 = *arg0.add(32).cast::<usize>();
-      let base27 = l25;
-      let len27 = l26;
-      _rt::cabi_dealloc(base27, len27 * 1, 1);
-    },
-    _ => {
-      let l28 = i32::from(*arg0.add(4).cast::<u8>());
-      match l28 {
+    };
+    ptr2
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+pub unsafe fn __post_return_init<T: Guest>(arg0: *mut u8) {
+    let l0 = i32::from(*arg0.add(0).cast::<u8>());
+    match l0 {
         0 => {
-          let l29 = *arg0.add(8).cast::<*mut u8>();
-          let l30 = *arg0.add(12).cast::<usize>();
-          _rt::cabi_dealloc(l29, l30, 1);
-        },
-        1 => {
-          let l31 = *arg0.add(8).cast::<*mut u8>();
-          let l32 = *arg0.add(12).cast::<usize>();
-          _rt::cabi_dealloc(l31, l32, 1);
-        },
-        2 => {
-          let l33 = *arg0.add(8).cast::<*mut u8>();
-          let l34 = *arg0.add(12).cast::<usize>();
-          _rt::cabi_dealloc(l33, l34, 1);
-        },
+            let l1 = *arg0.add(4).cast::<*mut u8>();
+            let l2 = *arg0.add(8).cast::<usize>();
+            let base3 = l1;
+            let len3 = l2;
+            _rt::cabi_dealloc(base3, len3 * 1, 1);
+            let l4 = *arg0.add(12).cast::<*mut u8>();
+            let l5 = *arg0.add(16).cast::<usize>();
+            let base12 = l4;
+            let len12 = l5;
+            for i in 0..len12 {
+                let base = base12.add(i * 16);
+                {
+                    let l6 = *base.add(0).cast::<*mut u8>();
+                    let l7 = *base.add(4).cast::<usize>();
+                    let base8 = l6;
+                    let len8 = l7;
+                    _rt::cabi_dealloc(base8, len8 * 1, 1);
+                    let l9 = *base.add(8).cast::<*mut u8>();
+                    let l10 = *base.add(12).cast::<usize>();
+                    let base11 = l9;
+                    let len11 = l10;
+                    _rt::cabi_dealloc(base11, len11 * 1, 1);
+                }
+            }
+            _rt::cabi_dealloc(base12, len12 * 16, 4);
+            let l13 = *arg0.add(20).cast::<*mut u8>();
+            let l14 = *arg0.add(24).cast::<usize>();
+            let base15 = l13;
+            let len15 = l14;
+            _rt::cabi_dealloc(base15, len15 * 1, 1);
+        }
         _ => {
-          let l35 = *arg0.add(8).cast::<*mut u8>();
-          let l36 = *arg0.add(12).cast::<usize>();
-          let base37 = l35;
-          let len37 = l36;
-          _rt::cabi_dealloc(base37, len37 * 1, 1);
+            let l16 = i32::from(*arg0.add(4).cast::<u8>());
+            match l16 {
+                0 => {
+                    let l17 = *arg0.add(8).cast::<*mut u8>();
+                    let l18 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l17, l18, 1);
+                }
+                1 => {
+                    let l19 = *arg0.add(8).cast::<*mut u8>();
+                    let l20 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l19, l20, 1);
+                }
+                2 => {
+                    let l21 = *arg0.add(8).cast::<*mut u8>();
+                    let l22 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l21, l22, 1);
+                }
+                _ => {
+                    let l23 = *arg0.add(8).cast::<*mut u8>();
+                    let l24 = *arg0.add(12).cast::<usize>();
+                    let base25 = l23;
+                    let len25 = l24;
+                    _rt::cabi_dealloc(base25, len25 * 1, 1);
+                }
+            }
+        }
+    }
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+pub unsafe fn _export_take_action_cabi<T: Guest>(
+    arg0: i32,
+    arg1: *mut u8,
+    arg2: usize,
+    arg3: *mut u8,
+    arg4: usize,
+    arg5: *mut u8,
+    arg6: usize,
+    arg7: *mut u8,
+    arg8: usize,
+    arg9: *mut u8,
+    arg10: usize,
+) -> *mut u8 {
+    #[cfg(target_arch = "wasm32")]
+    _rt::run_ctors_once();
+    let len0 = arg2;
+    let base7 = arg3;
+    let len7 = arg4;
+    let mut result7 = _rt::Vec::with_capacity(len7);
+    for i in 0..len7 {
+        let base = base7.add(i * 16);
+        let e7 = {
+            let l1 = *base.add(0).cast::<*mut u8>();
+            let l2 = *base.add(4).cast::<usize>();
+            let len3 = l2;
+            let l4 = *base.add(8).cast::<*mut u8>();
+            let l5 = *base.add(12).cast::<usize>();
+            let len6 = l5;
+
+            PlayerState {
+                player: _rt::Vec::from_raw_parts(l1.cast(), len3, len3),
+                state: _rt::Vec::from_raw_parts(l4.cast(), len6, len6),
+            }
+        };
+        result7.push(e7);
+    }
+    _rt::cabi_dealloc(base7, len7 * 16, 4);
+    let len8 = arg6;
+    let len9 = arg8;
+    let len10 = arg10;
+    let result11 = T::take_action(
+        SerializationFormat::_lift(arg0 as u8),
+        Game {
+            full_state: _rt::Vec::from_raw_parts(arg1.cast(), len0, len0),
+            player_states: result7,
+            spectator_state: _rt::Vec::from_raw_parts(arg5.cast(), len8, len8),
         },
-      }
-    },
-  }
+        (
+            _rt::Vec::from_raw_parts(arg7.cast(), len9, len9),
+            _rt::Vec::from_raw_parts(arg9.cast(), len10, len10),
+        ),
+    );
+    let ptr12 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
+    match result11 {
+        Ok(e) => {
+            *ptr12.add(0).cast::<u8>() = (0i32) as u8;
+            let TakeActionResult {
+                new_game_full_state: new_game_full_state13,
+                player_states: player_states13,
+                spectator_events: spectator_events13,
+                spectator_state: spectator_state13,
+            } = e;
+            let vec14 = (new_game_full_state13).into_boxed_slice();
+            let ptr14 = vec14.as_ptr().cast::<u8>();
+            let len14 = vec14.len();
+            ::core::mem::forget(vec14);
+            *ptr12.add(8).cast::<usize>() = len14;
+            *ptr12.add(4).cast::<*mut u8>() = ptr14.cast_mut();
+            let vec21 = player_states13;
+            let len21 = vec21.len();
+            let layout21 = _rt::alloc::Layout::from_size_align_unchecked(vec21.len() * 24, 4);
+            let result21 = if layout21.size() != 0 {
+                let ptr = _rt::alloc::alloc(layout21).cast::<u8>();
+                if ptr.is_null() {
+                    _rt::alloc::handle_alloc_error(layout21);
+                }
+                ptr
+            } else {
+                ::core::ptr::null_mut()
+            };
+            for (i, e) in vec21.into_iter().enumerate() {
+                let base = result21.add(i * 24);
+                {
+                    let NewPlayerState {
+                        state: state15,
+                        events: events15,
+                    } = e;
+                    let PlayerState {
+                        player: player16,
+                        state: state16,
+                    } = state15;
+                    let vec17 = (player16).into_boxed_slice();
+                    let ptr17 = vec17.as_ptr().cast::<u8>();
+                    let len17 = vec17.len();
+                    ::core::mem::forget(vec17);
+                    *base.add(4).cast::<usize>() = len17;
+                    *base.add(0).cast::<*mut u8>() = ptr17.cast_mut();
+                    let vec18 = (state16).into_boxed_slice();
+                    let ptr18 = vec18.as_ptr().cast::<u8>();
+                    let len18 = vec18.len();
+                    ::core::mem::forget(vec18);
+                    *base.add(12).cast::<usize>() = len18;
+                    *base.add(8).cast::<*mut u8>() = ptr18.cast_mut();
+                    let vec20 = events15;
+                    let len20 = vec20.len();
+                    let layout20 =
+                        _rt::alloc::Layout::from_size_align_unchecked(vec20.len() * 8, 4);
+                    let result20 = if layout20.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout20).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout20);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec20.into_iter().enumerate() {
+                        let base = result20.add(i * 8);
+                        {
+                            let vec19 = (e).into_boxed_slice();
+                            let ptr19 = vec19.as_ptr().cast::<u8>();
+                            let len19 = vec19.len();
+                            ::core::mem::forget(vec19);
+                            *base.add(4).cast::<usize>() = len19;
+                            *base.add(0).cast::<*mut u8>() = ptr19.cast_mut();
+                        }
+                    }
+                    *base.add(20).cast::<usize>() = len20;
+                    *base.add(16).cast::<*mut u8>() = result20;
+                }
+            }
+            *ptr12.add(16).cast::<usize>() = len21;
+            *ptr12.add(12).cast::<*mut u8>() = result21;
+            let vec23 = spectator_events13;
+            let len23 = vec23.len();
+            let layout23 = _rt::alloc::Layout::from_size_align_unchecked(vec23.len() * 8, 4);
+            let result23 = if layout23.size() != 0 {
+                let ptr = _rt::alloc::alloc(layout23).cast::<u8>();
+                if ptr.is_null() {
+                    _rt::alloc::handle_alloc_error(layout23);
+                }
+                ptr
+            } else {
+                ::core::ptr::null_mut()
+            };
+            for (i, e) in vec23.into_iter().enumerate() {
+                let base = result23.add(i * 8);
+                {
+                    let vec22 = (e).into_boxed_slice();
+                    let ptr22 = vec22.as_ptr().cast::<u8>();
+                    let len22 = vec22.len();
+                    ::core::mem::forget(vec22);
+                    *base.add(4).cast::<usize>() = len22;
+                    *base.add(0).cast::<*mut u8>() = ptr22.cast_mut();
+                }
+            }
+            *ptr12.add(24).cast::<usize>() = len23;
+            *ptr12.add(20).cast::<*mut u8>() = result23;
+            let vec24 = (spectator_state13).into_boxed_slice();
+            let ptr24 = vec24.as_ptr().cast::<u8>();
+            let len24 = vec24.len();
+            ::core::mem::forget(vec24);
+            *ptr12.add(32).cast::<usize>() = len24;
+            *ptr12.add(28).cast::<*mut u8>() = ptr24.cast_mut();
+        }
+        Err(e) => {
+            *ptr12.add(0).cast::<u8>() = (1i32) as u8;
+            match e {
+                GameCoreError::Deserialize(e) => {
+                    *ptr12.add(4).cast::<u8>() = (0i32) as u8;
+                    let vec25 = (e.into_bytes()).into_boxed_slice();
+                    let ptr25 = vec25.as_ptr().cast::<u8>();
+                    let len25 = vec25.len();
+                    ::core::mem::forget(vec25);
+                    *ptr12.add(12).cast::<usize>() = len25;
+                    *ptr12.add(8).cast::<*mut u8>() = ptr25.cast_mut();
+                }
+                GameCoreError::Serialize(e) => {
+                    *ptr12.add(4).cast::<u8>() = (1i32) as u8;
+                    let vec26 = (e.into_bytes()).into_boxed_slice();
+                    let ptr26 = vec26.as_ptr().cast::<u8>();
+                    let len26 = vec26.len();
+                    ::core::mem::forget(vec26);
+                    *ptr12.add(12).cast::<usize>() = len26;
+                    *ptr12.add(8).cast::<*mut u8>() = ptr26.cast_mut();
+                }
+                GameCoreError::Processing(e) => {
+                    *ptr12.add(4).cast::<u8>() = (2i32) as u8;
+                    let vec27 = (e.into_bytes()).into_boxed_slice();
+                    let ptr27 = vec27.as_ptr().cast::<u8>();
+                    let len27 = vec27.len();
+                    ::core::mem::forget(vec27);
+                    *ptr12.add(12).cast::<usize>() = len27;
+                    *ptr12.add(8).cast::<*mut u8>() = ptr27.cast_mut();
+                }
+                GameCoreError::GameCore(e) => {
+                    *ptr12.add(4).cast::<u8>() = (3i32) as u8;
+                    let vec28 = (e).into_boxed_slice();
+                    let ptr28 = vec28.as_ptr().cast::<u8>();
+                    let len28 = vec28.len();
+                    ::core::mem::forget(vec28);
+                    *ptr12.add(12).cast::<usize>() = len28;
+                    *ptr12.add(8).cast::<*mut u8>() = ptr28.cast_mut();
+                }
+            }
+        }
+    };
+    ptr12
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+pub unsafe fn __post_return_take_action<T: Guest>(arg0: *mut u8) {
+    let l0 = i32::from(*arg0.add(0).cast::<u8>());
+    match l0 {
+        0 => {
+            let l1 = *arg0.add(4).cast::<*mut u8>();
+            let l2 = *arg0.add(8).cast::<usize>();
+            let base3 = l1;
+            let len3 = l2;
+            _rt::cabi_dealloc(base3, len3 * 1, 1);
+            let l4 = *arg0.add(12).cast::<*mut u8>();
+            let l5 = *arg0.add(16).cast::<usize>();
+            let base18 = l4;
+            let len18 = l5;
+            for i in 0..len18 {
+                let base = base18.add(i * 24);
+                {
+                    let l6 = *base.add(0).cast::<*mut u8>();
+                    let l7 = *base.add(4).cast::<usize>();
+                    let base8 = l6;
+                    let len8 = l7;
+                    _rt::cabi_dealloc(base8, len8 * 1, 1);
+                    let l9 = *base.add(8).cast::<*mut u8>();
+                    let l10 = *base.add(12).cast::<usize>();
+                    let base11 = l9;
+                    let len11 = l10;
+                    _rt::cabi_dealloc(base11, len11 * 1, 1);
+                    let l12 = *base.add(16).cast::<*mut u8>();
+                    let l13 = *base.add(20).cast::<usize>();
+                    let base17 = l12;
+                    let len17 = l13;
+                    for i in 0..len17 {
+                        let base = base17.add(i * 8);
+                        {
+                            let l14 = *base.add(0).cast::<*mut u8>();
+                            let l15 = *base.add(4).cast::<usize>();
+                            let base16 = l14;
+                            let len16 = l15;
+                            _rt::cabi_dealloc(base16, len16 * 1, 1);
+                        }
+                    }
+                    _rt::cabi_dealloc(base17, len17 * 8, 4);
+                }
+            }
+            _rt::cabi_dealloc(base18, len18 * 24, 4);
+            let l19 = *arg0.add(20).cast::<*mut u8>();
+            let l20 = *arg0.add(24).cast::<usize>();
+            let base24 = l19;
+            let len24 = l20;
+            for i in 0..len24 {
+                let base = base24.add(i * 8);
+                {
+                    let l21 = *base.add(0).cast::<*mut u8>();
+                    let l22 = *base.add(4).cast::<usize>();
+                    let base23 = l21;
+                    let len23 = l22;
+                    _rt::cabi_dealloc(base23, len23 * 1, 1);
+                }
+            }
+            _rt::cabi_dealloc(base24, len24 * 8, 4);
+            let l25 = *arg0.add(28).cast::<*mut u8>();
+            let l26 = *arg0.add(32).cast::<usize>();
+            let base27 = l25;
+            let len27 = l26;
+            _rt::cabi_dealloc(base27, len27 * 1, 1);
+        }
+        _ => {
+            let l28 = i32::from(*arg0.add(4).cast::<u8>());
+            match l28 {
+                0 => {
+                    let l29 = *arg0.add(8).cast::<*mut u8>();
+                    let l30 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l29, l30, 1);
+                }
+                1 => {
+                    let l31 = *arg0.add(8).cast::<*mut u8>();
+                    let l32 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l31, l32, 1);
+                }
+                2 => {
+                    let l33 = *arg0.add(8).cast::<*mut u8>();
+                    let l34 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l33, l34, 1);
+                }
+                _ => {
+                    let l35 = *arg0.add(8).cast::<*mut u8>();
+                    let l36 = *arg0.add(12).cast::<usize>();
+                    let base37 = l35;
+                    let len37 = l36;
+                    _rt::cabi_dealloc(base37, len37 * 1, 1);
+                }
+            }
+        }
+    }
 }
 pub trait Guest {
-  fn init(format: SerializationFormat,config: Buffer,) -> Result<Game,GameCoreError>;
-  fn take_action(format: SerializationFormat,game: Game,player_action: PlayerAction,) -> Result<TakeActionResult,GameCoreError>;
+    fn init(format: SerializationFormat, config: Buffer) -> Result<Game, GameCoreError>;
+    fn take_action(
+        format: SerializationFormat,
+        game: Game,
+        player_action: PlayerAction,
+    ) -> Result<TakeActionResult, GameCoreError>;
 }
 #[doc(hidden)]
 #[macro_export]
@@ -584,26 +645,26 @@ macro_rules! __export_world_game_core_cabi{
 #[doc(hidden)]
 pub(crate) use __export_world_game_core_cabi;
 #[repr(align(4))]
-struct _RetArea([::core::mem::MaybeUninit::<u8>; 36]);
+struct _RetArea([::core::mem::MaybeUninit<u8>; 36]);
 static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); 36]);
 mod _rt {
-  #![allow(dead_code, clippy::all)]
-  pub use alloc_crate::vec::Vec;
-  pub use alloc_crate::string::String;
+    #![allow(dead_code, clippy::all)]
+    pub use alloc_crate::string::String;
+    pub use alloc_crate::vec::Vec;
 
-  #[cfg(target_arch = "wasm32")]
-  pub fn run_ctors_once() {
-    wit_bindgen::rt::run_ctors_once();
-  }
-  pub use alloc_crate::alloc;
-  pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    if size == 0 {
-      return;
+    #[cfg(target_arch = "wasm32")]
+    pub fn run_ctors_once() {
+        wit_bindgen::rt::run_ctors_once();
     }
-    let layout = alloc::Layout::from_size_align_unchecked(size, align);
-    alloc::dealloc(ptr, layout);
-  }
-  extern crate alloc as alloc_crate;
+    pub use alloc_crate::alloc;
+    pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
+        if size == 0 {
+            return;
+        }
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
+    extern crate alloc as alloc_crate;
 }
 
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
@@ -658,6 +719,5 @@ nent\x070.227.1\x10wit-bindgen-rust\x060.40.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
-  wit_bindgen::rt::maybe_link_cabi_realloc();
+    wit_bindgen::rt::maybe_link_cabi_realloc();
 }
-

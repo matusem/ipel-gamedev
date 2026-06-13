@@ -134,7 +134,8 @@ fn extract_binary(archive_bytes: &[u8], out: &Path) -> Result<()> {
 #[cfg(unix)]
 fn replace_executable(exe: &Path, tmp: &Path) -> Result<()> {
     if let Err(e) = fs::rename(tmp, exe) {
-        fs::copy(tmp, exe).with_context(|| format!("copy {} -> {}: {e}", tmp.display(), exe.display()))?;
+        fs::copy(tmp, exe)
+            .with_context(|| format!("copy {} -> {}: {e}", tmp.display(), exe.display()))?;
         fs::remove_file(tmp)?;
     }
     Ok(())

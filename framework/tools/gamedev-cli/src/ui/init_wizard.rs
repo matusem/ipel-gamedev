@@ -1,11 +1,11 @@
 //! Multi-step init project wizard (runs inside the shared terminal session).
 
 use crossterm::event::{KeyEvent, KeyModifiers};
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
 
 use crate::cli::{BackendKind, FrontendKind, InitArgs, JsTemplate};
 
@@ -64,11 +64,7 @@ impl InitWizardState {
     }
 
     fn buttons_focus(&self) -> usize {
-        if self.show_js_template() {
-            4
-        } else {
-            3
-        }
+        if self.show_js_template() { 4 } else { 3 }
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
@@ -184,7 +180,11 @@ impl InitWizardState {
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled(
-                if self.focus == buttons_focus { ">> " } else { "   " },
+                if self.focus == buttons_focus {
+                    ">> "
+                } else {
+                    "   "
+                },
                 Style::default()
                     .fg(if self.focus == buttons_focus {
                         Color::Yellow
@@ -219,38 +219,47 @@ impl InitWizardState {
         frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
-    fn backend_span<'a>(
-        &'a self,
-        idx: usize,
-        backends: &[&'a str],
-        disabled: &[bool],
-    ) -> Span<'a> {
+    fn backend_span<'a>(&'a self, idx: usize, backends: &[&'a str], disabled: &[bool]) -> Span<'a> {
         let style = if self.backend_idx == idx {
             if disabled[idx] {
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM)
             } else {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             }
         } else {
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::DIM)
         };
         Span::styled(backends[idx], style)
     }
 
     fn frontend_span<'a>(&'a self, idx: usize, frontends: &[&'a str; 4]) -> Span<'a> {
         let style = if self.frontend_idx == idx {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::DIM)
         };
         Span::styled(frontends[idx], style)
     }
 
     fn template_span<'a>(&'a self, idx: usize, templates: &[&'a str; 3]) -> Span<'a> {
         let style = if self.template_idx == idx {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::DIM)
         };
         Span::styled(templates[idx], style)
     }

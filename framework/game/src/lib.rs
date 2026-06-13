@@ -237,7 +237,8 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
     ) -> Option<Self::SpectatorEvent>;
 
     /// Derives the spectator-visible game-over outcome.
-    fn derive_spectator_result(state: &Self::State, result: &Self::Result) -> Self::SpectatorResult;
+    fn derive_spectator_result(state: &Self::State, result: &Self::Result)
+    -> Self::SpectatorResult;
 
     /// Float score for each player when the game ends (`result` from [`Self::check_game_over`]).
     /// Convention: win = 1.0, loss = 0.0, draw = equal split across players (e.g. 0.5 each in 2‑player games).
@@ -290,11 +291,10 @@ pub trait GameCore: Sized + Serialize + for<'de> Deserialize<'de> + Debug {
         game_events
             .iter()
             .filter_map(|event| match event {
-                Event::InGameEvent(in_game_event) => Self::derive_spectator_event(
-                    &game_state.state,
-                    in_game_event,
-                )
-                .map(SpectatorEvent::Event),
+                Event::InGameEvent(in_game_event) => {
+                    Self::derive_spectator_event(&game_state.state, in_game_event)
+                        .map(SpectatorEvent::Event)
+                }
                 Event::GameOver(result) => Some(SpectatorEvent::GameOver(
                     Self::derive_spectator_result(&game_state.state, result),
                 )),
@@ -347,4 +347,3 @@ pub struct ActionApplicationResult<GameT: GameCore> {
 
 #[cfg(test)]
 mod spectator_tests;
-

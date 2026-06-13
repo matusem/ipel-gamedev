@@ -91,7 +91,10 @@ impl GameCore for SecretGame {
         }
     }
 
-    fn take_action(state: &mut Self::State, _player_action: PlayerAction<Self>) -> Vec<Self::Event> {
+    fn take_action(
+        state: &mut Self::State,
+        _player_action: PlayerAction<Self>,
+    ) -> Vec<Self::Event> {
         state.secret = state.secret.wrapping_add(1);
         state.public_tick = state.public_tick.saturating_add(1);
         vec![]
@@ -109,7 +112,11 @@ impl GameCore for SecretGame {
         Some(state.secret)
     }
 
-    fn derive_player_result(_state: &Self::State, _player: &Self::Player, result: &Self::Result) -> Self::PlayerResult {
+    fn derive_player_result(
+        _state: &Self::State,
+        _player: &Self::Player,
+        result: &Self::Result,
+    ) -> Self::PlayerResult {
         *result
     }
 
@@ -120,7 +127,10 @@ impl GameCore for SecretGame {
         Some(state.public_tick)
     }
 
-    fn derive_spectator_result(_state: &Self::State, result: &Self::Result) -> Self::SpectatorResult {
+    fn derive_spectator_result(
+        _state: &Self::State,
+        result: &Self::Result,
+    ) -> Self::SpectatorResult {
         *result
     }
 
@@ -175,10 +185,12 @@ fn spectator_events_do_not_expose_player_only_fields() {
 
     let spec_map = SecretGame::build_spectator_events_map(
         &fs,
-        &[Event::InGameEvent(InGameEvent::PlayerAction(PlayerAction {
-            player: Seat::A,
-            action: Reveal,
-        }))],
+        &[Event::InGameEvent(InGameEvent::PlayerAction(
+            PlayerAction {
+                player: Seat::A,
+                action: Reveal,
+            },
+        ))],
     );
     assert_eq!(spec_map.len(), 1);
     if let crate::SpectatorEvent::Event(v) = &spec_map[0] {

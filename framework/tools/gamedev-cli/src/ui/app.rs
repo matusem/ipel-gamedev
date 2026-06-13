@@ -4,21 +4,21 @@ use std::time::Duration;
 
 use anyhow::{Result, bail};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
-use ratatui::Frame;
 use ratatui_interact::components::{Breadcrumb, BreadcrumbStyle};
 
 use crate::cli::{
-    BuildArgs, DEFAULT_GRAPHQL_URL, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands, LoginArgs,
-    ManifestArgs, ManifestSubcommands, TestArgs,
+    BuildArgs, DEFAULT_GRAPHQL_URL, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands,
+    LoginArgs, ManifestArgs, ManifestSubcommands, TestArgs,
 };
 use crate::project::{is_game_project, resolve_test_dir};
 
 use super::init_wizard::{InitWizardOutcome, InitWizardState};
-use super::router::{breadcrumb_state, DraftMenuAction, ManifestNext, RouteFrame};
-use super::{interrupted, UiCommand};
+use super::router::{DraftMenuAction, ManifestNext, RouteFrame, breadcrumb_state};
+use super::{UiCommand, interrupted};
 
 #[derive(Clone, Copy)]
 enum MainMenuAction {
@@ -133,9 +133,7 @@ fn project_hint() -> String {
 }
 
 fn draw_header(frame: &mut Frame, area: Rect, auth_user: &Option<String>) {
-    let user = auth_user
-        .as_deref()
-        .unwrap_or("not authenticated");
+    let user = auth_user.as_deref().unwrap_or("not authenticated");
     let title = format!("gamedev-cli · project: {} · user: {}", project_hint(), user);
     let block = Block::new()
         .title(title)
@@ -183,13 +181,29 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
             frame.render_stateful_widget(list_w, area, list);
         }
         RouteFrame::Init(w) => w.draw(frame, area),
-        RouteFrame::Login { user, server, field } => {
+        RouteFrame::Login {
+            user,
+            server,
+            field,
+        } => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Length(3), Constraint::Length(3), Constraint::Min(0)])
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                ])
                 .split(area);
-            let u_title = if *field == 0 { "User id (UUID) »" } else { "User id" };
-            let s_title = if *field == 1 { "Server URL »" } else { "Server URL" };
+            let u_title = if *field == 0 {
+                "User id (UUID) »"
+            } else {
+                "User id"
+            };
+            let s_title = if *field == 1 {
+                "Server URL »"
+            } else {
+                "Server URL"
+            };
             let ub = Block::new().title(u_title).borders(Borders::ALL);
             let sb = Block::new().title(s_title).borders(Borders::ALL);
             frame.render_widget(Paragraph::new(user.to_string()).block(ub), chunks[0]);
@@ -201,8 +215,10 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
         }
         RouteFrame::BuildConfirm => {
             frame.render_widget(
-                Paragraph::new("Build current directory into dist/game.zip?\n\nEnter: run build · Esc: back")
-                    .block(Block::new().title("Build").borders(Borders::ALL)),
+                Paragraph::new(
+                    "Build current directory into dist/game.zip?\n\nEnter: run build · Esc: back",
+                )
+                .block(Block::new().title("Build").borders(Borders::ALL)),
                 area,
             );
         }
@@ -327,7 +343,11 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
     }
 }
 
-fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) -> Result<Option<UiCommand>> {
+fn handle_event(
+    stack: &mut Vec<RouteFrame>,
+    key: event::KeyEvent,
+    evt: &Event,
+) -> Result<Option<UiCommand>> {
     match key.code {
         KeyCode::Char('q') if stack.len() == 1 => return Ok(Some(UiCommand::ExitProgram)),
         KeyCode::Esc => {
@@ -411,7 +431,11 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
             }
             Ok(None)
         }
-        RouteFrame::Login { user, server, field } => {
+        RouteFrame::Login {
+            user,
+            server,
+            field,
+        } => {
             match key.code {
                 KeyCode::Tab => *field = (*field + 1) % 2,
                 KeyCode::Enter if *field == 1 => {
@@ -468,11 +492,7 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
             }
             KeyCode::Enter => {
                 let i = list.selected().unwrap_or(0);
-                let (draft_only, auto_publish) = if i == 0 {
-                    (true, false)
-                } else {
-                    (false, true)
-                };
+                let (draft_only, auto_publish) = if i == 0 { (true, false) } else { (false, true) };
                 stack.pop();
                 stack.push(RouteFrame::DeployServer {
                     server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
@@ -718,9 +738,7 @@ fn handle_event(stack: &mut Vec<RouteFrame>, key: event::KeyEvent, evt: &Event) 
         RouteFrame::TestConfirm => match key.code {
             KeyCode::Enter => {
                 stack.pop();
-                Ok(Some(UiCommand::Test(TestArgs {
-                    project_dir: None,
-                })))
+                Ok(Some(UiCommand::Test(TestArgs { project_dir: None })))
             }
             _ => Ok(None),
         },

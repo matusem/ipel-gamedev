@@ -15,17 +15,17 @@ use crate::game_registry::GameRegistry;
 use crate::game_service;
 use crate::game_storefront::{self, AspectRatings};
 use crate::game_upload::{
-    publish_staged_game, remove_published_game_dir, validate_and_stage_zip_bytes,
-    validate_game_folder_name, write_manifest_to_staged_dir, ValidationReport,
+    ValidationReport, publish_staged_game, remove_published_game_dir, validate_and_stage_zip_bytes,
+    validate_game_folder_name, write_manifest_to_staged_dir,
 };
 use crate::lobby_db::{self, LobbyListNotify};
 use crate::user_engagement;
 
 use super::{
-    map_aspect_ratings, map_draft, map_message, map_validation_report, lobby_to_gql,
-    require_developer_user, require_registered_user, AuthSessionGql, DraftsDir, GameCommentGql,
-    GameDraftGql, GameReviewGql, GamesDir, LobbyGql, LobbyMessageGql, PublishTokenGql,
-    RequestUser, UploadGameZipResultGql, UserGql,
+    AuthSessionGql, DraftsDir, GameCommentGql, GameDraftGql, GameReviewGql, GamesDir, LobbyGql,
+    LobbyMessageGql, PublishTokenGql, RequestUser, UploadGameZipResultGql, UserGql, lobby_to_gql,
+    map_aspect_ratings, map_draft, map_message, map_validation_report, require_developer_user,
+    require_registered_user,
 };
 
 async fn issue_auth_session(pool: &SqlitePool, user: UserGql) -> Result<AuthSessionGql> {
@@ -94,14 +94,10 @@ impl MutationRoot {
     ) -> Result<PublishTokenGql> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
-        let (_id, token, expires_at) = db::create_publish_token(
-            pool,
-            uid,
-            ttl_days.unwrap_or(7) as i64,
-            label.as_deref(),
-        )
-        .await
-        .map_err(|e| Error::new(format!("db: {e}")))?;
+        let (_id, token, expires_at) =
+            db::create_publish_token(pool, uid, ttl_days.unwrap_or(7) as i64, label.as_deref())
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
         Ok(PublishTokenGql {
             token,
             user_id: uid.to_string().into(),
@@ -182,9 +178,10 @@ impl MutationRoot {
             social: social.clamp(1.0, 5.0),
             depth: depth.clamp(1.0, 5.0),
         };
-        let r = game_storefront::submit_review(pool, &game_type, uid, &user.1, body.trim(), &aspects)
-            .await
-            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let r =
+            game_storefront::submit_review(pool, &game_type, uid, &user.1, body.trim(), &aspects)
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
         Ok(GameReviewGql {
             id: r.id.to_string().into(),
             display_name: r.display_name,
@@ -203,7 +200,8 @@ impl MutationRoot {
     ) -> Result<GameReviewGql> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
-        let rid = Uuid::parse_str(review_id.as_str()).map_err(|_| Error::new("invalid review id"))?;
+        let rid =
+            Uuid::parse_str(review_id.as_str()).map_err(|_| Error::new("invalid review id"))?;
         let r = game_storefront::mark_review_helpful(pool, rid, uid)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
@@ -461,25 +459,26 @@ impl MutationRoot {
             }
             Err(report_err) => {
                 tracing::warn!(user_id = %uid, "upload game zip validation failed");
-                let report: ValidationReport = serde_json::from_str(&report_err).unwrap_or(ValidationReport {
-                    ok: false,
-                    errors: 1,
-                    warnings: 0,
-                    infos: 0,
-                    required_index_html: false,
-                    required_config_html: false,
-                    required_result_html: false,
-                    required_about_html: false,
-                    diagnostics: vec![crate::game_upload::ValidationDiagnostic {
-                        severity: "error".to_string(),
-                        code: "E_UPLOAD_VALIDATION_FAILED".to_string(),
-                        message: report_err.clone(),
-                        path: None,
-                        hint: None,
-                    }],
-                });
-                let report_json = serde_json::to_string(&report)
-                    .unwrap_or_else(|_| "{\"ok\":false}".to_string());
+                let report: ValidationReport =
+                    serde_json::from_str(&report_err).unwrap_or(ValidationReport {
+                        ok: false,
+                        errors: 1,
+                        warnings: 0,
+                        infos: 0,
+                        required_index_html: false,
+                        required_config_html: false,
+                        required_result_html: false,
+                        required_about_html: false,
+                        diagnostics: vec![crate::game_upload::ValidationDiagnostic {
+                            severity: "error".to_string(),
+                            code: "E_UPLOAD_VALIDATION_FAILED".to_string(),
+                            message: report_err.clone(),
+                            path: None,
+                            hint: None,
+                        }],
+                    });
+                let report_json =
+                    serde_json::to_string(&report).unwrap_or_else(|_| "{\"ok\":false}".to_string());
                 let upload_id = db::insert_upload(pool, uid, &filename, "rejected", &report_json)
                     .await
                     .map_err(|e| Error::new(format!("db: {e}")))?;
@@ -632,9 +631,14 @@ impl MutationRoot {
         manifest.description = description;
         let manifest_json = serde_json::to_string(&manifest)
             .map_err(|e| Error::new(format!("serialize manifest: {e}")))?;
-        let clash = db::count_game_drafts_name_version_active(pool, &manifest.name, &manifest.version, Some(did))
-            .await
-            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let clash = db::count_game_drafts_name_version_active(
+            pool,
+            &manifest.name,
+            &manifest.version,
+            Some(did),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
         if clash > 0 {
             return Err(Error::new(
                 "Another draft or published record already uses this name and version. Pick a different combination.",
@@ -807,9 +811,17 @@ impl MutationRoot {
                 .await
                 .map_err(Error::new)?;
         let config_s = String::from_utf8_lossy(&config).to_string();
-        lobby_db::owner_replace_config_and_seats(pool, lid, uid, &gt, &config_s, &identities, force)
-            .await
-            .map_err(Error::new)?;
+        lobby_db::owner_replace_config_and_seats(
+            pool,
+            lid,
+            uid,
+            &gt,
+            &config_s,
+            &identities,
+            force,
+        )
+        .await
+        .map_err(Error::new)?;
         notify.ping();
         let detail = lobby_db::get_lobby(pool, lid)
             .await
@@ -838,9 +850,7 @@ impl MutationRoot {
             Err(e) => {
                 let msg = e.to_string();
                 if msg.contains("UNIQUE") || msg.contains("unique") {
-                    return Err(Error::new(
-                        "you already occupy a seat in this lobby",
-                    ));
+                    return Err(Error::new("you already occupy a seat in this lobby"));
                 }
                 return Err(Error::new(format!("db: {msg}")));
             }
@@ -894,8 +904,8 @@ impl MutationRoot {
         let pool = ctx.data::<SqlitePool>()?;
         let notify = ctx.data::<LobbyListNotify>()?;
         let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
-        let new_owner =
-            Uuid::parse_str(new_owner_user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        let new_owner = Uuid::parse_str(new_owner_user_id.as_str())
+            .map_err(|_| Error::new("invalid user id"))?;
         lobby_db::transfer_lobby_ownership(pool, lid, uid, new_owner)
             .await
             .map_err(Error::new)?;
@@ -907,7 +917,11 @@ impl MutationRoot {
         lobby_to_gql(pool, detail).await
     }
 
-    async fn leave_lobby(&self, ctx: &Context<'_>, lobby_id: async_graphql::types::ID) -> Result<bool> {
+    async fn leave_lobby(
+        &self,
+        ctx: &Context<'_>,
+        lobby_id: async_graphql::types::ID,
+    ) -> Result<bool> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         let notify = ctx.data::<LobbyListNotify>()?;
@@ -942,7 +956,9 @@ impl MutationRoot {
             return Err(Error::new("lobby cannot be started in this state"));
         }
         if detail.game_type.trim().is_empty() {
-            return Err(Error::new("choose a game type in the lobby before starting"));
+            return Err(Error::new(
+                "choose a game type in the lobby before starting",
+            ));
         }
         let total = detail.seats.len();
         let claimed = detail
@@ -999,7 +1015,11 @@ impl MutationRoot {
         Ok(gid.to_string().into())
     }
 
-    async fn cancel_lobby(&self, ctx: &Context<'_>, lobby_id: async_graphql::types::ID) -> Result<bool> {
+    async fn cancel_lobby(
+        &self,
+        ctx: &Context<'_>,
+        lobby_id: async_graphql::types::ID,
+    ) -> Result<bool> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         let notify = ctx.data::<LobbyListNotify>()?;
@@ -1087,7 +1107,8 @@ impl MutationRoot {
     ) -> Result<bool> {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
-        let nid = Uuid::parse_str(id.as_str()).map_err(|_| Error::new("invalid notification id"))?;
+        let nid =
+            Uuid::parse_str(id.as_str()).map_err(|_| Error::new("invalid notification id"))?;
         user_engagement::mark_read(pool, uid, nid)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))
@@ -1101,4 +1122,3 @@ impl MutationRoot {
             .map_err(|e| Error::new(format!("db: {e}")))
     }
 }
-

@@ -1,5 +1,5 @@
-use upjs_gdd_shared_types::RealtimeEnvelope;
 use std::time::Duration;
+use upjs_gdd_shared_types::RealtimeEnvelope;
 
 #[derive(Debug, Clone)]
 pub struct RealtimeConfig {

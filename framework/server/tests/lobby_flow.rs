@@ -14,7 +14,8 @@ async fn register_user_mutation_returns_profile() {
         )
         .await;
     TestEnv::assert_no_errors(&resp);
-    let name = TestEnv::data_path(&resp, &["registerUser", "displayName"]).and_then(TestEnv::value_string);
+    let name =
+        TestEnv::data_path(&resp, &["registerUser", "displayName"]).and_then(TestEnv::value_string);
     assert_eq!(name.as_deref(), Some("Alice"));
 }
 
@@ -31,11 +32,15 @@ async fn create_lobby_returns_configuring_room() {
         .await;
     TestEnv::assert_no_errors(&resp);
     assert_eq!(
-        TestEnv::data_path(&resp, &["createLobby", "status"]).and_then(TestEnv::value_string).as_deref(),
+        TestEnv::data_path(&resp, &["createLobby", "status"])
+            .and_then(TestEnv::value_string)
+            .as_deref(),
         Some("configuring")
     );
     assert_eq!(
-        TestEnv::data_path(&resp, &["createLobby", "ownerDisplayName"]).and_then(TestEnv::value_string).as_deref(),
+        TestEnv::data_path(&resp, &["createLobby", "ownerDisplayName"])
+            .and_then(TestEnv::value_string)
+            .as_deref(),
         Some("Owner")
     );
 }
@@ -137,9 +142,7 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
 
     let claim = env
         .gql(
-            &format!(
-                r#"mutation {{ joinLobby(lobbyId: "{lobby_id}", seatIndex: 0) {{ id }} }}"#
-            ),
+            &format!(r#"mutation {{ joinLobby(lobbyId: "{lobby_id}", seatIndex: 0) {{ id }} }}"#),
             Some(owner),
         )
         .await;
@@ -195,9 +198,7 @@ async fn owner_transfers_lobby_to_seated_guest() {
 
     let join = env
         .gql(
-            &format!(
-                r#"mutation {{ joinLobby(lobbyId: "{lobby_id}", seatIndex: 1) {{ id }} }}"#
-            ),
+            &format!(r#"mutation {{ joinLobby(lobbyId: "{lobby_id}", seatIndex: 1) {{ id }} }}"#),
             Some(guest),
         )
         .await;

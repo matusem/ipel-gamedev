@@ -11,7 +11,7 @@ use crate::component_db::ComponentDb;
 use crate::db::{self, GameInstanceStore};
 use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
-use crate::graphql::{build_schema, AppSchema, DraftsDir, GamesDir, RequestUser};
+use crate::graphql::{AppSchema, DraftsDir, GamesDir, RequestUser, build_schema};
 use crate::lobby_db::LobbyListNotify;
 
 pub struct TestEnv {
@@ -63,7 +63,8 @@ impl TestEnv {
     }
 
     pub async fn gql(&self, query: &str, user_id: Option<Uuid>) -> async_graphql::Response {
-        self.gql_with_vars(query, user_id, Variables::default()).await
+        self.gql_with_vars(query, user_id, Variables::default())
+            .await
     }
 
     pub async fn gql_with_vars(

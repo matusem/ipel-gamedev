@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::Result;
 
 use crate::cli::{
-    BackendKind, BuildArgs, DeployArgs, DoctorArgs, DraftsArgs, FrontendKind, InitArgs, JsTemplate,
-    LoginArgs, ManifestArgs, TestArgs, DEFAULT_GRAPHQL_URL,
+    BackendKind, BuildArgs, DEFAULT_GRAPHQL_URL, DeployArgs, DoctorArgs, DraftsArgs, FrontendKind,
+    InitArgs, JsTemplate, LoginArgs, ManifestArgs, TestArgs,
 };
 
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
@@ -72,7 +72,11 @@ fn run_fallback() -> Result<UiCommand> {
             let mut n = String::new();
             io::stdin().read_line(&mut n)?;
             UiCommand::Init(InitArgs {
-                name: if n.trim().is_empty() { None } else { Some(n.trim().to_string()) },
+                name: if n.trim().is_empty() {
+                    None
+                } else {
+                    Some(n.trim().to_string())
+                },
                 backend: Some(BackendKind::Rust),
                 frontend: Some(FrontendKind::Js),
                 js_template: Some(JsTemplate::VanillaVite),
@@ -106,7 +110,10 @@ fn run_fallback() -> Result<UiCommand> {
             server_url: DEFAULT_GRAPHQL_URL.to_string(),
         }),
         7 => UiCommand::Test(TestArgs { project_dir: None }),
-        8 => UiCommand::Doctor(DoctorArgs { project_dir: None, platform: None }),
+        8 => UiCommand::Doctor(DoctorArgs {
+            project_dir: None,
+            platform: None,
+        }),
         _ => UiCommand::ExitProgram,
     };
     Ok(cmd)

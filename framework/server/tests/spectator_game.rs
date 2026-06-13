@@ -25,9 +25,8 @@ async fn register_spectator_returns_initial_public_state() {
     .expect("spawn tic_tac_toe");
 
     let mut instance = env.game_db.get_game(game_id).expect("game instance");
-    let (spectator_state, _channel, _id) = instance
-        .register_spectator()
-        .expect("register spectator");
+    let (spectator_state, _channel, _id) =
+        instance.register_spectator().expect("register spectator");
     assert!(
         !spectator_state.is_empty(),
         "spectator initial state should be serialized JSON bytes"

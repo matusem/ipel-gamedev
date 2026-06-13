@@ -128,8 +128,8 @@ impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
             })
             .collect::<Result<Vec<(GameCoreT::Player, GameCoreT::PlayerState)>, GameCoreError>>()?;
 
-        let mut spectator_state: GameCoreT::SpectatorState =
-            de(format)(&game.spectator_state).map_err(|error| {
+        let mut spectator_state: GameCoreT::SpectatorState = de(format)(&game.spectator_state)
+            .map_err(|error| {
                 println!("Failed to deserialize spectator state: {}", error);
                 GameCoreError::Deserialize(error)
             })?;

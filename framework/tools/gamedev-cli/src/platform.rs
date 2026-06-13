@@ -54,7 +54,10 @@ pub fn fetch_platform_manifest(base: &str) -> Result<PlatformManifest> {
 }
 
 pub fn fetch_cli_manifest(base: &str) -> Result<CliRelease> {
-    let url = format!("{}/tools/gamedev-cli/manifest.json", base.trim_end_matches('/'));
+    let url = format!(
+        "{}/tools/gamedev-cli/manifest.json",
+        base.trim_end_matches('/')
+    );
     let body = Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .build()?

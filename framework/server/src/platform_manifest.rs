@@ -51,9 +51,7 @@ pub struct BuiltWithMetadata {
 }
 
 pub fn manifest_dir() -> PathBuf {
-    PathBuf::from(
-        std::env::var("PLATFORM_MANIFEST_DIR").unwrap_or_else(|_| "./platform".into()),
-    )
+    PathBuf::from(std::env::var("PLATFORM_MANIFEST_DIR").unwrap_or_else(|_| "./platform".into()))
 }
 
 pub fn tools_dir() -> PathBuf {
@@ -69,9 +67,8 @@ pub fn load_manifest() -> &'static PlatformManifest {
                 path.display()
             )
         });
-        serde_json::from_str(&raw).unwrap_or_else(|e| {
-            panic!("invalid platform manifest JSON at {}: {e}", path.display())
-        })
+        serde_json::from_str(&raw)
+            .unwrap_or_else(|e| panic!("invalid platform manifest JSON at {}: {e}", path.display()))
     })
 }
 
@@ -154,7 +151,9 @@ pub fn validate_built_with_against(
     Ok(())
 }
 
-pub fn validate_built_with_from_manifest_json(manifest_path: &Path) -> Vec<crate::game_upload::ValidationDiagnostic> {
+pub fn validate_built_with_from_manifest_json(
+    manifest_path: &Path,
+) -> Vec<crate::game_upload::ValidationDiagnostic> {
     use crate::game_upload::ValidationDiagnostic;
 
     let Ok(raw) = fs::read_to_string(manifest_path) else {

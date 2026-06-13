@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::component_db::ComponentDb;
 use crate::db::GameInstanceStore;
 use crate::game_core;
-use crate::game_db::{encode_game_snapshot, GameDb, GameInstance, GameRunPersistence};
+use crate::game_db::{GameDb, GameInstance, GameRunPersistence, encode_game_snapshot};
 use crate::lobby_db::LobbyListNotify;
 
 pub fn player_identities_from_game(game: &game_core::Game) -> Vec<String> {
@@ -31,11 +31,7 @@ pub async fn preview_init_identities(
         .await
         .map_err(|e| e.to_string())?;
     let game = game_core
-        .call_init(
-            &mut store,
-            game_core::SerializationFormat::Json,
-            &config,
-        )
+        .call_init(&mut store, game_core::SerializationFormat::Json, &config)
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("game init: {:?}", e))?;
@@ -58,11 +54,7 @@ pub async fn create_and_spawn_game(
         .await
         .map_err(|e| e.to_string())?;
     let game = game_core
-        .call_init(
-            &mut store,
-            game_core::SerializationFormat::Json,
-            &config,
-        )
+        .call_init(&mut store, game_core::SerializationFormat::Json, &config)
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("game init: {:?}", e))?;
@@ -80,10 +72,7 @@ pub async fn create_and_spawn_game(
         game_db: game_db.clone(),
         lobby_notify,
     });
-    game_db.new_game(
-        game_id,
-        GameInstance::new(game, game_core, game_type),
-    );
+    game_db.new_game(game_id, GameInstance::new(game, game_core, game_type));
     let gdb = game_db.clone();
     rt::spawn(async move {
         if let Ok(mut gi) = gdb.get_game(game_id) {
