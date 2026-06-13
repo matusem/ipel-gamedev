@@ -53,17 +53,14 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: framework
-          file: framework/Dockerfile
+          file: Dockerfile
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: |
-            type=gha
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-arm64
-          cache-to: |
-            type=gha,mode=max
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-arm64,mode=max
+          # First release has no registry cache yet; GHA cache is enough.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-image

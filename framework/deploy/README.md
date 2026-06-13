@@ -116,6 +116,34 @@ GitHub Actions workflows live at the **repository root** [`.github/workflows/`](
 
 CLI-only updates without a platform redeploy: push tag `gamedev-cli-v*` instead.
 
+### GHCR container image
+
+The server image is **not** attached to GitHub Releases. It is pushed to GitHub Container Registry:
+
+| Pull | Image |
+|------|--------|
+| Latest | `ghcr.io/matusem/ipel-gamedev:latest` |
+| Version tag | `ghcr.io/matusem/ipel-gamedev:0.1.1` (no `v` prefix) |
+
+**Find it in the UI (must be logged into GitHub):**
+
+- Repo packages: `https://github.com/matusem/ipel-gamedev/pkgs/container/ipel-gamedev`
+- Your account: **Profile → Packages**
+
+A **404** on the packages URL usually means one of:
+
+1. **Not signed in** — GHCR packages are private by default; GitHub returns 404 instead of “login required”.
+2. **Release and Deploy failed** — check **Actions → Release and Deploy** for the tag; `build-image` must be green.
+3. **Package not public yet** — open the package → **Package settings → Change visibility → Public** (optional, for anonymous `docker pull`).
+
+**Pull on the Pi (private package):**
+
+```bash
+# PAT needs read:packages (classic) or packages:read (fine-grained)
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u matusem --password-stdin
+docker pull ghcr.io/matusem/ipel-gamedev:0.1.1
+```
+
 ### Required GitHub secrets
 
 | Secret | Purpose |
