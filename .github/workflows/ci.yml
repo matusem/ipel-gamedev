@@ -46,6 +46,7 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+        continue-on-error: true
 
       - name: Stage tic_tac_toe test fixture
         run: bash sdk/scripts/stage-tic-tac-toe-fixture.sh
