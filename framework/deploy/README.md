@@ -111,7 +111,10 @@ Required: WebSocket upgrade on `/graphql` and `/game`, proxy read/send timeout �
 GitHub Actions workflows live at the **repository root** [`.github/workflows/`](../../.github/workflows/) (not under `framework/`):
 
 1. On tag `v*` or manual dispatch — build `linux/arm64` image, push to GHCR
-2. SSH to deploy host — `docker compose pull && docker compose up -d`
+2. On the same `v*` tag — **CLI Release** workflow builds `gamedev-cli` for Windows, Linux (x86_64 + arm64), and macOS (x86_64 + arm64), then attaches zip/tar assets to the GitHub Release (not just the default source archives)
+3. SSH to deploy host — `docker compose pull && docker compose up -d`
+
+CLI-only updates without a platform redeploy: push tag `gamedev-cli-v*` instead.
 
 ### Required GitHub secrets
 
