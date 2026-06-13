@@ -48,6 +48,11 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
         continue-on-error: true
 
+      - name: Install WASM component tooling
+        run: |
+          rustup target add wasm32-wasip1
+          command -v cargo-component >/dev/null || cargo install cargo-component --locked
+
       - name: Stage tic_tac_toe test fixture
         run: bash sdk/scripts/stage-tic-tac-toe-fixture.sh
 
