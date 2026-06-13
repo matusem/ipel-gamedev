@@ -9,13 +9,13 @@ async fn register_user_mutation_returns_profile() {
     let env = TestEnv::new().await;
     let resp = env
         .gql(
-            r#"mutation { registerUser(displayName: "Alice") { id displayName } }"#,
+            r#"mutation { registerUser(displayName: "Alice") { user { id displayName } } }"#,
             None,
         )
         .await;
     TestEnv::assert_no_errors(&resp);
-    let name =
-        TestEnv::data_path(&resp, &["registerUser", "displayName"]).and_then(TestEnv::value_string);
+    let name = TestEnv::data_path(&resp, &["registerUser", "user", "displayName"])
+        .and_then(TestEnv::value_string);
     assert_eq!(name.as_deref(), Some("Alice"));
 }
 
@@ -27,7 +27,7 @@ async fn create_lobby_returns_configuring_room() {
     let resp = env
         .gql(
             r#"mutation { createLobby { id status ownerDisplayName seats { seatIndex } } }"#,
-            Some(owner),
+            Some(&owner),
         )
         .await;
     TestEnv::assert_no_errors(&resp);
@@ -52,7 +52,7 @@ async fn guest_joins_claimed_seat_in_waiting_lobby() {
     let guest = env.register_user("Guest").await;
 
     let create = env
-        .gql(r#"mutation { createLobby { id } }"#, Some(owner))
+        .gql(r#"mutation { createLobby { id } }"#, Some(&owner))
         .await;
     TestEnv::assert_no_errors(&create);
     let lobby_id = TestEnv::data_path(&create, &["createLobby", "id"])
@@ -63,7 +63,7 @@ async fn guest_joins_claimed_seat_in_waiting_lobby() {
     lobby_db::owner_replace_game_type_and_seats(
         &env.pool,
         lid,
-        owner,
+        owner.id,
         "tic_tac_toe",
         &["p1".into(), "p2".into()],
         false,
@@ -81,7 +81,7 @@ async fn guest_joins_claimed_seat_in_waiting_lobby() {
                     }}
                 }}"#
             ),
-            Some(guest),
+            Some(&guest),
         )
         .await;
     TestEnv::assert_no_errors(&join);
@@ -121,7 +121,7 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
     let owner = env.register_user("Host").await;
 
     let create = env
-        .gql(r#"mutation { createLobby { id } }"#, Some(owner))
+        .gql(r#"mutation { createLobby { id } }"#, Some(&owner))
         .await;
     TestEnv::assert_no_errors(&create);
     let lobby_id = TestEnv::data_path(&create, &["createLobby", "id"])
@@ -132,7 +132,7 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
     lobby_db::owner_replace_game_type_and_seats(
         &env.pool,
         lid,
-        owner,
+        owner.id,
         "tic_tac_toe",
         &["p1".into(), "p2".into()],
         false,
@@ -143,7 +143,7 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
     let claim = env
         .gql(
             &format!(r#"mutation {{ joinLobby(lobbyId: "{lobby_id}", seatIndex: 0) {{ id }} }}"#),
-            Some(owner),
+            Some(&owner),
         )
         .await;
     TestEnv::assert_no_errors(&claim);
@@ -153,7 +153,7 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
             &format!(
                 r#"mutation {{ setLobbySeatReady(lobbyId: "{lobby_id}", ready: true) {{ id }} }}"#
             ),
-            Some(owner),
+            Some(&owner),
         )
         .await;
     TestEnv::assert_no_errors(&ready);
@@ -161,7 +161,7 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
     let start = env
         .gql(
             &format!(r#"mutation {{ startLobby(lobbyId: "{lobby_id}") }}"#),
-            Some(owner),
+            Some(&owner),
         )
         .await;
     assert!(
@@ -177,7 +177,7 @@ async fn owner_transfers_lobby_to_seated_guest() {
     let guest = env.register_user("Guest").await;
 
     let create = env
-        .gql(r#"mutation { createLobby { id } }"#, Some(owner))
+        .gql(r#"mutation { createLobby { id } }"#, Some(&owner))
         .await;
     TestEnv::assert_no_errors(&create);
     let lobby_id = TestEnv::data_path(&create, &["createLobby", "id"])
@@ -188,7 +188,7 @@ async fn owner_transfers_lobby_to_seated_guest() {
     lobby_db::owner_replace_game_type_and_seats(
         &env.pool,
         lid,
-        owner,
+        owner.id,
         "tic_tac_toe",
         &["p1".into(), "p2".into()],
         false,
@@ -199,21 +199,22 @@ async fn owner_transfers_lobby_to_seated_guest() {
     let join = env
         .gql(
             &format!(r#"mutation {{ joinLobby(lobbyId: "{lobby_id}", seatIndex: 1) {{ id }} }}"#),
-            Some(guest),
+            Some(&guest),
         )
         .await;
     TestEnv::assert_no_errors(&join);
 
+    let guest_id = guest.id;
     let transfer = env
         .gql(
             &format!(
                 r#"mutation {{
-                    transferLobbyOwnership(lobbyId: "{lobby_id}", newOwnerUserId: "{guest}") {{
+                    transferLobbyOwnership(lobbyId: "{lobby_id}", newOwnerUserId: "{guest_id}") {{
                         ownerUserId ownerDisplayName
                     }}
                 }}"#
             ),
-            Some(owner),
+            Some(&owner),
         )
         .await;
     TestEnv::assert_no_errors(&transfer);
@@ -221,7 +222,7 @@ async fn owner_transfers_lobby_to_seated_guest() {
         TestEnv::data_path(&transfer, &["transferLobbyOwnership", "ownerUserId"])
             .and_then(TestEnv::value_string)
             .as_deref(),
-        Some(guest.to_string().as_str())
+        Some(guest_id.to_string().as_str())
     );
     assert_eq!(
         TestEnv::data_path(&transfer, &["transferLobbyOwnership", "ownerDisplayName"])
@@ -231,7 +232,7 @@ async fn owner_transfers_lobby_to_seated_guest() {
     );
 
     let detail = lobby_db::get_lobby(&env.pool, lid).await.unwrap().unwrap();
-    assert_eq!(detail.owner_user_id, guest);
+    assert_eq!(detail.owner_user_id, guest_id);
 }
 
 #[tokio::test]
@@ -239,13 +240,13 @@ async fn list_lobbies_includes_active_room() {
     let env = TestEnv::new().await;
     let owner = env.register_user("Lister").await;
     let _ = env
-        .gql(r#"mutation { createLobby { id } }"#, Some(owner))
+        .gql(r#"mutation { createLobby { id } }"#, Some(&owner))
         .await;
 
     let list = env
         .gql(
             r#"query { lobbies { id ownerDisplayName status } }"#,
-            Some(owner),
+            Some(&owner),
         )
         .await;
     TestEnv::assert_no_errors(&list);

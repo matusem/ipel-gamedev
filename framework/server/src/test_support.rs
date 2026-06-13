@@ -7,12 +7,19 @@ use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use crate::auth_sessions;
 use crate::component_db::ComponentDb;
 use crate::db::{self, GameInstanceStore};
 use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
 use crate::graphql::{AppSchema, DraftsDir, GamesDir, RequestUser, build_schema};
 use crate::lobby_db::LobbyListNotify;
+
+/// Registered user with a valid bearer session for GraphQL auth.
+pub struct TestUser {
+    pub id: Uuid,
+    pub session_token: String,
+}
 
 pub struct TestEnv {
     pub pool: SqlitePool,
@@ -55,25 +62,31 @@ impl TestEnv {
         }
     }
 
-    pub async fn register_user(&self, display_name: &str) -> Uuid {
+    pub async fn register_user(&self, display_name: &str) -> TestUser {
         let (id, _, _) = db::register_user(&self.pool, display_name)
             .await
             .expect("register user");
-        id
+        let session_token = auth_sessions::create_session(&self.pool, id)
+            .await
+            .expect("create session");
+        TestUser {
+            id,
+            session_token,
+        }
     }
 
-    pub async fn gql(&self, query: &str, user_id: Option<Uuid>) -> async_graphql::Response {
-        self.gql_with_vars(query, user_id, Variables::default())
+    pub async fn gql(&self, query: &str, user: Option<&TestUser>) -> async_graphql::Response {
+        self.gql_with_vars(query, user, Variables::default())
             .await
     }
 
     pub async fn gql_with_vars(
         &self,
         query: &str,
-        user_id: Option<Uuid>,
+        user: Option<&TestUser>,
         variables: Variables,
     ) -> async_graphql::Response {
-        let auth = RequestUser(user_id.map(|u| u.to_string()));
+        let auth = RequestUser(user.map(|u| u.session_token.clone()));
         let req = Request::new(query)
             .variables(variables)
             .data(self.pool.clone())

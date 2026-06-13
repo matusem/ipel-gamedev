@@ -6,12 +6,12 @@ async fn register_user_gets_welcome_notification() {
     let env = TestEnv::new().await;
     let resp = env
         .gql(
-            r#"mutation { registerUser(displayName: "BadgeTester") { id } }"#,
+            r#"mutation { registerUser(displayName: "BadgeTester") { user { id } } }"#,
             None,
         )
         .await;
     TestEnv::assert_no_errors(&resp);
-    let user_id = TestEnv::data_path(&resp, &["registerUser", "id"])
+    let user_id = TestEnv::data_path(&resp, &["registerUser", "user", "id"])
         .and_then(TestEnv::value_string)
         .expect("user id");
     let uid = uuid::Uuid::parse_str(&user_id).unwrap();
@@ -27,12 +27,12 @@ async fn register_user_gets_welcome_notification() {
 #[tokio::test]
 async fn my_badges_returns_catalog_with_locked_state() {
     let env = TestEnv::new().await;
-    let uid = env.register_user("Achiever").await;
+    let user = env.register_user("Achiever").await;
 
     let resp = env
         .gql(
             r#"query { myBadges { id label tier locked earnedAt } }"#,
-            Some(uid),
+            Some(&user),
         )
         .await;
     TestEnv::assert_no_errors(&resp);
@@ -48,20 +48,20 @@ async fn my_badges_returns_catalog_with_locked_state() {
 #[tokio::test]
 async fn mark_all_notifications_read_clears_unread_count() {
     let env = TestEnv::new().await;
-    let uid = env.register_user("Reader").await;
+    let user = env.register_user("Reader").await;
 
     let before = env
-        .gql("query { unreadNotificationCount }", Some(uid))
+        .gql("query { unreadNotificationCount }", Some(&user))
         .await;
     TestEnv::assert_no_errors(&before);
 
     let mark = env
-        .gql("mutation { markAllNotificationsRead }", Some(uid))
+        .gql("mutation { markAllNotificationsRead }", Some(&user))
         .await;
     TestEnv::assert_no_errors(&mark);
 
     let after = env
-        .gql("query { unreadNotificationCount }", Some(uid))
+        .gql("query { unreadNotificationCount }", Some(&user))
         .await;
     TestEnv::assert_no_errors(&after);
     let count = TestEnv::data_path(&after, &["unreadNotificationCount"]).and_then(|v| match v {
