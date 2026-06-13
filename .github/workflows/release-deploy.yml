@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       deploy:
-        description: "SSH deploy after image push"
+        description: "Call deploy webhook after image push"
         type: boolean
         default: true
 
@@ -76,16 +76,35 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH || '/opt/upjs-gdd/ipel-gamedev/framework' }}"
-            docker compose pull
-            docker compose up -d --remove-orphans
-            curl -fsS http://127.0.0.1:8080/health
+      - uses: actions/checkout@v4
+
+      - name: Install signing dependency
+        run: pip install pynacl
+
+      - name: Trigger deploy webhook
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_PRIVATE_KEY: ${{ secrets.DEPLOY_WEBHOOK_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          python3 framework/scripts/trigger-deploy-webhook.py \
+            --image "${REGISTRY}/${IMAGE_NAME}" \
+            --tag "${VERSION}"
+
+      - name: Wait for health
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${DEPLOY_WEBHOOK_URL%/}"
+          for i in $(seq 1 60); do
+            if curl -fsS "${BASE}/health" >/dev/null; then
+              echo "healthy"
+              exit 0
+            fi
+            echo "waiting for ${BASE}/health ($i/60)..."
+            sleep 5
+          done
+          echo "health check timed out" >&2
+          exit 1

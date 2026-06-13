@@ -1,3 +1,4 @@
+pub mod deploy_webhook;
 pub mod auth_password;
 pub mod auth_sessions;
 pub mod component_db;

@@ -37,3 +37,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+gamedev-actions-deploy
+gamedev-actions-deploy.pub
+gamedev-deploy
+gamedev-deploy.pub

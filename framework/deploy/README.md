@@ -106,13 +106,70 @@ Required: WebSocket upgrade on `/graphql` and `/game`, proxy read/send timeout �
 | **WireGuard / Tailscale** | nginx upstream = Pi tailnet IP |
 | **Cloudflare Tunnel** | Point ingress to `http://127.0.0.1:8080` on Pi |
 
-## CI/CD autodeploy
+## CI/CD autodeploy (signed webhook)
 
 GitHub Actions workflows live at the **repository root** [`.github/workflows/`](../../.github/workflows/) (not under `framework/`):
 
 1. On tag `v*` or manual dispatch — build `linux/arm64` image, push to GHCR
-2. On the same `v*` tag — **CLI Release** workflow builds `gamedev-cli` for Windows, Linux (x86_64 + arm64), and macOS (x86_64 + arm64), then attaches zip/tar assets to the GitHub Release (not just the default source archives)
-3. SSH to deploy host — `docker compose pull && docker compose up -d`
+2. On the same `v*` tag — **CLI Release** workflow builds `gamedev-cli` assets for the GitHub Release
+3. **POST** `https://<your-domain>/internal/deploy` with an Ed25519 signature — the running container pulls the new image and runs `docker compose up -d` on the host (via mounted Docker socket)
+
+No SSH from GitHub to the Pi is required. The webhook must be reachable over HTTPS (e.g. through your nginx → tunnel → Pi path).
+
+### 1. Generate keys
+
+On any machine with Python:
+
+```bash
+pip install pynacl
+python3 framework/scripts/generate-deploy-keys.py
+```
+
+- **Pi `.env`:** `DEPLOY_WEBHOOK_PUBLIC_KEY=<public>`
+- **GitHub secret:** `DEPLOY_WEBHOOK_PRIVATE_KEY=<private>`
+
+### 2. Pi compose mounts
+
+`docker-compose.yml` mounts the host Docker socket and compose directory (read-only) so the app can restart itself:
+
+```yaml
+- /var/run/docker.sock:/var/run/docker.sock
+- /opt/upjs-gdd/ipel-gamedev/framework:/deploy:ro
+```
+
+Add to Pi `.env`:
+
+```env
+DEPLOY_WEBHOOK_PUBLIC_KEY=<base64 public key>
+DEPLOY_COMPOSE_DIR=/deploy
+```
+
+`upjs-gdd-deploy` must be in the `docker` group (host Docker access).
+
+### 3. GitHub secrets
+
+| Secret | Purpose |
+|--------|---------|
+| `DEPLOY_WEBHOOK_URL` | Public base URL, e.g. `https://gdd.ics.upjs.sk` |
+| `DEPLOY_WEBHOOK_PRIVATE_KEY` | Base64 Ed25519 signing key from keygen script |
+
+### 4. Manual trigger (debug)
+
+```bash
+export DEPLOY_WEBHOOK_URL=https://gdd.ics.upjs.sk
+export DEPLOY_WEBHOOK_PRIVATE_KEY=<private>
+python3 framework/scripts/trigger-deploy-webhook.py \
+  --image ghcr.io/matusem/ipel-gamedev \
+  --tag 0.1.1
+```
+
+Request format:
+
+- `POST /internal/deploy`
+- Headers: `X-Deploy-Timestamp` (unix seconds), `X-Deploy-Signature` (base64 Ed25519 of `timestamp + "\n" + body`)
+- Body: `{"image":"ghcr.io/matusem/ipel-gamedev","tag":"0.1.1"}`
+
+Returns `202 Accepted` immediately; compose runs in the background (~30–90s until `/health` recovers).
 
 CLI-only updates without a platform redeploy: push tag `gamedev-cli-v*` instead.
 
@@ -143,15 +200,6 @@ A **404** on the packages URL usually means one of:
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u matusem --password-stdin
 docker pull ghcr.io/matusem/ipel-gamedev:0.1.1
 ```
-
-### Required GitHub secrets
-
-| Secret | Purpose |
-|--------|---------|
-| `DEPLOY_HOST` | SSH hostname or IP (reachable from Actions via tunnel/tailnet) |
-| `DEPLOY_USER` | e.g. `upjs-gdd-deploy` |
-| `DEPLOY_SSH_KEY` | Private key for deploy user |
-| `DEPLOY_PATH` | Path to `framework/` on host (default `/opt/upjs-gdd/ipel-gamedev/framework`) |
 
 ## Backup & restore
 

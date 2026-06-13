@@ -31,7 +31,7 @@ sha2 = "0.10"
 argon2 = "0.5"
 password-hash = "0.5"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
-tokio = { version = "1.48.0", features = ["macros", "sync"] }
+tokio = { version = "1.48.0", features = ["macros", "sync", "process"] }
 uuid = { version = "1.17.0", features = ["v4", "v6"] }
 wasmtime = { version = "37.0.2", features = ["async"] }
 wasmtime-wasi = "37.0.2"
@@ -41,6 +41,7 @@ tempfile = "3.27.0"
 tracing = "0.1"
 tracing-actix-web = "0.7"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+ed25519-dalek = { version = "2", features = ["std"] }
 
 [dev-dependencies]
 tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }

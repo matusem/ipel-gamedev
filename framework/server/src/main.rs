@@ -495,6 +495,10 @@ async fn main() -> std::io::Result<()> {
             .app_data(lobby_notify.clone())
             .app_data(schema.clone())
             .route("/health", web::get().to(health))
+            .route(
+                "/internal/deploy",
+                web::post().to(server::deploy_webhook::handle_deploy),
+            )
             .route("/platform/manifest.json", web::get().to(platform_manifest))
             .route(
                 "/tools/gamedev-cli/manifest.json",

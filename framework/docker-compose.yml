@@ -15,6 +15,9 @@ services:
       - upjs-gdd-data:/app/data
       - upjs-gdd-games:/app/games
       - upjs-gdd-drafts:/app/drafts
+      # Deploy webhook: pull/up via host Docker (see deploy/README.md)
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DEPLOY_COMPOSE_HOST_DIR:-/opt/upjs-gdd/ipel-gamedev/framework}:/deploy:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
       interval: 30s
