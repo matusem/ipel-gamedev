@@ -6,9 +6,13 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag (e.g. v1.2.3); used when not triggered by a tag push"
-        required: true
+      ref:
+        description: "Branch or existing tag to build (e.g. main or v0.1.5)"
+        default: "main"
+        type: string
+      release_tag:
+        description: "GHCR version label (e.g. v0.1.6). Required when ref is a branch."
+        required: false
         type: string
       deploy:
         description: "Call deploy webhook after image push"
@@ -19,7 +23,6 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   BUILDER_IMAGE: ghcr.io/${{ github.repository }}-builder:bookworm
-  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
 
 permissions:
   contents: read
@@ -29,24 +32,41 @@ permissions:
 jobs:
   build-image:
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
     steps:
-      - name: Verify release tag exists
-        if: github.event_name == 'workflow_dispatch'
+      - name: Resolve build ref
+        id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
-          if ! gh api "repos/${{ github.repository }}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
-            echo "::error::Tag '${TAG}' was not found on GitHub."
-            echo "Push the tag first (git push origin ${TAG}) or run the workflow with an existing tag."
-            gh api "repos/${{ github.repository }}/tags" --jq '.[].name' | head -20 || true
-            exit 1
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REF="${{ inputs.ref }}"
+            RELEASE="${{ inputs.release_tag }}"
+            if gh api "repos/${{ github.repository }}/git/refs/tags/${REF}" >/dev/null 2>&1; then
+              echo "checkout_ref=refs/tags/${REF}" >> "$GITHUB_OUTPUT"
+              echo "release_tag=${RELEASE:-$REF}" >> "$GITHUB_OUTPUT"
+              echo "Building existing tag ${REF}"
+            else
+              if [ -z "$RELEASE" ]; then
+                echo "::error::ref '${REF}' is not a tag on GitHub. Set release_tag (e.g. v0.1.6) to build a branch."
+                echo "Recent tags:"
+                gh api "repos/${{ github.repository }}/tags" --jq '.[].name' | head -20 || true
+                exit 1
+              fi
+              echo "checkout_ref=${REF}" >> "$GITHUB_OUTPUT"
+              echo "release_tag=${RELEASE}" >> "$GITHUB_OUTPUT"
+              echo "Building branch ${REF} as ${RELEASE}"
+            fi
+          else
+            echo "checkout_ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_type == 'tag' && github.ref || format('refs/tags/{0}', inputs.tag) }}
+          ref: ${{ steps.resolve.outputs.checkout_ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -67,9 +87,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}},value=${{ env.RELEASE_TAG }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_TAG }}
-            type=raw,value=latest,enable=${{ env.RELEASE_TAG != '' }}
+            type=semver,pattern={{version}},value=${{ steps.resolve.outputs.release_tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.resolve.outputs.release_tag }}
+            type=raw,value=latest,enable=${{ steps.resolve.outputs.release_tag != '' }}
 
       - name: Build and push (linux/arm64)
         uses: docker/build-push-action@v6
@@ -89,6 +109,8 @@ jobs:
     needs: build-image
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.build-image.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
 
