@@ -1,7 +1,6 @@
 use crate::api::*;
-use crate::components::ui::{Callout, CalloutVariant, ErrorBanner, Icon};
+use crate::components::ui::{ErrorBanner, Icon};
 use crate::models::{LoginData, RegisterUserData, SignUpData};
-use crate::stub::demo_mode;
 use dioxus::prelude::*;
 
 #[component]
@@ -23,23 +22,6 @@ pub fn AuthGate(on_ready: EventHandler<()>) -> Element {
             }
             if let Some(e) = err() {
                 ErrorBanner { message: e }
-            }
-            Callout {
-                variant: CalloutVariant::Secondary,
-                div { class: "flex flex-col sm:flex-row sm:items-center gap-4 justify-between",
-                    div {
-                        p { class: "card-title", "Explore without a server" }
-                        p { class: "text-body-sm text-on-surface-variant mt-1",
-                            "Load rich synthetic data — busy lobbies, reviews, leaderboards, patch notes, and activity."
-                        }
-                    }
-                    button {
-                        class: "btn-secondary shrink-0",
-                        onclick: move |_| demo_mode::enter_demo_mode(),
-                        Icon { name: "auto_awesome", filled: false }
-                        "Try demo"
-                    }
-                }
             }
             div { class: "page-stack",
                 div { class: "section-card",
