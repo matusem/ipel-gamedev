@@ -38,6 +38,7 @@ release-artifacts/tools/*
 !release-artifacts/tools/.gitkeep
 .release-staging/
 cli-image-bundle.tar.gz
+.docker-cargo-cache/
 
 # --- Secrets ---
 .env

@@ -215,6 +215,18 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.resolve.outputs.release_tag }}
             type=raw,value=latest,enable=${{ needs.resolve.outputs.release_tag != '' }}
 
+      - name: Prepare cargo cache directories
+        run: |
+          mkdir -p framework/.docker-cargo-cache/{registry,git,target,lobby-target}
+
+      - name: Restore cargo Docker cache
+        uses: actions/cache@v4
+        with:
+          path: framework/.docker-cargo-cache
+          key: docker-cargo-arm64-${{ hashFiles('framework/Cargo.lock', 'framework/Dockerfile', 'framework/scripts/docker-cargo-chef-stubs.sh') }}
+          restore-keys: |
+            docker-cargo-arm64-
+
       - name: Build and push (linux/arm64)
         uses: docker/build-push-action@v6
         with:
@@ -224,6 +236,8 @@ jobs:
           push: true
           build-args: |
             BUILDER_IMAGE=${{ env.BUILDER_IMAGE }}
+          build-contexts: |
+            cargo-cache=framework/.docker-cargo-cache
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

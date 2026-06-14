@@ -12,6 +12,7 @@ RUN rustup target add wasm32-unknown-unknown wasm32-wasip1
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo install dioxus-cli --locked --version 0.7.3 \
-    && cargo install cargo-component --locked
+    && cargo install cargo-component --locked \
+    && cargo install cargo-chef --locked
 
 WORKDIR /app
