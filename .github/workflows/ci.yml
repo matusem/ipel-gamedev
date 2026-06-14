@@ -26,9 +26,23 @@ jobs:
         with:
           workspaces: framework
           cache-all-crates: true
+          cache-on-failure: true
+
+      - uses: ./.github/actions/cache-cargo-tools
+
+      - name: Cache apt packages (Bevy SDK)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/ci-apt-cache/archives
+          key: apt-bevy-${{ runner.os }}-v1
+          restore-keys: |
+            apt-bevy-${{ runner.os }}-v1
 
       - name: Install Linux dependencies (Bevy SDK)
         run: |
+          sudo mkdir -p ~/ci-apt-cache/archives/partial
+          echo 'Dir::Cache::archives "'"$HOME"'/ci-apt-cache/archives";' | sudo tee /etc/apt/apt.conf.d/99-ci-cache
           sudo apt-get update
           sudo apt-get install -y \
             libasound2-dev \
@@ -85,6 +99,9 @@ jobs:
             framework
             framework/lobby
           cache-all-crates: true
+          cache-on-failure: true
+
+      - uses: ./.github/actions/cache-cargo-tools
 
       - name: Install Dioxus CLI
         run: command -v dx >/dev/null || cargo install dioxus-cli --locked
@@ -112,6 +129,14 @@ jobs:
           gradle-version: "8.12.1"
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ hashFiles('framework/sdk/java/component-template/pom.xml', 'framework/sdk/java/component-template/build.gradle.kts') }}
+          restore-keys: |
+            maven-${{ runner.os }}-
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -119,6 +144,9 @@ jobs:
           workspaces: framework
           shared-key: wasm-tools
           cache-all-crates: true
+          cache-on-failure: true
+
+      - uses: ./.github/actions/cache-cargo-tools
 
       - name: Install wasm-tools
         run: command -v wasm-tools >/dev/null || cargo install wasm-tools --locked

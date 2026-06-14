@@ -1,9 +1,10 @@
 name: Release and Deploy
 
 on:
-  push:
-    tags:
-      - "v*"
+  # Platform image build runs after CLI Release finishes (reuses CLI artifacts — no duplicate compile).
+  workflow_run:
+    workflows: ["CLI Release"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       ref:
@@ -27,15 +28,23 @@ env:
 permissions:
   contents: read
   packages: write
-  actions: write
+  actions: read
 
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v') &&
+       !startsWith(github.event.workflow_run.head_branch, 'gamedev-cli-v'))
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       version: ${{ steps.resolve.outputs.version }}
+      cli_release_run_id: ${{ steps.resolve.outputs.cli_release_run_id }}
+      needs_cli_build: ${{ steps.resolve.outputs.needs_cli_build }}
     steps:
       - name: Resolve build ref
         id: resolve
@@ -43,7 +52,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            TAG="${{ github.event.workflow_run.head_branch }}"
+            echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "cli_release_run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+            echo "needs_cli_build=false" >> "$GITHUB_OUTPUT"
+            echo "Platform release ${TAG} after CLI Release run ${{ github.event.workflow_run.id }}"
+          else
             REF="${{ inputs.ref }}"
             RELEASE="${{ inputs.release_tag }}"
             if gh api "repos/${{ github.repository }}/git/refs/tags/${REF}" >/dev/null 2>&1; then
@@ -61,21 +78,30 @@ jobs:
               echo "release_tag=${RELEASE}" >> "$GITHUB_OUTPUT"
               echo "Building branch ${REF} as ${RELEASE}"
             fi
-          else
-            echo "checkout_ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
-            echo "release_tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            RELEASE_TAG="$(grep '^release_tag=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
+            echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+            RUN_ID="$(gh run list --workflow=cli-release.yml --branch "${RELEASE_TAG}" --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)"
+            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+              echo "cli_release_run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+              echo "needs_cli_build=false" >> "$GITHUB_OUTPUT"
+              echo "Reusing CLI Release run ${RUN_ID}"
+            else
+              echo "cli_release_run_id=" >> "$GITHUB_OUTPUT"
+              echo "needs_cli_build=true" >> "$GITHUB_OUTPUT"
+              echo "No successful CLI Release found — will build CLI in this workflow"
+            fi
           fi
-          RELEASE_TAG="$(grep '^release_tag=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
-          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
   build-cli:
     needs: resolve
+    if: needs.resolve.outputs.needs_cli_build == 'true'
     uses: ./.github/workflows/reusable-build-cli.yml
     with:
       checkout_ref: ${{ needs.resolve.outputs.checkout_ref }}
 
   prepare-cli-bundle:
     needs: [resolve, build-cli]
+    if: always() && needs.resolve.result == 'success' && (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -85,13 +111,24 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.checkout_ref }}
 
-      - name: Download CLI artifacts
+      - name: Download CLI bundle from CLI Release workflow
+        if: needs.resolve.outputs.needs_cli_build != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-bundle-for-image
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.resolve.outputs.cli_release_run_id }}
+          path: .
+
+      - name: Download CLI build artifacts
+        if: needs.resolve.outputs.needs_cli_build == 'true'
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Stage CLI bundles and update manifests
+        if: needs.resolve.outputs.needs_cli_build == 'true'
         run: |
           set -euo pipefail
           VERSION="${{ needs.resolve.outputs.version }}"
@@ -120,7 +157,16 @@ jobs:
           print('CLI manifest checksums verified')
           "
 
-      - uses: actions/upload-artifact@v4
+      - name: Verify CLI bundle in workspace
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve.outputs.version }}"
+          ls -la "release-artifacts/tools/v${VERSION}/"
+          test -f release-artifacts/tools/manifest.json
+          test -f platform/manifest.json
+
+      - name: Publish CLI bundle for image build
+        uses: actions/upload-artifact@v4
         with:
           name: cli-bundle-for-image
           path: |
@@ -129,6 +175,7 @@ jobs:
 
   build-image:
     needs: [resolve, prepare-cli-bundle]
+    if: needs.prepare-cli-bundle.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ needs.resolve.outputs.release_tag }}
@@ -207,12 +254,20 @@ jobs:
 
   deploy:
     needs: build-image
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    if: needs.build-image.result == 'success' && (github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.deploy))
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ needs.build-image.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-pynacl-${{ runner.os }}-v1
+          restore-keys: |
+            pip-pynacl-${{ runner.os }}-v1
 
       - name: Install signing dependency
         run: pip install pynacl

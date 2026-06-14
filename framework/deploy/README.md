@@ -110,8 +110,8 @@ Required: WebSocket upgrade on `/graphql` and `/game`, proxy read/send timeout �
 
 GitHub Actions workflows live at the **repository root** [`.github/workflows/`](../../.github/workflows/) (not under `framework/`):
 
-1. On tag `v*` or manual dispatch — build `linux/arm64` image, push to GHCR
-2. On the same `v*` tag — **CLI Release** workflow builds `gamedev-cli` assets for the GitHub Release
+1. On tag `v*` — **CLI Release** builds `gamedev-cli` for all platforms, updates manifests, and creates a GitHub Release
+2. When CLI Release finishes — **Release and Deploy** reuses those CLI artifacts (no second compile), builds the `linux/arm64` image, pushes to GHCR
 3. **POST** `https://<your-domain>/internal/deploy` with an Ed25519 signature — the running container pulls the new image and runs `docker compose up -d` on the host (via mounted Docker socket)
 
 No SSH from GitHub to the Pi is required. The webhook must be reachable over HTTPS (e.g. through your nginx → tunnel → Pi path).

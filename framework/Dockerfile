@@ -45,12 +45,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 COPY packages/game-sdk/ /app/packages/game-sdk/
 WORKDIR /app/packages/game-sdk
-RUN npm ci && npm run build
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci && npm run build
 WORKDIR /app
 
 COPY lobby/ lobby/
 WORKDIR /app/lobby
-RUN npm ci && npm run build:css
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci && npm run build:css
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/lobby/target \

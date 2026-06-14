@@ -9,7 +9,9 @@ RUN apt-get update \
 RUN rustup target add wasm32-unknown-unknown wasm32-wasip1
 
 # Match lobby dioxus = 0.7.3 (see framework/lobby/Cargo.toml).
-RUN cargo install dioxus-cli --locked --version 0.7.3 \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo install dioxus-cli --locked --version 0.7.3 \
     && cargo install cargo-component --locked
 
 WORKDIR /app

@@ -1,0 +1,16 @@
+name: Cache cargo-installed binaries
+description: Persist ~/.cargo/bin across jobs so cargo install is skipped when already present.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore cargo-installed tool binaries
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/.crates.toml
+          ~/.cargo/.crates2.json
+        key: cargo-installed-tools-${{ runner.os }}-v1
+        restore-keys: |
+          cargo-installed-tools-${{ runner.os }}-v1

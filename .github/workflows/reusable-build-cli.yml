@@ -59,9 +59,20 @@ jobs:
           cache-all-crates: true
           cache-on-failure: true
 
+      - name: Cache apt packages (aarch64 cross toolchain)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        uses: actions/cache@v4
+        with:
+          path: ~/ci-apt-cache/archives
+          key: apt-aarch64-${{ runner.os }}-v1
+          restore-keys: |
+            apt-aarch64-${{ runner.os }}-v1
+
       - name: Install aarch64 Linux cross toolchain
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
+          sudo mkdir -p ~/ci-apt-cache/archives/partial
+          echo 'Dir::Cache::archives "'"$HOME"'/ci-apt-cache/archives";' | sudo tee /etc/apt/apt.conf.d/99-ci-cache
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           mkdir -p ~/.cargo

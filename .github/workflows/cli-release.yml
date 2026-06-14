@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 defaults:
   run:
@@ -35,10 +36,11 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Compute manifest checksums
+      - name: Compute manifest checksums and stage image bundle
         id: manifest
         working-directory: framework
         run: |
+          set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           VERSION="${VERSION#gamedev-cli-v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -47,6 +49,25 @@ jobs:
             --artifacts ../artifacts \
             --out platform/manifest.json \
             --cli-out tools/gamedev-cli/manifest.json
+          mkdir -p "release-artifacts/tools/v${VERSION}"
+          shopt -s nullglob
+          bundles=(../artifacts/*.zip ../artifacts/*.tar.gz)
+          if [ "${#bundles[@]}" -eq 0 ]; then
+            echo "::error::No CLI bundles found in artifacts"
+            exit 1
+          fi
+          cp "${bundles[@]}" "release-artifacts/tools/v${VERSION}/"
+          cp tools/gamedev-cli/manifest.json tools/gamedev-cli/install.ps1 tools/gamedev-cli/install.sh \
+            release-artifacts/tools/
+          python3 -c "
+          import json, sys
+          m = json.load(open('tools/gamedev-cli/manifest.json'))
+          bad = [k for k, v in m.get('assets', {}).items() if v.get('sha256', '').startswith('000000')]
+          if bad:
+              print(f'::error::Placeholder checksums remain for: {bad}', file=sys.stderr)
+              sys.exit(1)
+          print('CLI manifest checksums verified')
+          "
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -55,9 +76,10 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
 
-      - name: Upload CLI bundles to release assets folder
-        working-directory: framework
-        run: |
-          mkdir -p tools/gamedev-cli/v${{ steps.manifest.outputs.version }}
-          cp ../artifacts/*.zip ../artifacts/*.tar.gz \
-            tools/gamedev-cli/v${{ steps.manifest.outputs.version }}/ 2>/dev/null || true
+      - name: Upload Docker image CLI bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-bundle-for-image
+          path: |
+            framework/platform/manifest.json
+            framework/release-artifacts/tools/
