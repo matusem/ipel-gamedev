@@ -33,13 +33,13 @@ permissions:
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    # head_branch is often "main" (default branch), not the tag — resolve the tag in the step below.
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       startsWith(github.event.workflow_run.head_branch, 'v') &&
-       !startsWith(github.event.workflow_run.head_branch, 'gamedev-cli-v'))
+       github.event.workflow_run.conclusion == 'success')
     outputs:
+      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       version: ${{ steps.resolve.outputs.version }}
@@ -52,15 +52,51 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          is_platform_tag() {
+            local tag="$1"
+            [[ "$tag" =~ ^v[0-9] ]] && [[ "$tag" != gamedev-cli-v* ]]
+          }
+
+          lookup_platform_tag_for_sha() {
+            local sha="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/tags" \
+              --paginate \
+              --jq ".[] | select(.commit.sha == \"${sha}\") | .name" \
+              | grep -E '^v[0-9]' \
+              | grep -v '^gamedev-cli-v' \
+              | head -1 \
+              || true
+          }
+
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            TAG="${{ github.event.workflow_run.head_branch }}"
+            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+            RUN_ID="${{ github.event.workflow_run.id }}"
+            TAG="${HEAD_BRANCH#refs/tags/}"
+
+            echo "workflow_run head_branch=${HEAD_BRANCH} head_sha=${HEAD_SHA} run_id=${RUN_ID}"
+
+            if ! is_platform_tag "$TAG"; then
+              echo "head_branch is not a platform tag; looking up tag for commit ${HEAD_SHA}"
+              TAG="$(lookup_platform_tag_for_sha "$HEAD_SHA" || true)"
+            fi
+
+            if ! is_platform_tag "$TAG"; then
+              echo "::notice::Skipping platform deploy — not a v* platform release (resolved tag='${TAG:-<none>}')"
+              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
             echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
             echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-            echo "cli_release_run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+            echo "cli_release_run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
             echo "needs_cli_build=false" >> "$GITHUB_OUTPUT"
-            echo "Platform release ${TAG} after CLI Release run ${{ github.event.workflow_run.id }}"
+            echo "Platform release ${TAG} after CLI Release run ${RUN_ID}"
           else
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
             REF="${{ inputs.ref }}"
             RELEASE="${{ inputs.release_tag }}"
             if gh api "repos/${{ github.repository }}/git/refs/tags/${REF}" >/dev/null 2>&1; then
@@ -94,14 +130,17 @@ jobs:
 
   build-cli:
     needs: resolve
-    if: needs.resolve.outputs.needs_cli_build == 'true'
+    if: needs.resolve.outputs.should_deploy == 'true' && needs.resolve.outputs.needs_cli_build == 'true'
     uses: ./.github/workflows/reusable-build-cli.yml
     with:
       checkout_ref: ${{ needs.resolve.outputs.checkout_ref }}
 
   prepare-cli-bundle:
     needs: [resolve, build-cli]
-    if: always() && needs.resolve.result == 'success' && (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped')
+    if: >
+      needs.resolve.outputs.should_deploy == 'true' &&
+      always() && needs.resolve.result == 'success' &&
+      (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
