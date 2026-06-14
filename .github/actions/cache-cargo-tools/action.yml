@@ -1,6 +1,12 @@
 name: Cache cargo-installed binaries
 description: Persist ~/.cargo/bin across jobs so cargo install is skipped when already present.
 
+inputs:
+  cache-key:
+    description: Version suffix for the cache key (e.g. hash of Cargo.lock)
+    required: false
+    default: v2
+
 runs:
   using: composite
   steps:
@@ -11,6 +17,7 @@ runs:
           ~/.cargo/bin
           ~/.cargo/.crates.toml
           ~/.cargo/.crates2.json
-        key: cargo-installed-tools-${{ runner.os }}-v1
+        key: cargo-installed-tools-${{ runner.os }}-${{ inputs.cache-key }}
         restore-keys: |
-          cargo-installed-tools-${{ runner.os }}-v1
+          cargo-installed-tools-${{ runner.os }}-${{ inputs.cache-key }}
+          cargo-installed-tools-${{ runner.os }}-v2

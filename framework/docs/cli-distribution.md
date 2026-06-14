@@ -2,7 +2,7 @@
 
 Notes for hosting download links on the Platform, version checks against production, and optional self-update.
 
-**Status:** implemented (platform manifests, install scripts, CI release workflows). Hosted checksums update on `gamedev-cli-v*` tags via `scripts/update-cli-manifest.py`.
+**Status:** implemented. Platform `v*` releases bake real CLI checksums and binaries into the production image via `scripts/package-cli-image-bundle.py`. CLI-only tags use `gamedev-cli-v*`.
 
 ---
 
@@ -110,19 +110,27 @@ gamedev-cli update --check  # exit 1 if outdated (CI-friendly)
 
 ## 4. Build & release pipeline
 
-GitHub Actions job on tag `gamedev-cli-v*`:
+### Platform release (`v*` tag)
 
-1. `cargo build --release -p gamedev-cli` for:
-   - `x86_64-pc-windows-msvc`
-   - `x86_64-unknown-linux-gnu`
-   - `aarch64-apple-darwin` (and/or `x86_64-apple-darwin`)
-2. Zip each binary + short README
-3. Compute `sha256`
-4. Publish artifacts:
-   - **Option A (preferred for single-container deploy):** copy into Docker image at `/app/tools/gamedev-cli/`; manifest updated at image build time
-   - **Option B:** GitHub Releases; manifest URLs point there (simpler CI, worse if GitHub is blocked on campus)
+Workflow: `.github/workflows/release-deploy.yml`
 
-Current gap: `.github/workflows/ci.yml` tests only; no release job. `Dockerfile` builds server + lobby, not `gamedev-cli`.
+1. Build `gamedev-cli` for all platforms (matrix in `reusable-build-cli.yml`)
+2. `scripts/package-cli-image-bundle.py pack` — update manifests, stage archives, produce `cli-image-bundle.tar.gz`
+3. `scripts/verify-cli-image-bundle.py` — assert five archives, real checksums, matching URLs
+4. Create GitHub Release with raw CLI archives
+5. Extract bundle into Docker build context; build and push `linux/arm64` image
+6. Verify `/app/tools/gamedev-cli/v<version>/` exists inside the image
+7. Deploy via signed webhook
+
+### CLI-only release (`gamedev-cli-v*` tag)
+
+Workflow: `.github/workflows/cli-release.yml`
+
+Builds and publishes CLI binaries to GitHub Releases without redeploying the platform image.
+
+### Caching
+
+Rust (`Swatinem/rust-cache`), npm (`setup-node`), Maven, Gradle, Docker BuildKit (GHA + cargo/npm mounts), apt archives for cross-compilers, pip for deploy signing, and version-keyed `~/.cargo/bin` for installed tools.
 
 ---
 

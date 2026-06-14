@@ -3,32 +3,66 @@ name: CLI Release
 on:
   push:
     tags:
-      # Platform releases (v1.2.3) — same tag also publishes CLI binaries to GitHub Releases.
-      - "v*"
-      # CLI-only patch releases without redeploying the platform image.
+      # CLI-only releases without redeploying the platform image.
       - "gamedev-cli-v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing gamedev-cli-v* tag to publish (must exist on GitHub)"
+        required: true
+        type: string
 
 permissions:
   contents: write
-  actions: write
 
 defaults:
   run:
     working-directory: framework
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve CLI release ref
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          if [[ "$TAG" != gamedev-cli-v* ]]; then
+            echo "::error::CLI Release only accepts gamedev-cli-v* tags"
+            exit 1
+          fi
+          if ! gh api "repos/${{ github.repository }}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} does not exist on GitHub"
+            exit 1
+          fi
+          echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#gamedev-cli-v}" >> "$GITHUB_OUTPUT"
+
   build-cli:
+    needs: resolve
     uses: ./.github/workflows/reusable-build-cli.yml
     with:
-      checkout_ref: ${{ github.ref }}
+      checkout_ref: ${{ needs.resolve.outputs.checkout_ref }}
 
   release:
-    needs: build-cli
-    if: github.ref_type == 'tag'
+    needs: [resolve, build-cli]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -36,29 +70,15 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Compute manifest checksums and stage image bundle
-        id: manifest
+      - name: Update CLI manifests
         working-directory: framework
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          VERSION="${VERSION#gamedev-cli-v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           python3 scripts/update-cli-manifest.py \
-            --version "$VERSION" \
+            --version "${{ needs.resolve.outputs.version }}" \
             --artifacts ../artifacts \
             --out platform/manifest.json \
             --cli-out tools/gamedev-cli/manifest.json
-          mkdir -p "release-artifacts/tools/v${VERSION}"
-          shopt -s nullglob
-          bundles=(../artifacts/*.zip ../artifacts/*.tar.gz)
-          if [ "${#bundles[@]}" -eq 0 ]; then
-            echo "::error::No CLI bundles found in artifacts"
-            exit 1
-          fi
-          cp "${bundles[@]}" "release-artifacts/tools/v${VERSION}/"
-          cp tools/gamedev-cli/manifest.json tools/gamedev-cli/install.ps1 tools/gamedev-cli/install.sh \
-            release-artifacts/tools/
           python3 -c "
           import json, sys
           m = json.load(open('tools/gamedev-cli/manifest.json'))
@@ -66,20 +86,11 @@ jobs:
           if bad:
               print(f'::error::Placeholder checksums remain for: {bad}', file=sys.stderr)
               sys.exit(1)
-          print('CLI manifest checksums verified')
           "
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.resolve.outputs.release_tag }}
           files: artifacts/*
           generate_release_notes: true
-
-      - name: Upload Docker image CLI bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: cli-bundle-for-image
-          path: |
-            framework/platform/manifest.json
-            framework/release-artifacts/tools/

@@ -29,6 +29,8 @@ jobs:
           cache-on-failure: true
 
       - uses: ./.github/actions/cache-cargo-tools
+        with:
+          cache-key: ${{ hashFiles('framework/Cargo.lock', 'framework/lobby/Cargo.toml') }}
 
       - name: Cache apt packages (Bevy SDK)
         uses: actions/cache@v4
@@ -102,6 +104,8 @@ jobs:
           cache-on-failure: true
 
       - uses: ./.github/actions/cache-cargo-tools
+        with:
+          cache-key: ${{ hashFiles('framework/Cargo.lock', 'framework/lobby/Cargo.toml') }}
 
       - name: Install Dioxus CLI
         run: command -v dx >/dev/null || cargo install dioxus-cli --locked
@@ -147,6 +151,8 @@ jobs:
           cache-on-failure: true
 
       - uses: ./.github/actions/cache-cargo-tools
+        with:
+          cache-key: ${{ hashFiles('framework/Cargo.lock') }}
 
       - name: Install wasm-tools
         run: command -v wasm-tools >/dev/null || cargo install wasm-tools --locked

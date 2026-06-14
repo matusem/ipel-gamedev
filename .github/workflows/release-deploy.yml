@@ -1,19 +1,14 @@
 name: Release and Deploy
 
 on:
-  # Platform image build runs after CLI Release finishes (reuses CLI artifacts — no duplicate compile).
-  workflow_run:
-    workflows: ["CLI Release"]
-    types: [completed]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch or existing tag to build (e.g. main or v0.1.5)"
+        description: "Tag to build and deploy (e.g. v0.1.5)"
         default: "main"
-        type: string
-      release_tag:
-        description: "GHCR version label (e.g. v0.1.6). Required when ref is a branch."
-        required: false
         type: string
       deploy:
         description: "Call deploy webhook after image push"
@@ -26,121 +21,53 @@ env:
   BUILDER_IMAGE: ghcr.io/${{ github.repository }}-builder:bookworm
 
 permissions:
-  contents: read
+  contents: write
   packages: write
-  actions: read
+  actions: write
 
 jobs:
   resolve:
     runs-on: ubuntu-latest
-    # head_branch is often "main" (default branch), not the tag — resolve the tag in the step below.
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success')
     outputs:
-      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
       version: ${{ steps.resolve.outputs.version }}
-      cli_release_run_id: ${{ steps.resolve.outputs.cli_release_run_id }}
-      needs_cli_build: ${{ steps.resolve.outputs.needs_cli_build }}
     steps:
-      - name: Resolve build ref
+      - name: Resolve release ref
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          is_platform_tag() {
-            local tag="$1"
-            [[ "$tag" =~ ^v[0-9] ]] && [[ "$tag" != gamedev-cli-v* ]]
-          }
-
-          lookup_platform_tag_for_sha() {
-            local sha="$1"
-            gh api "repos/${GITHUB_REPOSITORY}/tags" \
-              --paginate \
-              --jq ".[] | select(.commit.sha == \"${sha}\") | .name" \
-              | grep -E '^v[0-9]' \
-              | grep -v '^gamedev-cli-v' \
-              | head -1 \
-              || true
-          }
-
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
-            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
-            RUN_ID="${{ github.event.workflow_run.id }}"
-            TAG="${HEAD_BRANCH#refs/tags/}"
-
-            echo "workflow_run head_branch=${HEAD_BRANCH} head_sha=${HEAD_SHA} run_id=${RUN_ID}"
-
-            if ! is_platform_tag "$TAG"; then
-              echo "head_branch is not a platform tag; looking up tag for commit ${HEAD_SHA}"
-              TAG="$(lookup_platform_tag_for_sha "$HEAD_SHA" || true)"
-            fi
-
-            if ! is_platform_tag "$TAG"; then
-              echo "::notice::Skipping platform deploy — not a v* platform release (resolved tag='${TAG:-<none>}')"
-              echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
-            echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-            echo "cli_release_run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
-            echo "needs_cli_build=false" >> "$GITHUB_OUTPUT"
-            echo "Platform release ${TAG} after CLI Release run ${RUN_ID}"
-          else
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             REF="${{ inputs.ref }}"
-            RELEASE="${{ inputs.release_tag }}"
             if gh api "repos/${{ github.repository }}/git/refs/tags/${REF}" >/dev/null 2>&1; then
               echo "checkout_ref=refs/tags/${REF}" >> "$GITHUB_OUTPUT"
-              echo "release_tag=${RELEASE:-$REF}" >> "$GITHUB_OUTPUT"
-              echo "Building existing tag ${REF}"
+              echo "release_tag=${REF}" >> "$GITHUB_OUTPUT"
             else
-              if [ -z "$RELEASE" ]; then
-                echo "::error::ref '${REF}' is not a tag on GitHub. Set release_tag (e.g. v0.1.6) to build a branch."
-                echo "Recent tags:"
-                gh api "repos/${{ github.repository }}/tags" --jq '.[].name' | head -20 || true
-                exit 1
-              fi
-              echo "checkout_ref=${REF}" >> "$GITHUB_OUTPUT"
-              echo "release_tag=${RELEASE}" >> "$GITHUB_OUTPUT"
-              echo "Building branch ${REF} as ${RELEASE}"
+              echo "::error::workflow_dispatch ref must be an existing tag (e.g. v0.1.5)"
+              exit 1
             fi
-            RELEASE_TAG="$(grep '^release_tag=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
-            echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
-            RUN_ID="$(gh run list --workflow=cli-release.yml --branch "${RELEASE_TAG}" --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)"
-            if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-              echo "cli_release_run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
-              echo "needs_cli_build=false" >> "$GITHUB_OUTPUT"
-              echo "Reusing CLI Release run ${RUN_ID}"
-            else
-              echo "cli_release_run_id=" >> "$GITHUB_OUTPUT"
-              echo "needs_cli_build=true" >> "$GITHUB_OUTPUT"
-              echo "No successful CLI Release found — will build CLI in this workflow"
+          else
+            TAG="${{ github.ref_name }}"
+            if [[ "$TAG" == gamedev-cli-v* ]]; then
+              echo "::error::Platform release workflow only accepts v* tags"
+              exit 1
             fi
+            echo "checkout_ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
           fi
+          RELEASE_TAG="$(grep '^release_tag=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
   build-cli:
     needs: resolve
-    if: needs.resolve.outputs.should_deploy == 'true' && needs.resolve.outputs.needs_cli_build == 'true'
     uses: ./.github/workflows/reusable-build-cli.yml
     with:
       checkout_ref: ${{ needs.resolve.outputs.checkout_ref }}
 
-  prepare-cli-bundle:
+  package-cli:
     needs: [resolve, build-cli]
-    if: >
-      needs.resolve.outputs.should_deploy == 'true' &&
-      always() && needs.resolve.result == 'success' &&
-      (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -150,71 +77,58 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.checkout_ref }}
 
-      - name: Download CLI bundle from CLI Release workflow
-        if: needs.resolve.outputs.needs_cli_build != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-bundle-for-image
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ needs.resolve.outputs.cli_release_run_id }}
-          path: .
-
       - name: Download CLI build artifacts
-        if: needs.resolve.outputs.needs_cli_build == 'true'
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: Stage CLI bundles and update manifests
-        if: needs.resolve.outputs.needs_cli_build == 'true'
+      - name: Package CLI image bundle
         run: |
           set -euo pipefail
-          VERSION="${{ needs.resolve.outputs.version }}"
-          python3 scripts/update-cli-manifest.py \
-            --version "$VERSION" \
+          python3 scripts/package-cli-image-bundle.py pack \
+            --version "${{ needs.resolve.outputs.version }}" \
             --artifacts ../artifacts \
-            --out platform/manifest.json \
-            --cli-out tools/gamedev-cli/manifest.json
-          mkdir -p "release-artifacts/tools/v${VERSION}"
-          shopt -s nullglob
-          bundles=(../artifacts/*.zip ../artifacts/*.tar.gz)
-          if [ "${#bundles[@]}" -eq 0 ]; then
-            echo "::error::No CLI bundles found in artifacts"
-            exit 1
-          fi
-          cp "${bundles[@]}" "release-artifacts/tools/v${VERSION}/"
-          cp tools/gamedev-cli/manifest.json tools/gamedev-cli/install.ps1 tools/gamedev-cli/install.sh \
-            release-artifacts/tools/
-          python3 -c "
-          import json, sys
-          m = json.load(open('tools/gamedev-cli/manifest.json'))
-          bad = [k for k, v in m.get('assets', {}).items() if v.get('sha256', '').startswith('000000')]
-          if bad:
-              print(f'::error::Placeholder checksums remain for: {bad}', file=sys.stderr)
-              sys.exit(1)
-          print('CLI manifest checksums verified')
-          "
+            --out cli-image-bundle.tar.gz
 
-      - name: Verify CLI bundle in workspace
+      - name: Verify CLI image bundle
         run: |
-          set -euo pipefail
-          VERSION="${{ needs.resolve.outputs.version }}"
-          ls -la "release-artifacts/tools/v${VERSION}/"
-          test -f release-artifacts/tools/manifest.json
-          test -f platform/manifest.json
+          python3 scripts/verify-cli-image-bundle.py \
+            --version "${{ needs.resolve.outputs.version }}"
 
-      - name: Publish CLI bundle for image build
+      - name: Upload CLI image bundle
         uses: actions/upload-artifact@v4
         with:
-          name: cli-bundle-for-image
-          path: |
-            framework/platform/manifest.json
-            framework/release-artifacts/tools/
+          name: cli-image-bundle
+          path: framework/cli-image-bundle.tar.gz
+          retention-days: 14
+
+      - name: Upload raw CLI archives for GitHub Release
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-release-archives
+          path: artifacts/*
+          retention-days: 14
+
+  github-release:
+    needs: [resolve, package-cli]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download raw CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-release-archives
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.release_tag }}
+          files: artifacts/*
+          generate_release_notes: true
 
   build-image:
-    needs: [resolve, prepare-cli-bundle]
-    if: needs.prepare-cli-bundle.result == 'success'
+    needs: [resolve, package-cli]
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ needs.resolve.outputs.release_tag }}
@@ -223,20 +137,23 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.checkout_ref }}
 
-      - name: Merge CLI bundle into build context
+      - name: Download CLI image bundle
         uses: actions/download-artifact@v4
         with:
-          name: cli-bundle-for-image
-          path: .
+          name: cli-image-bundle
+          path: framework
 
-      - name: Verify CLI bundle in build context
+      - name: Extract CLI image bundle into build context
         working-directory: framework
         run: |
-          set -euo pipefail
-          VERSION="${{ needs.resolve.outputs.version }}"
-          ls -la "release-artifacts/tools/v${VERSION}/"
-          test -f release-artifacts/tools/manifest.json
-          test -f platform/manifest.json
+          python3 scripts/package-cli-image-bundle.py extract \
+            --tar cli-image-bundle.tar.gz
+
+      - name: Verify CLI image bundle in build context
+        working-directory: framework
+        run: |
+          python3 scripts/verify-cli-image-bundle.py \
+            --version "${{ needs.resolve.outputs.version }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -258,11 +175,6 @@ jobs:
           set -euo pipefail
           if ! docker pull --platform linux/arm64 "${{ env.BUILDER_IMAGE }}"; then
             echo "::error::Cannot pull ${{ env.BUILDER_IMAGE }}"
-            echo "Private GHCR images pushed from your laptop need one of:"
-            echo "  1. Package settings → Manage Actions access → add matusem/ipel-gamedev (Read)"
-            echo "  2. Package settings → Change visibility → Public (recommended for builder tooling)"
-            echo "  3. Repo secret GHCR_TOKEN = PAT with read:packages (classic) or packages:read"
-            echo "Also ensure the image is linux/arm64 for Pi CI."
             exit 1
           fi
           docker image inspect "${{ env.BUILDER_IMAGE }}" --format 'platform={{.Os}}/{{.Architecture}}'
@@ -291,9 +203,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Verify CLI files inside built image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.resolve.outputs.version }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/arm64 "${IMAGE}"
+          docker run --rm --platform linux/arm64 --entrypoint /bin/sh "${IMAGE}" -c "
+            set -e
+            test -f /app/tools/gamedev-cli/manifest.json
+            test -f /app/platform/manifest.json
+            ls /app/tools/gamedev-cli/v${VERSION}/gamedev-cli-linux-x86_64.tar.gz
+            ls /app/tools/gamedev-cli/v${VERSION}/gamedev-cli-windows-x86_64.zip
+          "
+
   deploy:
     needs: build-image
-    if: needs.build-image.result == 'success' && (github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.deploy))
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ needs.build-image.outputs.release_tag }}
