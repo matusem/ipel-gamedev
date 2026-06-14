@@ -26,11 +26,11 @@ jobs:
             is_windows: true
             asset_key: windows-x86_64
           - target: x86_64-unknown-linux-gnu
-            runner: self-hosted
+            runner: ubuntu-latest
             is_windows: false
             asset_key: linux-x86_64
           - target: aarch64-unknown-linux-gnu
-            runner: self-hosted
+            runner: ubuntu-latest
             is_windows: false
             asset_key: linux-aarch64
           - target: x86_64-apple-darwin
