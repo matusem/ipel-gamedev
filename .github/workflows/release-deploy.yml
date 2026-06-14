@@ -30,10 +30,12 @@ permissions:
   actions: write
 
 jobs:
-  build-image:
+  resolve:
     runs-on: ubuntu-latest
     outputs:
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       - name: Resolve build ref
         id: resolve
@@ -63,10 +65,92 @@ jobs:
             echo "checkout_ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
             echo "release_tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           fi
+          RELEASE_TAG="$(grep '^release_tag=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
+  build-cli:
+    needs: resolve
+    uses: ./.github/workflows/reusable-build-cli.yml
+    with:
+      checkout_ref: ${{ needs.resolve.outputs.checkout_ref }}
+
+  prepare-cli-bundle:
+    needs: [resolve, build-cli]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: framework
+    steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ steps.resolve.outputs.checkout_ref }}
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Stage CLI bundles and update manifests
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve.outputs.version }}"
+          python3 scripts/update-cli-manifest.py \
+            --version "$VERSION" \
+            --artifacts ../artifacts \
+            --out platform/manifest.json \
+            --cli-out tools/gamedev-cli/manifest.json
+          mkdir -p "release-artifacts/tools/v${VERSION}"
+          shopt -s nullglob
+          bundles=(../artifacts/*.zip ../artifacts/*.tar.gz)
+          if [ "${#bundles[@]}" -eq 0 ]; then
+            echo "::error::No CLI bundles found in artifacts"
+            exit 1
+          fi
+          cp "${bundles[@]}" "release-artifacts/tools/v${VERSION}/"
+          cp tools/gamedev-cli/manifest.json tools/gamedev-cli/install.ps1 tools/gamedev-cli/install.sh \
+            release-artifacts/tools/
+          python3 -c "
+          import json, sys
+          m = json.load(open('tools/gamedev-cli/manifest.json'))
+          bad = [k for k, v in m.get('assets', {}).items() if v.get('sha256', '').startswith('000000')]
+          if bad:
+              print(f'::error::Placeholder checksums remain for: {bad}', file=sys.stderr)
+              sys.exit(1)
+          print('CLI manifest checksums verified')
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-bundle-for-image
+          path: |
+            framework/platform/manifest.json
+            framework/release-artifacts/tools/
+
+  build-image:
+    needs: [resolve, prepare-cli-bundle]
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ needs.resolve.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
+
+      - name: Merge CLI bundle into build context
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-bundle-for-image
+          path: .
+
+      - name: Verify CLI bundle in build context
+        working-directory: framework
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.resolve.outputs.version }}"
+          ls -la "release-artifacts/tools/v${VERSION}/"
+          test -f release-artifacts/tools/manifest.json
+          test -f platform/manifest.json
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -103,9 +187,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.resolve.outputs.release_tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.resolve.outputs.release_tag }}
-            type=raw,value=latest,enable=${{ steps.resolve.outputs.release_tag != '' }}
+            type=semver,pattern={{version}},value=${{ needs.resolve.outputs.release_tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.resolve.outputs.release_tag }}
+            type=raw,value=latest,enable=${{ needs.resolve.outputs.release_tag != '' }}
 
       - name: Build and push (linux/arm64)
         uses: docker/build-push-action@v6

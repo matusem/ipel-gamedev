@@ -33,6 +33,10 @@ Thumbs.db
 *.log
 *.tmp
 
+# --- Release CI staging (CLI bundles baked into production image) ---
+release-artifacts/tools/*
+!release-artifacts/tools/.gitkeep
+
 # --- Secrets ---
 .env
 .env.*

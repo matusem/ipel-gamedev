@@ -94,6 +94,8 @@ COPY platform/ /app/platform/
 COPY tools/gamedev-cli/manifest.json /app/tools/gamedev-cli/manifest.json
 COPY tools/gamedev-cli/install.ps1 /app/tools/gamedev-cli/install.ps1
 COPY tools/gamedev-cli/install.sh /app/tools/gamedev-cli/install.sh
+# Populated by release CI with versioned zip/tar.gz bundles (see release-deploy workflow).
+COPY release-artifacts/tools/ /app/tools/gamedev-cli/
 RUN chmod +x /app/tools/gamedev-cli/install.sh
 
 ENV HOST=0.0.0.0
