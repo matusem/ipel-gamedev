@@ -217,7 +217,7 @@ jobs:
 
       - name: Prepare cargo cache directories
         run: |
-          mkdir -p framework/.docker-cargo-cache/{registry,git,target,lobby-target}
+          mkdir -p framework/.docker-cargo-cache/{registry,git,target,lobby-target,install-target}
 
       - name: Restore cargo Docker cache
         uses: actions/cache@v4

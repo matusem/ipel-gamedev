@@ -260,21 +260,21 @@ docker compose up -d
 ## Local smoke test
 
 ```bash
-mkdir -p .docker-cargo-cache/{registry,git,target,lobby-target}
+mkdir -p .docker-cargo-cache/{registry,git,target,lobby-target,install-target}
 docker buildx build \
   --build-context cargo-cache=.docker-cargo-cache \
   -t upjs-gdd:local .
 docker run --rm -p 8080:8080 -v upjs-gdd-data:/app/data -v upjs-gdd-games:/app/games upjs-gdd:local
 ```
 
-CI persists `.docker-cargo-cache/` across **Release and Deploy** runs via `actions/cache` (registry, git, and `target/`). The Dockerfile uses **cargo-chef** so server dependencies compile in a separate layer (reused when only `Cargo.lock` changes).
+CI persists `.docker-cargo-cache/` across **Release and Deploy** runs via `actions/cache` (registry, git, `target/`, and cargo-install target artifacts). The Dockerfile uses **cargo-chef** so server dependencies compile in a separate layer (reused when only `Cargo.lock` changes).
 
 ## Docker build caching (CI)
 
 | Layer | What is cached |
 |--------|----------------|
 | **cargo-chef cook** | Server dependency compile (Docker/GHA layer cache when `Cargo.lock` unchanged) |
-| **`.docker-cargo-cache/`** | Cargo registry, git checkouts, `target/`, lobby `target/` (GHA `actions/cache` across runs) |
+| **`.docker-cargo-cache/`** | Cargo registry, git checkouts, `target/`, lobby `target/`, cargo-install `install-target/` (GHA `actions/cache` across runs) |
 | **GHA buildx cache** | Full image layers (`cache-to: type=gha,mode=max`) |
 
 After the first arm64 release build, later releases that only change app code should show a fast `cargo build -p server` (no mass `Compiling serde_…` unless `Cargo.lock` changed).

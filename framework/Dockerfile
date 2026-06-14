@@ -11,11 +11,12 @@ RUN if [ "$BUILDER_IMAGE" = "rust:bookworm" ]; then \
 
 RUN --mount=type=bind,from=cargo-cache,source=registry,target=/usr/local/cargo/registry,rw \
     --mount=type=bind,from=cargo-cache,source=git,target=/usr/local/cargo/git,rw \
+    --mount=type=bind,from=cargo-cache,source=install-target,target=/usr/local/cargo/install-target,rw \
     if [ "$BUILDER_IMAGE" = "rust:bookworm" ]; then \
       rustup target add wasm32-unknown-unknown wasm32-wasip1 \
-      && cargo install dioxus-cli cargo-component cargo-chef --locked; \
+      && CARGO_TARGET_DIR=/usr/local/cargo/install-target cargo install dioxus-cli cargo-component cargo-chef --locked; \
     else \
-      if ! command -v cargo-chef >/dev/null 2>&1; then cargo install cargo-chef --locked; fi; \
+      if ! command -v cargo-chef >/dev/null 2>&1; then CARGO_TARGET_DIR=/usr/local/cargo/install-target cargo install cargo-chef --locked; fi; \
     fi
 
 WORKDIR /app
