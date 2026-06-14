@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Platform release tag to build and deploy (e.g. v0.0.4)"
-        default: "v0.0.4"
+        description: "Platform release tag on GitHub (must include framework/scripts/package-cli-image-bundle.py — tags before v0.0.5 do not)"
+        default: "v0.0.5"
         type: string
       deploy:
         description: "Call deploy webhook after image push"
@@ -91,6 +91,23 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Verify release tooling at ref
+        run: |
+          set -euo pipefail
+          missing=()
+          for f in \
+            scripts/package-cli-image-bundle.py \
+            scripts/verify-cli-image-bundle.py \
+            scripts/update-cli-manifest.py
+          do
+            [ -f "$f" ] || missing+=("$f")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Release tooling missing at ${{ needs.resolve.outputs.checkout_ref }}: ${missing[*]}"
+            echo "::error::Tag a newer commit on main (e.g. v0.0.5). workflow_dispatch runs this workflow from main but checks out the tag you pass — old tags lack the unified release scripts."
+            exit 1
+          fi
 
       - name: Package CLI image bundle
         run: |
