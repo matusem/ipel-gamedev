@@ -11,7 +11,6 @@ on:
 env:
   REGISTRY: ghcr.io
   BUILDER_IMAGE_NAME: ${{ github.repository }}-builder
-  RUNNER_LABELS: '["self-hosted","Linux","ARM64","arianagrande"]'
 
 permissions:
   contents: read
@@ -19,7 +18,7 @@ permissions:
 
 jobs:
   build-and-push:
-    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
+    runs-on: [self-hosted, Linux, ARM64, arianagrande]
     steps:
       - uses: actions/checkout@v4
 

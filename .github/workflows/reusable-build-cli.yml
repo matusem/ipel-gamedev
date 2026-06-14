@@ -10,7 +10,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  SELF_HOSTED_RUNNER: '["self-hosted","Linux","ARM64","arianagrande"]'
 
 defaults:
   run:

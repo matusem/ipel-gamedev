@@ -15,16 +15,13 @@ on:
 permissions:
   contents: write
 
-env:
-  RUNNER_LABELS: '["self-hosted","Linux","ARM64","arianagrande"]'
-
 defaults:
   run:
     working-directory: framework
 
 jobs:
   resolve:
-    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
+    runs-on: [self-hosted, Linux, ARM64, arianagrande]
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
@@ -61,7 +58,7 @@ jobs:
 
   release:
     needs: [resolve, build-cli]
-    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
+    runs-on: [self-hosted, Linux, ARM64, arianagrande]
     steps:
       - uses: actions/checkout@v4
         with:

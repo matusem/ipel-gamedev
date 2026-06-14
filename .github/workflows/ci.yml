@@ -7,7 +7,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUNNER_LABELS: '["self-hosted","Linux","ARM64","arianagrande"]'
 
 defaults:
   run:
@@ -15,7 +14,7 @@ defaults:
 
 jobs:
   rust:
-    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
+    runs-on: [self-hosted, Linux, ARM64, arianagrande]
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +83,7 @@ jobs:
         continue-on-error: true
 
   lobby:
-    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
+    runs-on: [self-hosted, Linux, ARM64, arianagrande]
     steps:
       - uses: actions/checkout@v4
 
@@ -120,7 +119,7 @@ jobs:
         run: dx build --platform web
 
   java-component:
-    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
+    runs-on: [self-hosted, Linux, ARM64, arianagrande]
     steps:
       - uses: actions/checkout@v4
 
@@ -167,7 +166,7 @@ jobs:
           wasm-tools component wit build/out/logic.wasm
 
   game-sdk:
-    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
+    runs-on: [self-hosted, Linux, ARM64, arianagrande]
     steps:
       - uses: actions/checkout@v4
 
