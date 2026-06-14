@@ -21,7 +21,7 @@ defaults:
 
 jobs:
   resolve:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
@@ -63,7 +63,7 @@ jobs:
 
   release:
     needs: [resolve, build-cli]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
