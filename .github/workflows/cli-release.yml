@@ -38,12 +38,17 @@ jobs:
           else
             TAG="${{ github.ref_name }}"
           fi
+          TAG="${TAG#refs/tags/}"
           if [[ "$TAG" != gamedev-cli-v* ]]; then
             echo "::error::CLI Release only accepts gamedev-cli-v* tags"
             exit 1
           fi
-          if ! gh api "repos/${{ github.repository }}/git/refs/tags/${TAG}" >/dev/null 2>&1; then
-            echo "::error::Tag ${TAG} does not exist on GitHub"
+          HTTP_CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}")"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Tag ${TAG} not found on GitHub (HTTP ${HTTP_CODE})"
             exit 1
           fi
           echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"

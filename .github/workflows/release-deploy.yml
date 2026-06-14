@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Tag to build and deploy (e.g. v0.1.5)"
-        default: "main"
+        description: "Platform release tag to build and deploy (e.g. v0.0.4)"
+        default: "v0.0.4"
         type: string
       deploy:
         description: "Call deploy webhook after image push"
@@ -41,13 +41,22 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             REF="${{ inputs.ref }}"
-            if gh api "repos/${{ github.repository }}/git/refs/tags/${REF}" >/dev/null 2>&1; then
-              echo "checkout_ref=refs/tags/${REF}" >> "$GITHUB_OUTPUT"
-              echo "release_tag=${REF}" >> "$GITHUB_OUTPUT"
-            else
-              echo "::error::workflow_dispatch ref must be an existing tag (e.g. v0.1.5)"
+            REF="${REF#refs/tags/}"
+            REF="${REF#refs/heads/}"
+            if [[ "$REF" != v* ]] || [[ "$REF" == gamedev-cli-v* ]]; then
+              echo "::error::workflow_dispatch ref must be a platform tag like v0.0.4 (got '${REF}')"
               exit 1
             fi
+            HTTP_CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/${REF}")"
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::error::Tag ${REF} not found on GitHub (HTTP ${HTTP_CODE}). Push the tag, then re-run with ref=${REF}."
+              exit 1
+            fi
+            echo "checkout_ref=refs/tags/${REF}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${REF}" >> "$GITHUB_OUTPUT"
           else
             TAG="${{ github.ref_name }}"
             if [[ "$TAG" == gamedev-cli-v* ]]; then
