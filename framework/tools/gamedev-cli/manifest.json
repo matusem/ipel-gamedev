@@ -1,28 +1,28 @@
 {
-  "version": "0.1.0",
+  "version": "0.0.6",
   "min_supported": "0.1.0",
   "released_at": "2026-06-13",
   "assets": {
     "windows-x86_64": {
-      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-windows-x86_64.zip",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "url": "/tools/gamedev-cli/v0.0.6/gamedev-cli-windows-x86_64.zip",
+      "sha256": "837ccb607e312b170fac7383d7ccfd61fa5072793f19a25e75fbacb56539b86b"
     },
     "linux-x86_64": {
-      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-linux-x86_64.tar.gz",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "url": "/tools/gamedev-cli/v0.0.6/gamedev-cli-linux-x86_64.tar.gz",
+      "sha256": "837ccb607e312b170fac7383d7ccfd61fa5072793f19a25e75fbacb56539b86b"
     },
     "linux-aarch64": {
-      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-linux-aarch64.tar.gz",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "url": "/tools/gamedev-cli/v0.0.6/gamedev-cli-linux-aarch64.tar.gz",
+      "sha256": "837ccb607e312b170fac7383d7ccfd61fa5072793f19a25e75fbacb56539b86b"
     },
     "macos-x86_64": {
-      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-macos-x86_64.tar.gz",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "url": "/tools/gamedev-cli/v0.0.6/gamedev-cli-macos-x86_64.tar.gz",
+      "sha256": "837ccb607e312b170fac7383d7ccfd61fa5072793f19a25e75fbacb56539b86b"
     },
     "macos-aarch64": {
-      "url": "/tools/gamedev-cli/v0.1.0/gamedev-cli-macos-aarch64.tar.gz",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "url": "/tools/gamedev-cli/v0.0.6/gamedev-cli-macos-aarch64.tar.gz",
+      "sha256": "837ccb607e312b170fac7383d7ccfd61fa5072793f19a25e75fbacb56539b86b"
     }
   },
-  "notes": "Platform-hosted CLI release. See /platform/manifest.json for full compatibility matrix."
+  "notes": "Download matching CLI for this platform release. Run gamedev-cli doctor --platform <url> to verify."
 }

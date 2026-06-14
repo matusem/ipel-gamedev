@@ -29,7 +29,7 @@ EXPECTED_ASSETS = tuple(ASSET_NAMES.keys())
 
 
 def copy_install_scripts(src_tools: Path, dest_tools: Path) -> None:
-    for name in ("manifest.json", "install.ps1", "install.sh"):
+    for name in ("install.ps1", "install.sh"):
         shutil.copy2(src_tools / name, dest_tools / name)
 
 
@@ -42,14 +42,11 @@ def stage_bundle(
 ) -> None:
     platform_manifest = framework_root / "platform" / "manifest.json"
     tools_src = framework_root / "tools" / "gamedev-cli"
-    staging_root = framework_root / ".release-staging"
-    if staging_root.exists():
-        shutil.rmtree(staging_root)
-
-    platform_out = staging_root / "platform"
-    tools_out = staging_root / "release-artifacts" / "tools"
+    tools_out = framework_root / "release-artifacts" / "tools"
     version_dir = tools_out / f"v{version}"
-    platform_out.mkdir(parents=True)
+
+    if tools_out.exists():
+        shutil.rmtree(tools_out)
     tools_out.mkdir(parents=True)
     version_dir.mkdir(parents=True)
 
@@ -58,7 +55,7 @@ def stage_bundle(
         missing = sorted(set(EXPECTED_ASSETS) - set(assets))
         raise SystemExit(f"missing CLI artifacts for: {missing}")
 
-    # Update manifests in the real tree (used by follow-up steps) and staging copy.
+    # Update manifests in the real tree (used by verify + Docker build context).
     platform = json.loads(platform_manifest.read_text(encoding="utf-8"))
     platform["framework_version"] = platform.get("framework_version", version)
     platform["cli"]["version"] = version
@@ -72,11 +69,9 @@ def stage_bundle(
         "assets": assets,
         "notes": platform["cli"].get("notes"),
     }
-    (tools_src / "manifest.json").write_text(
-        json.dumps(cli_manifest, indent=2) + "\n", encoding="utf-8"
-    )
-
-    shutil.copy2(platform_manifest, platform_out / "manifest.json")
+    cli_json = json.dumps(cli_manifest, indent=2) + "\n"
+    (tools_src / "manifest.json").write_text(cli_json, encoding="utf-8")
+    (tools_out / "manifest.json").write_text(cli_json, encoding="utf-8")
     copy_install_scripts(tools_src, tools_out)
 
     for key, meta in assets.items():
@@ -92,13 +87,8 @@ def stage_bundle(
 
     # Tar paths relative to framework root so extraction is deterministic.
     with tarfile.open(out_tar, "w:gz") as tar:
-        tar.add(staging_root / "platform", arcname="platform")
-        tar.add(
-            staging_root / "release-artifacts" / "tools",
-            arcname="release-artifacts/tools",
-        )
-
-    shutil.rmtree(staging_root)
+        tar.add(platform_manifest, arcname="platform/manifest.json")
+        tar.add(tools_out, arcname="release-artifacts/tools")
     print(f"Wrote {out_tar} ({sha256_file(out_tar)})")
 
 
