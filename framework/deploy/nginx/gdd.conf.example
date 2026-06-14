@@ -23,7 +23,7 @@ server {
 
     client_max_body_size 64m;
 
-    # Deploy webhook (CI → POST /internal/deploy); protect at the edge if desired
+    # Deploy webhook (CI → POST /internal/deploy); Cloudflare should skip WAF when X-Deploy-Token matches
     location /internal/ {
         proxy_pass http://upjs_gdd;
         proxy_http_version 1.1;

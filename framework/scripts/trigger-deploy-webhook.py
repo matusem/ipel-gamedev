@@ -31,27 +31,39 @@ def main() -> None:
         "--private-key",
         default=os.environ.get("DEPLOY_WEBHOOK_PRIVATE_KEY"),
     )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("DEPLOY_WEBHOOK_TOKEN"),
+        help="Shared bypass token (DEPLOY_WEBHOOK_TOKEN); sent as X-Deploy-Token",
+    )
     parser.add_argument("--image", required=True)
     parser.add_argument("--tag", required=True)
     args = parser.parse_args()
 
     if not args.url or not args.private_key:
-        print("Set --url and --private-key (or DEPLOY_WEBHOOK_URL / DEPLOY_WEBHOOK_PRIVATE_KEY)", file=sys.stderr)
+        print(
+            "Set --url and --private-key (or DEPLOY_WEBHOOK_URL / DEPLOY_WEBHOOK_PRIVATE_KEY)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     body = json.dumps({"image": args.image, "tag": args.tag}, separators=(",", ":")).encode()
     timestamp = str(int(time.time()))
     signature = sign(args.private_key, timestamp, body)
 
+    headers = {
+        "Content-Type": "application/json",
+        "X-Deploy-Timestamp": timestamp,
+        "X-Deploy-Signature": signature,
+    }
+    if args.token:
+        headers["X-Deploy-Token"] = args.token.strip()
+
     req = urllib.request.Request(
         args.url.rstrip("/") + "/internal/deploy",
         data=body,
         method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "X-Deploy-Timestamp": timestamp,
-            "X-Deploy-Signature": signature,
-        },
+        headers=headers,
     )
 
     try:

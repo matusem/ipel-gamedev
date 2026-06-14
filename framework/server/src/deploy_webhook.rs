@@ -2,6 +2,9 @@
 //!
 //! Requires `DEPLOY_WEBHOOK_PUBLIC_KEY` (base64 Ed25519 verify key, 32 bytes) and a mounted
 //! Docker socket + compose directory (`DEPLOY_COMPOSE_DIR`, default `/deploy`).
+//!
+//! When `DEPLOY_WEBHOOK_TOKEN` is set, requests must include a matching `X-Deploy-Token` header
+//! (used with a Cloudflare WAF skip rule so CI can reach this endpoint).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -56,7 +59,47 @@ fn signed_message(timestamp: &str, body: &[u8]) -> Vec<u8> {
     msg
 }
 
+fn deploy_token() -> Option<String> {
+    std::env::var("DEPLOY_WEBHOOK_TOKEN")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+fn verify_deploy_token(req: &HttpRequest) -> Result<(), HttpResponse> {
+    let Some(expected) = deploy_token() else {
+        return Ok(());
+    };
+
+    let provided = req
+        .headers()
+        .get("x-deploy-token")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| HttpResponse::Unauthorized().body("missing X-Deploy-Token"))?;
+
+    if !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+        return Err(HttpResponse::Unauthorized().body("invalid X-Deploy-Token"));
+    }
+
+    Ok(())
+}
+
 fn verify_request(req: &HttpRequest, body: &[u8]) -> Result<(), HttpResponse> {
+    if let Err(resp) = verify_deploy_token(req) {
+        return Err(resp);
+    }
+
     let Some(key) = public_key() else {
         return Err(HttpResponse::ServiceUnavailable().body("deploy webhook not configured"));
     };
@@ -248,5 +291,29 @@ mod tests {
     #[test]
     fn rejects_bad_tag() {
         assert!(validate_image_ref("ghcr.io/org/app", "1.0/bad").is_err());
+    }
+
+    #[test]
+    fn verify_deploy_token_when_configured() {
+        unsafe {
+            std::env::set_var("DEPLOY_WEBHOOK_TOKEN", "ci-bypass-secret");
+        }
+
+        let ok = actix_web::test::TestRequest::post()
+            .insert_header(("X-Deploy-Token", "ci-bypass-secret"))
+            .to_http_request();
+        assert!(verify_deploy_token(&ok).is_ok());
+
+        let missing = actix_web::test::TestRequest::post().to_http_request();
+        assert!(verify_deploy_token(&missing).is_err());
+
+        let bad = actix_web::test::TestRequest::post()
+            .insert_header(("X-Deploy-Token", "wrong"))
+            .to_http_request();
+        assert!(verify_deploy_token(&bad).is_err());
+
+        unsafe {
+            std::env::remove_var("DEPLOY_WEBHOOK_TOKEN");
+        }
     }
 }

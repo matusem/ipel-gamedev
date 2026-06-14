@@ -22,7 +22,12 @@ def main() -> None:
     print("Add to GitHub Actions secret DEPLOY_WEBHOOK_PRIVATE_KEY:")
     print(priv)
     print()
-    print("Never commit the private key.")
+    print("Generate a deploy bypass token (openssl rand -hex 32) and set the same value in:")
+    print("  - Pi .env: DEPLOY_WEBHOOK_TOKEN=...")
+    print("  - GitHub secret: DEPLOY_WEBHOOK_TOKEN")
+    print("  - Cloudflare WAF skip rule for POST /internal/deploy (see deploy/README.md)")
+    print()
+    print("Never commit the private key or deploy token.")
 
 
 if __name__ == "__main__":

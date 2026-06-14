@@ -131,6 +131,7 @@ python3 framework/scripts/generate-deploy-keys.py
 
 - **Pi `.env`:** `DEPLOY_WEBHOOK_PUBLIC_KEY=<public>`
 - **GitHub secret:** `DEPLOY_WEBHOOK_PRIVATE_KEY=<private>`
+- **Bypass token** (Cloudflare + app): generate with `openssl rand -hex 32`, set on Pi, GitHub, and Cloudflare (below)
 
 ### 2. Pi compose mounts
 
@@ -145,6 +146,7 @@ Add to Pi `.env`:
 
 ```env
 DEPLOY_WEBHOOK_PUBLIC_KEY=<base64 public key>
+DEPLOY_WEBHOOK_TOKEN=<random hex from openssl rand -hex 32>
 DEPLOY_COMPOSE_DIR=/deploy
 ```
 
@@ -154,14 +156,35 @@ DEPLOY_COMPOSE_DIR=/deploy
 
 | Secret | Purpose |
 |--------|---------|
-| `DEPLOY_WEBHOOK_URL` | Public base URL, e.g. `https://gdd.ics.upjs.sk` |
+| `DEPLOY_WEBHOOK_URL` | Public base URL, e.g. `https://gdd.ics.upjs.sk` (must include `https://`) |
 | `DEPLOY_WEBHOOK_PRIVATE_KEY` | Base64 Ed25519 signing key from keygen script |
+| `DEPLOY_WEBHOOK_TOKEN` | Shared secret sent as `X-Deploy-Token` (Cloudflare bypass + app check) |
 
-### 4. Manual trigger (debug)
+### 4. Cloudflare (when the site is behind CF)
+
+GitHub Actions runners are often blocked by Bot Fight Mode / WAF (HTTP 403, error code 1010). Use a **WAF custom rule** so only signed CI requests with the shared token skip edge security:
+
+1. Generate a token: `openssl rand -hex 32`
+2. Set the **same value** in Pi `.env` (`DEPLOY_WEBHOOK_TOKEN`), GitHub secret `DEPLOY_WEBHOOK_TOKEN`, and the rule below
+3. **Security → WAF → Custom rules → Create rule**
+   - **Name:** Allow CI deploy webhook
+   - **Expression** (replace `YOUR_TOKEN`):
+
+     ```
+     (http.request.uri.path eq "/internal/deploy" and http.request.method eq "POST" and any(http.request.headers["x-deploy-token"][*] eq "YOUR_TOKEN"))
+     ```
+
+   - **Action:** **Skip** → enable **All remaining custom rules**, **Super Bot Fight Mode** / **Bot Fight Mode**, and **Managed rules** (as needed)
+4. Save and deploy the rule
+
+Requests without the header (or with a wrong token) stay blocked at Cloudflare. Requests that pass still require Ed25519 signature verification in the app.
+
+### 5. Manual trigger (debug)
 
 ```bash
 export DEPLOY_WEBHOOK_URL=https://gdd.ics.upjs.sk
 export DEPLOY_WEBHOOK_PRIVATE_KEY=<private>
+export DEPLOY_WEBHOOK_TOKEN=<token>
 python3 framework/scripts/trigger-deploy-webhook.py \
   --image ghcr.io/matusem/ipel-gamedev \
   --tag 0.1.1
@@ -170,7 +193,7 @@ python3 framework/scripts/trigger-deploy-webhook.py \
 Request format:
 
 - `POST /internal/deploy`
-- Headers: `X-Deploy-Timestamp` (unix seconds), `X-Deploy-Signature` (base64 Ed25519 of `timestamp + "\n" + body`)
+- Headers: `X-Deploy-Timestamp` (unix seconds), `X-Deploy-Signature` (base64 Ed25519 of `timestamp + "\n" + body`), `X-Deploy-Token` (when `DEPLOY_WEBHOOK_TOKEN` is configured)
 - Body: `{"image":"ghcr.io/matusem/ipel-gamedev","tag":"0.1.1"}`
 
 Returns `202 Accepted` immediately; compose runs in the background (~30–90s until `/health` recovers).
