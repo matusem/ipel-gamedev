@@ -24,5 +24,5 @@
       "sha256": "837ccb607e312b170fac7383d7ccfd61fa5072793f19a25e75fbacb56539b86b"
     }
   },
-  "notes": "Download matching CLI for this platform release. Run gamedev-cli doctor --platform <url> to verify."
+  "notes": "Download matching CLI for this platform release. Run gamedev doctor --platform <url> to verify."
 }

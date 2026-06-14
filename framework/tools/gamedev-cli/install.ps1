@@ -1,5 +1,5 @@
 param(
-  [string]$Platform = "https://gdd.ics.upjs.sk",
+  [string]$Platform = "https://gamedev.jinxwashere.com",
   [string]$InstallDir = "$env:LOCALAPPDATA\gamedev-cli\bin"
 )
 
@@ -24,6 +24,10 @@ if ($hash -ne $asset.sha256.ToLower()) {
 Expand-Archive -Path $zipPath -DestinationPath $InstallDir -Force
 $exe = Join-Path $InstallDir "gamedev.exe"
 if (-not (Test-Path $exe)) { throw "gamedev.exe not found after extract" }
+
+# Shim so both `gamedev` and `gamedev-cli` work on Windows (matches Linux install.sh).
+$shim = Join-Path $InstallDir "gamedev-cli.cmd"
+Set-Content -Path $shim -Encoding ascii -Value "@echo off`r`n""%~dp0gamedev.exe"" %*"
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$InstallDir*") {

@@ -84,7 +84,7 @@ pub fn check_local_cli_against_manifest(m: &CliRelease) -> Result<()> {
     }
     if local < latest {
         eprintln!(
-            "warning: CLI {local} is older than platform release {latest}; run `gamedev-cli update`"
+            "warning: CLI {local} is older than platform release {latest}; run `gamedev update`"
         );
     }
     Ok(())

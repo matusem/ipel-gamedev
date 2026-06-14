@@ -2,7 +2,7 @@
 # Install gamedev-cli from the platform manifest.
 set -euo pipefail
 
-PLATFORM="${1:-https://gdd.ics.upjs.sk}"
+PLATFORM="${1:-https://gamedev.jinxwashere.com}"
 INSTALL_DIR="${GAMEDEV_CLI_HOME:-$HOME/.local/bin}"
 
 case "$(uname -s)-$(uname -m)" in

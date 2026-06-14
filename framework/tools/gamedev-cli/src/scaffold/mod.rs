@@ -145,9 +145,9 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
 fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout) {
     println!();
     println!("Next steps:");
-    println!("  gamedev-cli doctor");
-    println!("  gamedev-cli test");
-    println!("  gamedev-cli build");
+    println!("  gamedev doctor");
+    println!("  gamedev test");
+    println!("  gamedev build");
     match (cfg.backend, cfg.frontend, layout) {
         (BackendKind::Rust, FrontendKind::Bevy, ProjectLayout::FlatRustBevy) => {
             println!();
@@ -155,7 +155,7 @@ fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout
             println!("  cd {}", root.display());
             println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
             println!("  rustup target add wasm32-unknown-unknown");
-            println!("  gamedev-cli build   # logic.wasm + Bevy wasm-bindgen → client/");
+            println!("  gamedev build   # logic.wasm + Bevy wasm-bindgen → client/");
         }
         (_, FrontendKind::Js | FrontendKind::Ts, _) => {
             println!("  cd frontend/web && npm install && npm run dev   # local UI");
@@ -166,7 +166,7 @@ fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout
             println!("  cd {}", root.display());
             println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
             println!("  rustup target add wasm32-unknown-unknown");
-            println!("  gamedev-cli build   # logic.wasm + Bevy wasm-bindgen → client/");
+            println!("  gamedev build   # logic.wasm + Bevy wasm-bindgen → client/");
         }
         (BackendKind::Rust, FrontendKind::Dioxus, ProjectLayout::NestedRust) => {
             println!();
@@ -174,12 +174,12 @@ fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout
             println!("  cd {}", root.display());
             println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
             println!("  rustup target add wasm32-unknown-unknown");
-            println!("  gamedev-cli build   # logic.wasm + Dioxus wasm-bindgen → client/");
+            println!("  gamedev build   # logic.wasm + Dioxus wasm-bindgen → client/");
         }
         _ => {}
     }
-    println!("  gamedev-cli login --user-id <uuid>");
-    println!("  gamedev-cli deploy --draft-only");
+    println!("  gamedev login --user-id <uuid>");
+    println!("  gamedev deploy --draft-only");
 }
 
 fn scaffold_rust_bevy_flat(root: &Path, cfg: &ProjectConfig) -> Result<()> {

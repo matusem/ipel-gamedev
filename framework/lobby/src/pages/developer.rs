@@ -12,12 +12,81 @@ use gloo_events::{EventListener, EventListenerOptions};
 use serde::Deserialize;
 use std::rc::Rc;
 
-const CLI_COMMANDS: &[(&str, &str)] = &[
-    ("Build package", "gamedev build"),
-    ("Validate package", "gamedev validate"),
-    ("Deploy to server", "gamedev deploy --server http://127.0.0.1:8081/graphql"),
-    ("Init new game", "gamedev init"),
-];
+fn site_origin() -> String {
+    web_sys::window()
+        .and_then(|w| w.location().origin().ok())
+        .filter(|o| !o.is_empty())
+        .unwrap_or_else(|| "http://localhost:8080".to_string())
+}
+
+fn install_windows_cmd(origin: &str) -> String {
+    format!("irm {origin}/tools/gamedev-cli/install.ps1 | iex")
+}
+
+fn install_unix_cmd(origin: &str) -> String {
+    format!("curl -fsSL {origin}/tools/gamedev-cli/install.sh | bash")
+}
+
+fn doctor_cmd(origin: &str) -> String {
+    format!("gamedev doctor --platform {origin}")
+}
+
+fn quick_start_commands(origin: &str) -> Vec<(&'static str, String, &'static str)> {
+    vec![
+        ("Build package", "gamedev build".to_string(), "Compile your game package"),
+        ("Validate package", "gamedev validate".to_string(), "Check package before upload"),
+        (
+            "Deploy to server",
+            format!("gamedev deploy --server {origin}/graphql"),
+            "Publish to this platform",
+        ),
+        ("Init new game", "gamedev init".to_string(), "Scaffold a new project"),
+    ]
+}
+
+fn spawn_copy_command(text: String, toast: ToastContext) {
+    spawn(async move {
+        let ok = if let Some(win) = web_sys::window() {
+            let clipboard = win.navigator().clipboard();
+            wasm_bindgen_futures::JsFuture::from(clipboard.write_text(&text))
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+        if ok {
+            push_toast(toast.show, "Copied command", ToastKind::Success);
+        } else {
+            push_toast(toast.show, "Could not copy to clipboard", ToastKind::Error);
+        }
+    });
+}
+
+#[component]
+fn CliCommandCard(label: String, hint: String, command: String) -> Element {
+    let toast = use_toast();
+    rsx! {
+        div { class: "command-card",
+            div { class: "command-card-header",
+                p { class: "text-label-caps font-label-caps text-outline uppercase", "{label}" }
+                p { class: "text-body-sm text-on-surface-variant", "{hint}" }
+            }
+            div { class: "command-card-body",
+                code { class: "command-line", "{command}" }
+                button {
+                    class: "btn-ghost shrink-0",
+                    title: "Copy command",
+                    onclick: {
+                        let command = command.clone();
+                        move |_| spawn_copy_command(command.clone(), toast)
+                    },
+                    Icon { name: "content_copy", filled: false }
+                    "Copy"
+                }
+            }
+        }
+    }
+}
 
 #[component]
 pub fn DeveloperUploadsPage() -> Element {
@@ -113,6 +182,8 @@ pub fn DeveloperUploadsPage() -> Element {
     let api_badge = platform_stats()
         .map(|s| if s.status == "ok" { "API: Operational" } else { "API: Degraded" })
         .unwrap_or("API: —");
+    let origin = site_origin();
+    let manifest_url = format!("{origin}/tools/gamedev-cli/manifest.json");
 
     rsx! {
         div { class: "page-stack",
@@ -331,56 +402,55 @@ pub fn DeveloperUploadsPage() -> Element {
                 }
 
                 section { class: "section-card",
-                    h2 { class: "card-title text-lg mb-4", "Download CLI" }
+                    div { class: "flex items-center gap-3 mb-4",
+                        Icon { name: "download", filled: false }
+                        div {
+                            h2 { class: "card-title text-lg", "Download CLI" }
+                            p { class: "text-body-sm text-on-surface-variant",
+                                "Install the platform-matching gamedev-cli for your OS."
+                            }
+                        }
+                    }
                     p { class: "text-body-sm text-on-surface-variant mb-4",
-                        "Install the platform-matching gamedev-cli. Manifest: /tools/gamedev-cli/manifest.json"
+                        "Manifest: "
+                        span { class: "font-mono-code text-on-surface break-all", "{manifest_url}" }
                     }
                     div { class: "space-y-3",
-                        div { class: "rounded-lg border border-outline-variant/30 bg-surface-container-low px-4 py-3",
-                            p { class: "text-label-caps font-label-caps text-outline uppercase", "Windows" }
-                            p { class: "font-mono-code text-body-sm text-on-surface mt-1 break-all",
-                                "irm /tools/gamedev-cli/install.ps1 | iex"
-                            }
+                        CliCommandCard {
+                            label: "Windows".to_string(),
+                            hint: "PowerShell — installs the CLI for this platform".to_string(),
+                            command: install_windows_cmd(&origin),
                         }
-                        div { class: "rounded-lg border border-outline-variant/30 bg-surface-container-low px-4 py-3",
-                            p { class: "text-label-caps font-label-caps text-outline uppercase", "macOS / Linux" }
-                            p { class: "font-mono-code text-body-sm text-on-surface mt-1 break-all",
-                                "curl -fsSL /tools/gamedev-cli/install.sh | bash"
-                            }
+                        CliCommandCard {
+                            label: "macOS / Linux".to_string(),
+                            hint: "Bash — installs the CLI for this platform".to_string(),
+                            command: install_unix_cmd(&origin),
                         }
-                        p { class: "text-body-sm text-outline",
-                            "After install: gamedev-cli doctor --platform <this-site-url>"
+                        CliCommandCard {
+                            label: "Verify install".to_string(),
+                            hint: "Run after install to confirm CLI matches this site".to_string(),
+                            command: doctor_cmd(&origin),
                         }
                     }
                 }
 
                 section { class: "section-card",
-                    h2 { class: "card-title text-lg mb-4", "CLI quick-start" }
+                    div { class: "flex items-center gap-3 mb-4",
+                        Icon { name: "terminal", filled: false }
+                        div {
+                            h2 { class: "card-title text-lg", "CLI quick-start" }
+                            p { class: "text-body-sm text-on-surface-variant",
+                                "Common commands once gamedev-cli is installed."
+                            }
+                        }
+                    }
                     div { class: "space-y-3",
-                        for (label, cmd) in CLI_COMMANDS {
-                            div { class: "flex items-center justify-between gap-3 rounded-lg border border-outline-variant/30 bg-surface-container-low px-4 py-3",
-                                div {
-                                    p { class: "text-label-caps font-label-caps text-outline uppercase", "{label}" }
-                                    p { class: "font-mono-code text-body-sm text-on-surface mt-1", "{cmd}" }
-                                }
-                                GhostButton {
-                                    label: "Copy".to_string(),
-                                    onclick: {
-                                        let cmd = cmd.to_string();
-                                        move |_| {
-                                            let cmd = cmd.clone();
-                                            spawn(async move {
-                                                if let Some(win) = web_sys::window() {
-                                                    let clipboard = win.navigator().clipboard();
-                                                    let _ = wasm_bindgen_futures::JsFuture::from(
-                                                        clipboard.write_text(&cmd),
-                                                    )
-                                                    .await;
-                                                }
-                                            });
-                                        }
-                                    },
-                                }
+                        for (label, cmd, hint) in quick_start_commands(&origin) {
+                            CliCommandCard {
+                                key: "{label}",
+                                label: label.to_string(),
+                                hint: hint.to_string(),
+                                command: cmd,
                             }
                         }
                     }

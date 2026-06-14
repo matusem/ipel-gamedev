@@ -156,7 +156,7 @@ DEPLOY_COMPOSE_DIR=/deploy
 
 | Secret | Purpose |
 |--------|---------|
-| `DEPLOY_WEBHOOK_URL` | Public base URL, e.g. `https://gdd.ics.upjs.sk` (must include `https://`) |
+| `DEPLOY_WEBHOOK_URL` | Public base URL, e.g. `https://gamedev.jinxwashere.com` (must include `https://`) |
 | `DEPLOY_WEBHOOK_PRIVATE_KEY` | Base64 Ed25519 signing key from keygen script |
 | `DEPLOY_WEBHOOK_TOKEN` | Shared secret sent as `X-Deploy-Token` (Cloudflare bypass + app check) |
 
@@ -182,7 +182,7 @@ Requests without the header (or with a wrong token) stay blocked at Cloudflare. 
 ### 5. Manual trigger (debug)
 
 ```bash
-export DEPLOY_WEBHOOK_URL=https://gdd.ics.upjs.sk
+export DEPLOY_WEBHOOK_URL=https://gamedev.jinxwashere.com
 export DEPLOY_WEBHOOK_PRIVATE_KEY=<private>
 export DEPLOY_WEBHOOK_TOKEN=<token>
 python3 framework/scripts/trigger-deploy-webhook.py \

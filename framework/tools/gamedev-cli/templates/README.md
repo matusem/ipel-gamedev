@@ -2,11 +2,11 @@
 
 Workflow (from project root):
 
-1. `gamedev-cli doctor` — verify layout, client pages, and toolchain
-2. `gamedev-cli test` — run logic / workspace tests
-3. `gamedev-cli build` — produce `dist/game.zip` for the framework
-4. `gamedev-cli login --user-id <uuid>`
-5. `gamedev-cli deploy --draft-only` (or `--auto-publish`)
+1. `gamedev doctor` — verify layout, client pages, and toolchain
+2. `gamedev test` — run logic / workspace tests
+3. `gamedev build` — produce `dist/game.zip` for the framework
+4. `gamedev login --user-id <uuid>`
+5. `gamedev deploy --draft-only` (or `--auto-publish`)
 
 ### Layout matrix
 

@@ -129,7 +129,7 @@ pub struct TestArgs {
 pub struct DoctorArgs {
     #[arg(long)]
     pub project_dir: Option<PathBuf>,
-    /// Platform base URL (e.g. https://gdd.ics.upjs.sk) — checks CLI/SDK versions against production
+    /// Platform base URL (e.g. https://gamedev.jinxwashere.com) — checks CLI/SDK versions against production
     #[arg(long)]
     pub platform: Option<String>,
 }
@@ -137,7 +137,7 @@ pub struct DoctorArgs {
 #[derive(Args)]
 pub struct UpdateArgs {
     /// GraphQL or platform base URL (default: production)
-    #[arg(long, default_value = "https://gdd.ics.upjs.sk")]
+    #[arg(long, default_value = "https://gamedev.jinxwashere.com")]
     pub platform: String,
     /// Exit with error if an update is available (CI-friendly)
     #[arg(long)]

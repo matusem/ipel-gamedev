@@ -804,6 +804,24 @@
       p-4 font-mono-code text-mono-code text-on-surface-variant overflow-x-auto;
   }
 
+  .command-card {
+    @apply rounded-xl border border-outline-variant/30 bg-surface-container-low overflow-hidden;
+  }
+
+  .command-card-header {
+    @apply flex flex-col gap-1 px-4 pt-3.5 pb-2;
+  }
+
+  .command-card-body {
+    @apply flex items-start sm:items-center justify-between gap-2
+      border-t border-outline-variant/20 bg-surface-container-lowest px-3 py-2.5;
+  }
+
+  .command-line {
+    @apply flex-1 min-w-0 font-mono-code text-mono-code text-on-surface
+      break-all overflow-x-auto select-all leading-relaxed;
+  }
+
   .material-symbols-outlined {
     font-family: "Material Symbols Outlined";
     font-weight: normal;
