@@ -21,7 +21,7 @@ defaults:
 
 jobs:
   resolve:
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
@@ -58,7 +58,7 @@ jobs:
 
   release:
     needs: [resolve, build-cli]
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
         with:

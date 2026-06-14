@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   resolve:
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
@@ -68,7 +68,7 @@ jobs:
 
   package-cli:
     needs: [resolve, build-cli]
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     defaults:
       run:
         working-directory: framework
@@ -112,7 +112,7 @@ jobs:
 
   github-release:
     needs: [resolve, package-cli]
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     steps:
       - name: Download raw CLI archives
         uses: actions/download-artifact@v4
@@ -129,7 +129,7 @@ jobs:
 
   build-image:
     needs: [resolve, package-cli]
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     outputs:
       release_tag: ${{ needs.resolve.outputs.release_tag }}
     steps:
@@ -156,7 +156,7 @@ jobs:
             --version "${{ needs.resolve.outputs.version }}"
 
       - name: Set up QEMU
-        if: runner.arch != 'ARM64'
+        if: runner.arch != 'ARM64' && runner.arch != 'ARM'
         uses: docker/setup-qemu-action@v3
 
       - name: Log in to GHCR
@@ -222,7 +222,7 @@ jobs:
   deploy:
     needs: build-image
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     env:
       RELEASE_TAG: ${{ needs.build-image.outputs.release_tag }}
     steps:

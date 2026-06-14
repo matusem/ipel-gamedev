@@ -118,7 +118,7 @@ No SSH from GitHub to the Pi is required. The webhook must be reachable over HTT
 
 ### Self-hosted runner (Raspberry Pi)
 
-CI and release jobs run on the self-hosted runner **`arianagrande`** (`self-hosted`, `Linux`, `ARM64`). That matches the Pi: native `linux/arm64` image builds without QEMU emulation.
+CI and release jobs use `runs-on: self-hosted` (your Pi runner `arianagrande`). With a single self-hosted runner, the `self-hosted` label is enough — no extra labels required.
 
 **Install on the Pi** (in addition to Docker):
 

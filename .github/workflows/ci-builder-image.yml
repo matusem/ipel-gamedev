@@ -18,12 +18,12 @@ permissions:
 
 jobs:
   build-and-push:
-    runs-on: [self-hosted, Linux, ARM64, arianagrande]
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up QEMU
-        if: runner.arch != 'ARM64'
+        if: runner.arch != 'ARM64' && runner.arch != 'ARM'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
