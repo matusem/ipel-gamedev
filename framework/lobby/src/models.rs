@@ -524,3 +524,58 @@ pub fn manifest_description_from_json(manifest_json: &str) -> String {
         .and_then(|v| v.get("description").and_then(|d| d.as_str()).map(str::to_string))
         .unwrap_or_default()
 }
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminPlatformOverview {
+    pub user_count: i32,
+    pub draft_count: i32,
+    pub active_lobbies: i32,
+    pub published_games: i32,
+    pub review_count: i32,
+    pub comment_count: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminUserRow {
+    pub id: String,
+    pub display_name: String,
+    pub created_at: i64,
+    pub roles: Vec<String>,
+    pub has_password: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminDraftRow {
+    pub id: String,
+    pub owner_user_id: String,
+    pub game_name: String,
+    pub display_name: String,
+    pub version: String,
+    pub status: String,
+    pub created_at: i64,
+    pub published_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminReviewRow {
+    pub id: String,
+    pub game_name: String,
+    pub display_name: String,
+    pub body: String,
+    pub helpful_votes: i32,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminCommentRow {
+    pub id: String,
+    pub game_name: String,
+    pub display_name: String,
+    pub body: String,
+    pub created_at: i64,
+}

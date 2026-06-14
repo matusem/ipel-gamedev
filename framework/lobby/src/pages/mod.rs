@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod developer;
 pub mod game_detail;
@@ -9,6 +10,7 @@ pub mod lobby_room;
 pub mod profile;
 pub mod settings;
 
+pub use admin::AdminPage;
 pub use auth::AuthGate;
 pub use developer::DeveloperUploadsPage;
 pub use game_detail::GameDetailPage;

@@ -18,6 +18,7 @@ pub enum NavTab {
     Games,
     Lobbies,
     Developer,
+    Admin,
     Profile,
 }
 
@@ -30,6 +31,7 @@ impl NavTab {
             | LobbyRoute::Lobby { .. }
             | LobbyRoute::GameResult { .. } => NavTab::Lobbies,
             LobbyRoute::DeveloperUploads {} => NavTab::Developer,
+            LobbyRoute::Admin {} => NavTab::Admin,
             LobbyRoute::Profile {} | LobbyRoute::Settings {} => NavTab::Profile,
         }
     }
@@ -49,6 +51,7 @@ pub fn AppShell(children: Element) -> Element {
     let mut ping_ms = use_signal(|| 18u32);
     let mut notifications = use_signal(Vec::<NotificationGql>::new);
     let mut unread_count = use_signal(|| 0i32);
+    let mut is_superadmin = use_signal(|| false);
 
     let reload_notifications = move || {
         spawn(async move {
@@ -94,6 +97,12 @@ pub fn AppShell(children: Element) -> Element {
             if stored_user_id().is_some() {
                 if let Ok(u) = graphql_post::<U>("query { unreadNotificationCount }").await {
                     unread_count.set(u.unread_notification_count);
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct Sa { is_superadmin: bool }
+                if let Ok(sa) = graphql_post::<Sa>("query { isSuperadmin }").await {
+                    is_superadmin.set(sa.is_superadmin);
                 }
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
@@ -257,6 +266,9 @@ pub fn AppShell(children: Element) -> Element {
                     SidebarLink { label: "Games", icon: "sports_esports", active: active == NavTab::Games, onclick: move |_| { nav.push(LobbyRoute::GamesList {}); } }
                     SidebarLink { label: "Lobbies", icon: "groups", active: active == NavTab::Lobbies, onclick: move |_| { nav.push(LobbyRoute::LobbiesBrowser {}); } }
                     SidebarLink { label: "Developer Hub", icon: "terminal", active: active == NavTab::Developer, onclick: move |_| { nav.push(LobbyRoute::DeveloperUploads {}); } }
+                    if is_superadmin() {
+                        SidebarLink { label: "Admin", icon: "admin_panel_settings", active: active == NavTab::Admin, onclick: move |_| { nav.push(LobbyRoute::Admin {}); } }
+                    }
                     SidebarLink { label: "Profile", icon: "account_circle", active: active == NavTab::Profile, onclick: move |_| { nav.push(LobbyRoute::Profile {}); } }
                 }
                 div { class: "px-4 pb-6 mt-auto space-y-3",
@@ -313,6 +325,9 @@ pub fn AppShell(children: Element) -> Element {
                 BottomNavItem { label: "Discover", icon: "explore", active: active == NavTab::Discover, onclick: move |_| { nav.push(LobbyRoute::Home {}); } }
                 BottomNavItem { label: "Lobbies", icon: "groups", active: active == NavTab::Lobbies, onclick: move |_| { nav.push(LobbyRoute::LobbiesBrowser {}); } }
                 BottomNavItem { label: "Developer", icon: "terminal", active: active == NavTab::Developer, onclick: move |_| { nav.push(LobbyRoute::DeveloperUploads {}); } }
+                if is_superadmin() {
+                    BottomNavItem { label: "Admin", icon: "admin_panel_settings", active: active == NavTab::Admin, onclick: move |_| { nav.push(LobbyRoute::Admin {}); } }
+                }
                 BottomNavItem { label: "Profile", icon: "account_circle", active: active == NavTab::Profile, onclick: move |_| { nav.push(LobbyRoute::Profile {}); } }
             }
 

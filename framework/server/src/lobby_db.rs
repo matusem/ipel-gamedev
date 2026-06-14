@@ -106,6 +106,58 @@ pub async fn list_active_lobbies(pool: &SqlitePool) -> Result<Vec<LobbySummary>,
     Ok(out)
 }
 
+pub async fn list_lobbies_admin(
+    pool: &SqlitePool,
+    status: Option<&str>,
+) -> Result<Vec<LobbySummary>, sqlx::Error> {
+    let rows = if let Some(st) = status {
+        sqlx::query(
+            r#"SELECT l.id, l.owner_user_id, u.display_name, l.game_type, l.status, l.game_instance_id,
+                      l.created_at,
+                      (SELECT COUNT(*) FROM lobby_seats s WHERE s.lobby_id = l.id AND s.claimed_by_user_id IS NOT NULL),
+                      (SELECT COUNT(*) FROM lobby_seats s WHERE s.lobby_id = l.id)
+               FROM pregame_lobbies l
+               JOIN users u ON u.id = l.owner_user_id
+               WHERE l.status = ?
+               ORDER BY l.created_at DESC"#,
+        )
+        .bind(st)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"SELECT l.id, l.owner_user_id, u.display_name, l.game_type, l.status, l.game_instance_id,
+                      l.created_at,
+                      (SELECT COUNT(*) FROM lobby_seats s WHERE s.lobby_id = l.id AND s.claimed_by_user_id IS NOT NULL),
+                      (SELECT COUNT(*) FROM lobby_seats s WHERE s.lobby_id = l.id)
+               FROM pregame_lobbies l
+               JOIN users u ON u.id = l.owner_user_id
+               ORDER BY l.created_at DESC"#,
+        )
+        .fetch_all(pool)
+        .await?
+    };
+    let mut out = Vec::new();
+    for r in rows {
+        let id_s: String = r.get(0);
+        let owner_s: String = r.get(1);
+        if let (Ok(id), Ok(owner)) = (Uuid::parse_str(&id_s), Uuid::parse_str(&owner_s)) {
+            out.push(LobbySummary {
+                id,
+                owner_user_id: owner,
+                owner_display_name: r.get(2),
+                game_type: r.get(3),
+                status: r.get(4),
+                game_instance_id: r.get(5),
+                created_at: r.get(6),
+                seats_claimed: r.get(7),
+                seats_total: r.get(8),
+            });
+        }
+    }
+    Ok(out)
+}
+
 pub async fn get_lobby(
     pool: &SqlitePool,
     lobby_id: Uuid,

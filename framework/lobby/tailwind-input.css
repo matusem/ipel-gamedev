@@ -1104,4 +1104,108 @@
   .bottom-nav-item-active {
     @apply text-primary bg-primary-container/10;
   }
+
+  .auth-page {
+    @apply min-h-screen grid lg:grid-cols-2;
+  }
+
+  .auth-hero {
+    @apply relative flex flex-col justify-center px-6 py-12 sm:px-10 lg:px-14 lg:py-16
+      bg-gradient-to-br from-surface-container-lowest via-background to-surface-container-low
+      border-b lg:border-b-0 lg:border-r border-outline-variant/30 overflow-hidden;
+  }
+
+  .auth-hero-glow {
+    @apply pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full
+      bg-primary-container/20 blur-3xl;
+  }
+
+  .auth-hero-glow-secondary {
+    @apply pointer-events-none absolute -bottom-16 right-0 h-56 w-56 rounded-full
+      bg-secondary-container/15 blur-3xl;
+  }
+
+  .auth-hero-inner {
+    @apply relative z-10 max-w-md mx-auto lg:mx-0 text-center lg:text-left;
+  }
+
+  .auth-logo-wrap {
+    @apply inline-flex items-center justify-center h-16 w-16 sm:h-20 sm:w-20 rounded-2xl
+      bg-primary-container/20 border border-primary-container/30 shadow-raised mb-6;
+  }
+
+  .auth-logo {
+    @apply h-10 w-auto sm:h-12;
+  }
+
+  .auth-hero-title {
+    @apply font-manrope text-3xl sm:text-4xl lg:text-5xl font-bold text-on-surface tracking-tight;
+  }
+
+  .auth-hero-subtitle {
+    @apply mt-3 text-body-md text-on-surface-variant leading-relaxed;
+  }
+
+  .auth-hero-features {
+    @apply mt-8 space-y-3 text-left hidden sm:block;
+  }
+
+  .auth-hero-feature {
+    @apply flex items-center gap-3 text-body-sm text-on-surface-variant;
+  }
+
+  .auth-panel {
+    @apply flex flex-col justify-center px-4 py-10 sm:px-8 lg:px-12 lg:py-16
+      bg-background;
+  }
+
+  .auth-panel-inner {
+    @apply w-full max-w-md mx-auto space-y-6;
+  }
+
+  .auth-card {
+    @apply section-card space-y-5;
+  }
+
+  .auth-card-highlight {
+    @apply auth-card border-primary-container/40 bg-primary-container/5;
+  }
+
+  .auth-card-header {
+    @apply flex items-start gap-3;
+  }
+
+  .auth-card-icon {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm;
+  }
+
+  .auth-card-icon-primary {
+    @apply auth-card-icon bg-primary-container text-on-primary-container;
+  }
+
+  .auth-card-icon-tertiary {
+    @apply auth-card-icon bg-tertiary-container text-on-tertiary-container;
+  }
+
+  .auth-card-icon-muted {
+    @apply auth-card-icon bg-surface-container-high text-on-surface-variant;
+  }
+
+  .auth-card-heading {
+    @apply card-title text-base;
+  }
+
+  .auth-card-desc {
+    @apply text-body-sm text-on-surface-variant mt-0.5;
+  }
+
+  .auth-divider {
+    @apply flex items-center gap-3 text-label-caps font-label-caps text-outline uppercase text-xs;
+  }
+
+  .auth-divider::before,
+  .auth-divider::after {
+    content: "";
+    @apply flex-1 h-px bg-outline-variant/40;
+  }
 }

@@ -72,6 +72,41 @@ pub(crate) async fn require_registered_user(ctx: &Context<'_>) -> Result<Uuid> {
     Ok(uid)
 }
 
+fn superadmin_ids_from_env() -> Vec<Uuid> {
+    std::env::var("SUPERADMIN_USER_IDS")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|part| Uuid::parse_str(part.trim()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn superadmin_from_env(uid: Uuid) -> bool {
+    superadmin_ids_from_env().contains(&uid)
+}
+
+pub(crate) async fn is_superadmin(pool: &SqlitePool, uid: Uuid) -> Result<bool, sqlx::Error> {
+    if superadmin_from_env(uid) {
+        return Ok(true);
+    }
+    db::user_has_role(pool, uid, "superadmin").await
+}
+
+pub(crate) async fn require_superadmin_user(ctx: &Context<'_>) -> Result<Uuid> {
+    let uid = require_registered_user(ctx).await?;
+    let pool = ctx.data::<SqlitePool>()?;
+    if is_superadmin(pool, uid)
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?
+    {
+        Ok(uid)
+    } else {
+        Err(Error::new("superadmin permission required"))
+    }
+}
+
 pub(crate) async fn require_developer_user(ctx: &Context<'_>) -> Result<Uuid> {
     let uid = require_registered_user(ctx).await?;
     let pool = ctx.data::<SqlitePool>()?;
@@ -79,6 +114,7 @@ pub(crate) async fn require_developer_user(ctx: &Context<'_>) -> Result<Uuid> {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     if open_uploads
+        || is_superadmin(pool, uid).await.unwrap_or(false)
         || db::user_has_role(pool, uid, "developer")
             .await
             .unwrap_or(false)

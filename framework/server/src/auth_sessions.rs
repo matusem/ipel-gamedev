@@ -66,3 +66,14 @@ pub async fn purge_expired_sessions(pool: &SqlitePool) -> Result<(), sqlx::Error
         .await?;
     Ok(())
 }
+
+pub async fn revoke_all_sessions_for_user(
+    pool: &SqlitePool,
+    user_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let res = sqlx::query("DELETE FROM auth_sessions WHERE user_id = ?")
+        .bind(user_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected())
+}

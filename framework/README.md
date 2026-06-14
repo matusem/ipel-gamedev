@@ -118,8 +118,19 @@ Install CLI to match the lobby crate: `cargo install dioxus-cli --locked --versi
 | `LOBBY_DIR` | `./lobby` | Built lobby static files (Docker copies `dx build` output here) |
 | `LIB_DIR` | `./client-lib` | Legacy game-sdk IIFE (`packages/game-sdk` build output) |
 | `OPEN_DEVELOPER_UPLOADS` | `true` | Allow developer uploads without role |
+| `SUPERADMIN_USER_IDS` | _(unset)_ | Comma-separated user UUIDs bootstrapped as superadmin (see Settings → user id) |
+| `ADMIN_GRANT_DEVELOPER` | `false` | Enable `grantMyselfDeveloper` mutation |
 | `DRAFT_RETENTION_SECS` | `604800` | Draft cleanup TTL |
 | `RUST_LOG` | `info,server=info` | Log filter (`debug` for game actions: `RUST_LOG=server::game_db=debug`) |
+
+### Superadmin bootstrap
+
+1. Sign in to the lobby (guest, sign-up, or login).
+2. Open **Settings** and copy your **user id** (also stored in browser `localStorage` as `userId`).
+3. Set on the server: `SUPERADMIN_USER_IDS=<your-uuid>` (comma-separated for multiple admins).
+4. Restart the backend, reload the lobby — **Admin** appears in the sidebar and `/admin` opens the admin console.
+
+Superadmins can also grant the `superadmin` or `developer` role to other users from the admin panel.
 
 ## Docker
 

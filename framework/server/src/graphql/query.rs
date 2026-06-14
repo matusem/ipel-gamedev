@@ -13,13 +13,14 @@ use crate::platform_stats;
 use crate::user_engagement;
 
 use super::{
-    ActivityEventGql, BadgeGql, CliReleaseGql, DeploymentGql, FinishedGameGql, GameCommentGql,
+    ActivityEventGql, AdminCommentGql, AdminPlatformOverviewGql, AdminReviewGql, AdminUserGql,
+    BadgeGql, CliReleaseGql, DeploymentGql, FinishedGameGql, GameCommentGql,
     GameDraftGql, GameInstanceGql, GamePatchNoteGql, GameReviewGql, GameScreenshotGql,
     GameSessionGql, GameStorefrontGql, GameTypeGql, LeaderboardEntryGql, LobbyGql, LobbySummaryGql,
     NotificationGql, PlatformManifestGql, PlatformStatsGql, PlayTimeLeaderboardEntryGql,
     PublishTokenSummaryGql, UserGql, UserProfileGql, lobby_to_gql, map_aspect_ratings, map_draft,
-    map_finished_row, map_game_entries, map_summary, require_developer_user,
-    require_registered_user,
+    map_finished_row, map_game_entries,     map_summary, require_developer_user,
+    require_registered_user, require_superadmin_user, is_superadmin,
 };
 /// Root query.
 pub struct QueryRoot;
@@ -193,7 +194,18 @@ impl QueryRoot {
         if open_uploads {
             return Ok(true);
         }
+        if is_superadmin(pool, uid).await.unwrap_or(false) {
+            return Ok(true);
+        }
         db::user_has_role(pool, uid, "developer")
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn is_superadmin(&self, ctx: &Context<'_>) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        is_superadmin(pool, uid)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))
     }
@@ -218,7 +230,10 @@ impl QueryRoot {
         let row = db::get_game_draft(pool, did)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
-        Ok(row.filter(|d| d.owner_user_id == uid).map(map_draft))
+        let is_sa = is_superadmin(pool, uid).await.unwrap_or(false);
+        Ok(row
+            .filter(|d| d.owner_user_id == uid || is_sa)
+            .map(map_draft))
     }
 
     async fn my_publish_tokens(&self, ctx: &Context<'_>) -> Result<Vec<PublishTokenSummaryGql>> {
@@ -469,9 +484,14 @@ impl QueryRoot {
     ) -> Result<GameStorefrontGql> {
         let pool = ctx.data::<SqlitePool>()?;
         let can_edit = if let Ok(uid) = require_registered_user(ctx).await {
-            game_storefront::user_can_edit_storefront(pool, uid, &game_type)
-                .await
-                .unwrap_or(false)
+            let is_sa = is_superadmin(pool, uid).await.unwrap_or(false);
+            if is_sa {
+                true
+            } else {
+                game_storefront::user_can_edit_storefront(pool, uid, &game_type)
+                    .await
+                    .unwrap_or(false)
+            }
         } else {
             false
         };
@@ -655,5 +675,131 @@ impl QueryRoot {
         user_engagement::unread_count(pool, uid)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn admin_platform_overview(&self, ctx: &Context<'_>) -> Result<AdminPlatformOverviewGql> {
+        let _uid = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let o = db::admin_platform_overview(pool)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(AdminPlatformOverviewGql {
+            user_count: o.user_count,
+            draft_count: o.draft_count,
+            active_lobbies: o.active_lobbies,
+            published_games: o.published_games,
+            review_count: o.review_count,
+            comment_count: o.comment_count,
+        })
+    }
+
+    async fn admin_users(
+        &self,
+        ctx: &Context<'_>,
+        limit: Option<i32>,
+        search: Option<String>,
+    ) -> Result<Vec<AdminUserGql>> {
+        let _uid = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(50).clamp(1, 500) as i64;
+        let rows = db::search_users(pool, search.as_deref(), lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|u| AdminUserGql {
+                id: u.id.to_string().into(),
+                display_name: u.display_name,
+                created_at: u.created_at,
+                roles: u.roles,
+                has_password: u.has_password,
+            })
+            .collect())
+    }
+
+    async fn admin_game_drafts(
+        &self,
+        ctx: &Context<'_>,
+        limit: Option<i32>,
+        status: Option<String>,
+        #[graphql(name = "ownerUserId")] owner_user_id: Option<async_graphql::types::ID>,
+    ) -> Result<Vec<GameDraftGql>> {
+        let _uid = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(50).clamp(1, 500) as i64;
+        let owner = if let Some(id) = owner_user_id {
+            Some(
+                Uuid::parse_str(id.as_str())
+                    .map_err(|_| Error::new("invalid owner user id"))?,
+            )
+        } else {
+            None
+        };
+        let rows = db::list_all_game_drafts(pool, status.as_deref(), owner, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows.into_iter().map(map_draft).collect())
+    }
+
+    async fn admin_lobbies(
+        &self,
+        ctx: &Context<'_>,
+        status: Option<String>,
+    ) -> Result<Vec<LobbySummaryGql>> {
+        let _uid = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rows = lobby_db::list_lobbies_admin(pool, status.as_deref())
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows.into_iter().map(map_summary).collect())
+    }
+
+    async fn admin_reviews(
+        &self,
+        ctx: &Context<'_>,
+        game_type: Option<String>,
+        limit: Option<i32>,
+    ) -> Result<Vec<AdminReviewGql>> {
+        let _uid = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(50).clamp(1, 500) as i64;
+        let rows = game_storefront::list_all_reviews(pool, game_type.as_deref(), lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| AdminReviewGql {
+                id: r.id.to_string().into(),
+                game_name: r.game_name,
+                display_name: r.display_name,
+                body: r.body,
+                helpful_votes: r.helpful_votes,
+                created_at: r.created_at,
+            })
+            .collect())
+    }
+
+    async fn admin_comments(
+        &self,
+        ctx: &Context<'_>,
+        game_type: Option<String>,
+        limit: Option<i32>,
+    ) -> Result<Vec<AdminCommentGql>> {
+        let _uid = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(50).clamp(1, 500) as i64;
+        let rows = game_storefront::list_all_comments(pool, game_type.as_deref(), lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|c| AdminCommentGql {
+                id: c.id.to_string().into(),
+                game_name: c.game_name,
+                display_name: c.display_name,
+                body: c.body,
+                created_at: c.created_at,
+            })
+            .collect())
     }
 }

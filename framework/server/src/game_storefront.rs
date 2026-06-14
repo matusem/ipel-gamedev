@@ -638,6 +638,86 @@ pub async fn user_voted_review(
     Ok(count > 0)
 }
 
+pub async fn delete_review(pool: &SqlitePool, review_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query("DELETE FROM game_review_votes WHERE review_id = ?")
+        .bind(review_id.to_string())
+        .execute(pool)
+        .await?;
+    let res = sqlx::query("DELETE FROM game_reviews WHERE id = ?")
+        .bind(review_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+pub async fn delete_comment(pool: &SqlitePool, comment_id: Uuid) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query("DELETE FROM game_comments WHERE id = ?")
+        .bind(comment_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+pub async fn list_all_reviews(
+    pool: &SqlitePool,
+    game_type: Option<&str>,
+    limit: i64,
+) -> Result<Vec<ReviewRow>, sqlx::Error> {
+    let rows = if let Some(gt) = game_type {
+        sqlx::query(
+            "SELECT id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(gt)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query(
+            "SELECT id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    };
+    Ok(rows.into_iter().filter_map(map_review).collect())
+}
+
+pub async fn list_all_comments(
+    pool: &SqlitePool,
+    game_type: Option<&str>,
+    limit: i64,
+) -> Result<Vec<CommentRow>, sqlx::Error> {
+    let rows = if let Some(gt) = game_type {
+        sqlx::query(
+            "SELECT id, game_name, user_id, display_name, body, created_at FROM game_comments WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(gt)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query(
+            "SELECT id, game_name, user_id, display_name, body, created_at FROM game_comments ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    };
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            Some(CommentRow {
+                id: Uuid::parse_str(&r.get::<String, _>(0)).ok()?,
+                game_name: r.get(1),
+                user_id: Uuid::parse_str(&r.get::<String, _>(2)).ok()?,
+                display_name: r.get(3),
+                body: r.get(4),
+                created_at: r.get(5),
+            })
+        })
+        .collect())
+}
+
 pub async fn mark_review_helpful(
     pool: &SqlitePool,
     review_id: Uuid,

@@ -837,6 +837,8 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         json!({ "markNotificationRead": true })
     } else if q.contains("myPublishTokens") {
         json!({ "myPublishTokens": my_tokens() })
+    } else if q.contains("isSuperadmin") {
+        json!({ "isSuperadmin": false })
     } else if q.contains("isDeveloper") {
         json!({ "isDeveloper": true })
     } else if q.contains("myGameDrafts") {

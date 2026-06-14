@@ -25,7 +25,7 @@ use super::{
     AuthSessionGql, DraftsDir, GameCommentGql, GameDraftGql, GameReviewGql, GamesDir, LobbyGql,
     LobbyMessageGql, PublishTokenGql, RequestUser, UploadGameZipResultGql, UserGql, lobby_to_gql,
     map_aspect_ratings, map_draft, map_message, map_validation_report, require_developer_user,
-    require_registered_user,
+    require_registered_user, require_superadmin_user, is_superadmin,
 };
 
 async fn issue_auth_session(pool: &SqlitePool, user: UserGql) -> Result<AuthSessionGql> {
@@ -134,6 +134,7 @@ impl MutationRoot {
         if !game_storefront::user_can_edit_storefront(pool, uid, &game_type)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
         {
             return Err(Error::new("you do not own a draft for this game"));
         }
@@ -507,7 +508,9 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("draft not found"))?;
-        if draft.owner_user_id != uid {
+        if draft.owner_user_id != uid
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
+        {
             return Err(Error::new("not your draft"));
         }
         if draft.status != "ready" {
@@ -551,7 +554,9 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("draft not found"))?;
-        if draft.owner_user_id != uid {
+        if draft.owner_user_id != uid
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
+        {
             return Err(Error::new("not your draft"));
         }
         if draft.status != "published" {
@@ -607,7 +612,9 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("draft not found"))?;
-        if draft.owner_user_id != uid {
+        if draft.owner_user_id != uid
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
+        {
             return Err(Error::new("not your draft"));
         }
         if draft.status != "ready" {
@@ -649,10 +656,12 @@ impl MutationRoot {
             return Err(Error::new("draft storage is missing on disk"));
         }
         write_manifest_to_staged_dir(&staged, &manifest).map_err(Error::new)?;
+        let is_sa = is_superadmin(pool, uid).await.unwrap_or(false);
+        let owner_for_sql = if is_sa { draft.owner_user_id } else { uid };
         let updated = db::update_game_draft_manifest_columns(
             pool,
             did,
-            uid,
+            owner_for_sql,
             &manifest.name,
             &manifest.display_name,
             &manifest.version,
@@ -683,7 +692,9 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("draft not found"))?;
-        if draft.owner_user_id != uid {
+        if draft.owner_user_id != uid
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
+        {
             return Err(Error::new("not your draft"));
         }
         if draft.status == "published" {
@@ -949,7 +960,9 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("lobby not found"))?;
-        if detail.owner_user_id != uid {
+        if detail.owner_user_id != uid
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
+        {
             return Err(Error::new("only the owner can start"));
         }
         if detail.status != "waiting" && detail.status != "configuring" {
@@ -1028,7 +1041,9 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("lobby not found"))?;
-        if detail.owner_user_id != uid {
+        if detail.owner_user_id != uid
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
+        {
             return Err(Error::new("only the owner can cancel"));
         }
         if detail.status == "in_game" {
@@ -1057,7 +1072,9 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("lobby not found"))?;
-        if detail.owner_user_id != uid {
+        if detail.owner_user_id != uid
+            && !is_superadmin(pool, uid).await.unwrap_or(false)
+        {
             return Err(Error::new("only the owner can reopen the lobby"));
         }
         let ok = lobby_db::reopen_lobby_after_game(pool, lid)
@@ -1118,6 +1135,268 @@ impl MutationRoot {
         let uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         user_engagement::mark_all_read(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn admin_grant_role(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+        role: String,
+    ) -> Result<bool> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let role = role.trim().to_lowercase();
+        if role != "developer" && role != "superadmin" {
+            return Err(Error::new("role must be developer or superadmin"));
+        }
+        let pool = ctx.data::<SqlitePool>()?;
+        let uid = Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        if db::get_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .is_none()
+        {
+            return Err(Error::new("user not found"));
+        }
+        db::grant_role(pool, uid, &role)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(true)
+    }
+
+    async fn admin_revoke_role(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+        role: String,
+    ) -> Result<bool> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let role = role.trim().to_lowercase();
+        if role != "developer" && role != "superadmin" {
+            return Err(Error::new("role must be developer or superadmin"));
+        }
+        let pool = ctx.data::<SqlitePool>()?;
+        let uid = Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        db::revoke_role(pool, uid, &role)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn admin_update_user_display_name(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+        display_name: String,
+    ) -> Result<UserGql> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let uid = Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        let name = display_name.trim();
+        if name.is_empty() {
+            return Err(Error::new("display name required"));
+        }
+        db::update_user_display_name(pool, uid, name)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let row = db::get_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("user not found"))?;
+        Ok(UserGql {
+            id: row.0.to_string().into(),
+            display_name: row.1,
+            created_at: row.2,
+        })
+    }
+
+    async fn admin_revoke_user_sessions(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<i32> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let uid = Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        let n = auth_sessions::revoke_all_sessions_for_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(n as i32)
+    }
+
+    async fn admin_revoke_user_publish_tokens(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<i32> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let uid = Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        let n = db::revoke_all_publish_tokens_for_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(n as i32)
+    }
+
+    async fn admin_discard_game_draft(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "draftId")] draft_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let draft = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found"))?;
+        if draft.status == "published" {
+            return Err(Error::new("cannot discard a published draft; unpublish first"));
+        }
+        db::mark_draft_discarded(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let p = PathBuf::from(draft.storage_path);
+        if p.exists() {
+            let _ = std::fs::remove_dir_all(&p);
+        }
+        Ok(true)
+    }
+
+    async fn admin_publish_game_draft(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "draftId")] draft_id: async_graphql::types::ID,
+    ) -> Result<GameDraftGql> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let draft = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found"))?;
+        if draft.status != "ready" {
+            return Err(Error::new("draft is not publishable"));
+        }
+        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
+        let staged = PathBuf::from(&draft.storage_path);
+        publish_staged_game(&staged, games_dir, &draft.game_name).map_err(Error::new)?;
+        db::mark_draft_published(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        {
+            let mut reg = registry
+                .write()
+                .map_err(|_| Error::new("registry lock poisoned"))?;
+            reg.reload(games_dir, component_db);
+        }
+        let out = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found after publish"))?;
+        Ok(map_draft(out))
+    }
+
+    async fn admin_unpublish_game_draft(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "draftId")] draft_id: async_graphql::types::ID,
+    ) -> Result<GameDraftGql> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
+        let draft = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found"))?;
+        if draft.status != "published" {
+            return Err(Error::new("draft is not published"));
+        }
+        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
+        let max_pa = db::max_published_at_for_game_name(pool, &draft.game_name)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let my_pa = draft.published_at;
+        let this_is_latest_published = matches!((my_pa, max_pa), (Some(t), Some(m)) if t == m);
+        if this_is_latest_published {
+            remove_published_game_dir(games_dir, &draft.game_name).map_err(Error::new)?;
+            db::demote_all_published_for_game_name(pool, &draft.game_name)
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
+        } else {
+            db::demote_single_published_draft(pool, did)
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
+        }
+        {
+            let mut reg = registry
+                .write()
+                .map_err(|_| Error::new("registry lock poisoned"))?;
+            reg.reload(games_dir, component_db);
+        }
+        let out = db::get_game_draft(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("draft not found after unpublish"))?;
+        Ok(map_draft(out))
+    }
+
+    async fn admin_cancel_lobby(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        if detail.status == "in_game" {
+            return Err(Error::new("cannot cancel while in game"));
+        }
+        if detail.status == "cancelled" {
+            return Err(Error::new("lobby already cancelled"));
+        }
+        lobby_db::cancel_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        notify.ping();
+        Ok(true)
+    }
+
+    async fn admin_delete_review(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "reviewId")] review_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rid =
+            Uuid::parse_str(review_id.as_str()).map_err(|_| Error::new("invalid review id"))?;
+        game_storefront::delete_review(pool, rid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn admin_delete_comment(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "commentId")] comment_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let _actor = require_superadmin_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let cid =
+            Uuid::parse_str(comment_id.as_str()).map_err(|_| Error::new("invalid comment id"))?;
+        game_storefront::delete_comment(pool, cid)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))
     }

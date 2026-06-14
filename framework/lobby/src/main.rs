@@ -10,7 +10,7 @@ use components::{AppShell, LoadingState, ToastProvider};
 use dioxus::prelude::*;
 use models::*;
 use pages::{
-    AuthGate, DeveloperUploadsPage, GameDetailPage, GameResultPage, GamesListPage, HomePage,
+    AuthGate, AdminPage, DeveloperUploadsPage, GameDetailPage, GameResultPage, GamesListPage, HomePage,
     LobbiesBrowserPage, LobbyRoomPage, ProfilePage, SettingsPage,
 };
 
@@ -42,6 +42,8 @@ pub enum LobbyRoute {
     GameResult { id: String },
     #[route("/developer/uploads", DeveloperUploadsRoute)]
     DeveloperUploads {},
+    #[route("/admin", AdminRoute)]
+    Admin {},
 }
 
 fn main() {
@@ -117,6 +119,13 @@ fn DeveloperUploadsRoute() -> Element {
 }
 
 #[component]
+fn AdminRoute() -> Element {
+    rsx! {
+        AdminPage {}
+    }
+}
+
+#[component]
 pub fn OverlayLayout() -> Element {
     let mut shell = use_context::<AppShellContext>();
     let nav = use_navigator();
@@ -171,8 +180,13 @@ fn App() -> Element {
             }
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "camelCase")]
+            struct SessionProfile {
+                display_name: String,
+            }
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
             struct ProfileWrap {
-                my_profile: Option<models::UserProfile>,
+                my_profile: Option<SessionProfile>,
             }
             match graphql_post::<ProfileWrap>("query { myProfile { displayName } }").await {
                 Ok(p) if p.my_profile.is_some() => session_ok.set(true),

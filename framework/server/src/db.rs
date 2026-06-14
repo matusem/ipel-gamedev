@@ -736,3 +736,194 @@ pub async fn update_game_draft_manifest_columns(
     .await?;
     Ok(r.rows_affected() > 0)
 }
+
+pub async fn revoke_role(pool: &SqlitePool, user_id: Uuid, role: &str) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query("DELETE FROM user_roles WHERE user_id = ? AND role = ?")
+        .bind(user_id.to_string())
+        .bind(role)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
+pub async fn list_roles_for_user(pool: &SqlitePool, user_id: Uuid) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT role FROM user_roles WHERE user_id = ? ORDER BY role ASC",
+    )
+    .bind(user_id.to_string())
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminUserRow {
+    pub id: Uuid,
+    pub display_name: String,
+    pub created_at: i64,
+    pub roles: Vec<String>,
+    pub has_password: bool,
+}
+
+pub async fn search_users(
+    pool: &SqlitePool,
+    search: Option<&str>,
+    limit: i64,
+) -> Result<Vec<AdminUserRow>, sqlx::Error> {
+    let needle = search
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("%{s}%"));
+    let rows = if let Some(ref like) = needle {
+        sqlx::query(
+            r#"SELECT u.id, u.display_name, u.created_at, u.password_hash,
+                      GROUP_CONCAT(ur.role) AS roles
+               FROM users u
+               LEFT JOIN user_roles ur ON ur.user_id = u.id
+               WHERE u.display_name LIKE ? OR u.id LIKE ?
+               GROUP BY u.id
+               ORDER BY u.created_at DESC
+               LIMIT ?"#,
+        )
+        .bind(like)
+        .bind(like)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"SELECT u.id, u.display_name, u.created_at, u.password_hash,
+                      GROUP_CONCAT(ur.role) AS roles
+               FROM users u
+               LEFT JOIN user_roles ur ON ur.user_id = u.id
+               GROUP BY u.id
+               ORDER BY u.created_at DESC
+               LIMIT ?"#,
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    };
+    let mut out = Vec::new();
+    for r in rows {
+        let sid: String = r.get(0);
+        let Ok(id) = Uuid::parse_str(&sid) else {
+            continue;
+        };
+        let roles_raw: Option<String> = r.get(4);
+        let roles = roles_raw
+            .map(|s| s.split(',').map(str::trim).filter(|x| !x.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default();
+        let pw: Option<String> = r.get(3);
+        out.push(AdminUserRow {
+            id,
+            display_name: r.get(1),
+            created_at: r.get(2),
+            roles,
+            has_password: pw.as_ref().is_some_and(|h| !h.is_empty()),
+        });
+    }
+    Ok(out)
+}
+
+pub async fn list_all_game_drafts(
+    pool: &SqlitePool,
+    status: Option<&str>,
+    owner_user_id: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<GameDraftRow>, sqlx::Error> {
+    let rows = if let (Some(st), Some(owner)) = (status, owner_user_id) {
+        sqlx::query(
+            "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE status = ? AND owner_user_id = ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(st)
+        .bind(owner.to_string())
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    } else if let Some(st) = status {
+        sqlx::query(
+            "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE status = ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(st)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    } else if let Some(owner) = owner_user_id {
+        sqlx::query(
+            "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(owner.to_string())
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query(
+            "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts ORDER BY created_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await?
+    };
+    Ok(rows.into_iter().filter_map(map_draft_row).collect())
+}
+
+pub async fn revoke_all_publish_tokens_for_user(
+    pool: &SqlitePool,
+    user_id: Uuid,
+) -> Result<u64, sqlx::Error> {
+    let now = GameInstanceStore::now_secs();
+    let res = sqlx::query(
+        "UPDATE publish_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(now)
+    .bind(user_id.to_string())
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
+#[derive(Debug, Clone)]
+pub struct AdminPlatformOverview {
+    pub user_count: i32,
+    pub draft_count: i32,
+    pub active_lobbies: i32,
+    pub published_games: i32,
+    pub review_count: i32,
+    pub comment_count: i32,
+}
+
+pub async fn admin_platform_overview(pool: &SqlitePool) -> Result<AdminPlatformOverview, sqlx::Error> {
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
+    let draft_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM game_drafts WHERE status != 'discarded'",
+    )
+    .fetch_one(pool)
+    .await?;
+    let active_lobbies: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pregame_lobbies WHERE status IN ('configuring', 'waiting', 'in_game')",
+    )
+    .fetch_one(pool)
+    .await?;
+    let published_games: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM game_drafts WHERE status = 'published'",
+    )
+    .fetch_one(pool)
+    .await?;
+    let review_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM game_reviews")
+        .fetch_one(pool)
+        .await?;
+    let comment_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM game_comments")
+        .fetch_one(pool)
+        .await?;
+    Ok(AdminPlatformOverview {
+        user_count: user_count as i32,
+        draft_count: draft_count as i32,
+        active_lobbies: active_lobbies as i32,
+        published_games: published_games as i32,
+        review_count: review_count as i32,
+        comment_count: comment_count as i32,
+    })
+}

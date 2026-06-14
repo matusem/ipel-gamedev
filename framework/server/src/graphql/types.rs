@@ -205,6 +205,44 @@ pub struct GameCommentGql {
 }
 
 #[derive(SimpleObject, Clone)]
+pub struct AdminUserGql {
+    pub id: async_graphql::types::ID,
+    pub display_name: String,
+    pub created_at: i64,
+    pub roles: Vec<String>,
+    pub has_password: bool,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct AdminPlatformOverviewGql {
+    pub user_count: i32,
+    pub draft_count: i32,
+    pub active_lobbies: i32,
+    pub published_games: i32,
+    pub review_count: i32,
+    pub comment_count: i32,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct AdminReviewGql {
+    pub id: async_graphql::types::ID,
+    pub game_name: String,
+    pub display_name: String,
+    pub body: String,
+    pub helpful_votes: i32,
+    pub created_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct AdminCommentGql {
+    pub id: async_graphql::types::ID,
+    pub game_name: String,
+    pub display_name: String,
+    pub body: String,
+    pub created_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct PlayTimeLeaderboardEntryGql {
     pub rank: u32,
     pub display_name: String,
