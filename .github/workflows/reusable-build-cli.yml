@@ -10,6 +10,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  SELF_HOSTED_RUNNER: '["self-hosted","Linux","ARM64","arianagrande"]'
 
 defaults:
   run:
@@ -22,27 +23,32 @@ jobs:
       matrix:
         include:
           - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            archive: zip
+            runner: windows-latest
+            runner_json: ""
+            is_windows: true
             asset_key: windows-x86_64
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: tar.gz
+            runner: ""
+            runner_json: '["self-hosted","Linux","ARM64","arianagrande"]'
+            is_windows: false
             asset_key: linux-x86_64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            archive: tar.gz
+            runner: ""
+            runner_json: '["self-hosted","Linux","ARM64","arianagrande"]'
+            is_windows: false
             asset_key: linux-aarch64
           - target: x86_64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
+            runner: macos-latest
+            runner_json: ""
+            is_windows: false
             asset_key: macos-x86_64
           - target: aarch64-apple-darwin
-            os: macos-latest
-            archive: tar.gz
+            runner: macos-latest
+            runner_json: ""
+            is_windows: false
             asset_key: macos-aarch64
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner_json != '' && fromJSON(matrix.runner_json) || matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -85,7 +91,7 @@ jobs:
         run: cargo build --release -p gamedev-cli --target ${{ matrix.target }}
 
       - name: Package (Unix)
-        if: matrix.os != 'windows-latest'
+        if: ${{ !matrix.is_windows }}
         run: |
           NAME="gamedev-cli-${{ matrix.asset_key }}"
           mkdir -p dist
@@ -95,7 +101,7 @@ jobs:
           sha256sum "dist/${NAME}.tar.gz" | tee "dist/${NAME}.sha256"
 
       - name: Package (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.is_windows
         shell: pwsh
         run: |
           $Name = "gamedev-cli-${{ matrix.asset_key }}"

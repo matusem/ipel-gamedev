@@ -19,6 +19,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   BUILDER_IMAGE: ghcr.io/${{ github.repository }}-builder:bookworm
+  RUNNER_LABELS: '["self-hosted","Linux","ARM64","arianagrande"]'
 
 permissions:
   contents: write
@@ -27,7 +28,7 @@ permissions:
 
 jobs:
   resolve:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
@@ -68,7 +69,7 @@ jobs:
 
   package-cli:
     needs: [resolve, build-cli]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
     defaults:
       run:
         working-directory: framework
@@ -112,7 +113,7 @@ jobs:
 
   github-release:
     needs: [resolve, package-cli]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
     steps:
       - name: Download raw CLI archives
         uses: actions/download-artifact@v4
@@ -129,7 +130,7 @@ jobs:
 
   build-image:
     needs: [resolve, package-cli]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
     outputs:
       release_tag: ${{ needs.resolve.outputs.release_tag }}
     steps:
@@ -156,6 +157,7 @@ jobs:
             --version "${{ needs.resolve.outputs.version }}"
 
       - name: Set up QEMU
+        if: runner.arch != 'ARM64'
         uses: docker/setup-qemu-action@v3
 
       - name: Log in to GHCR
@@ -221,7 +223,7 @@ jobs:
   deploy:
     needs: build-image
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(env.RUNNER_LABELS) }}
     env:
       RELEASE_TAG: ${{ needs.build-image.outputs.release_tag }}
     steps:

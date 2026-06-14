@@ -116,6 +116,19 @@ GitHub Actions workflows live at the **repository root** [`.github/workflows/`](
 
 No SSH from GitHub to the Pi is required. The webhook must be reachable over HTTPS (e.g. through your nginx → tunnel → Pi path).
 
+### Self-hosted runner (Raspberry Pi)
+
+CI and release jobs run on the self-hosted runner **`arianagrande`** (`self-hosted`, `Linux`, `ARM64`). That matches the Pi: native `linux/arm64` image builds without QEMU emulation.
+
+**Install on the Pi** (in addition to Docker):
+
+- Rust (`rustup`, `wasm32-wasip1` target)
+- Node.js 20 + npm
+- Python 3 + `pip install pynacl` (deploy signing)
+- For Linux CLI cross-builds: `gcc-aarch64-linux-gnu` (aarch64) and a x86_64 cross linker if you build `linux-x86_64` on the Pi
+
+Windows/macOS CLI binaries still build on GitHub-hosted runners (`windows-latest` / `macos-latest`).
+
 **Manual fallback:** re-run **Release and Deploy** via workflow dispatch with an existing `v*` tag if deploy failed after a successful image push.
 
 ### 1. Generate keys
