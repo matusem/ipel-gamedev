@@ -198,11 +198,9 @@ impl QueryRoot {
         }
     }
 
-    /// False until an OAuth provider is integrated; set OAUTH_ENABLED=true when configured.
+    /// True when Google OAuth credentials are configured.
     async fn oauth_available(&self) -> bool {
-        std::env::var("OAUTH_ENABLED")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
+        crate::google_oauth::is_configured()
     }
 
     async fn is_developer(&self, ctx: &Context<'_>) -> Result<bool> {
@@ -494,6 +492,7 @@ impl QueryRoot {
             games_published: s.games_published,
             wins: s.wins,
             rep_score: s.rep_score,
+            avatar_url: s.avatar_url,
         }))
     }
 

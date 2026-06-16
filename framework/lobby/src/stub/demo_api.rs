@@ -631,7 +631,8 @@ fn my_profile() -> Value {
         "matchesPlayed": 142,
         "gamesPublished": 2,
         "wins": 89,
-        "repScore": 2840
+        "repScore": 2840,
+        "avatarUrl": null
     })
 }
 
@@ -900,6 +901,12 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         json!({ "activityFeed": activity_feed(limit) })
     } else if q.contains("platformStats") {
         json!({ "platformStats": platform_stats() })
+    } else if q.contains("oauthAvailable") {
+        json!({ "oauthAvailable": false })
+    } else if q.contains("setAvatarUrl") {
+        json!({ "setAvatarUrl": true })
+    } else if q.contains("logout") {
+        json!({ "logout": true })
     } else if q.contains("myProfile") {
         json!({ "myProfile": my_profile() })
     } else if q.contains("myBadges") {

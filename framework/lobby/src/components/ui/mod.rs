@@ -1,6 +1,7 @@
 mod activity_feed;
 mod avatar;
 mod chip;
+mod confirm_modal;
 mod empty_state;
 mod forms;
 mod icons;
@@ -30,6 +31,7 @@ pub use segmented_control::SegmentedControl;
 pub use skeleton::{Skeleton, SkeletonCard, SkeletonHero, SkeletonTableRows};
 pub use slide_over::SlideOver;
 pub use spider_chart::{SpiderAxis, SpiderChart};
+pub use confirm_modal::{use_confirm, ConfirmHandle, ConfirmOptions, ConfirmProvider};
 pub use toast::{push_toast, use_toast, ToastContext, ToastKind, ToastProvider};
 
 #[derive(Clone, Copy, PartialEq)]

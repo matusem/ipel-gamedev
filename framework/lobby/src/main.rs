@@ -6,7 +6,7 @@ mod stub;
 
 use api::*;
 use components::lobby::GamePlayer;
-use components::{AppShell, LoadingState, ToastProvider};
+use components::{AppShell, ConfirmProvider, LoadingState, ToastProvider};
 use dioxus::prelude::*;
 use models::*;
 use pages::{
@@ -14,6 +14,15 @@ use pages::{
     LobbiesBrowserPage, LobbyRoomPage, ProfilePage, SettingsPage,
 };
 use pages::cli_auth::{is_cli_auth_location, read_cli_auth_params_from_location};
+
+const CRITICAL_CSS: Asset = asset!(
+    "/assets/critical.css",
+    AssetOptions::css().with_static_head(true)
+);
+const TAILWIND_CSS: Asset = asset!(
+    "/assets/tailwind.css",
+    AssetOptions::css().with_static_head(true).with_preload(true)
+);
 
 #[derive(Clone, Copy)]
 pub struct AppShellContext {
@@ -143,8 +152,10 @@ pub fn OverlayLayout() -> Element {
     let nav = use_navigator();
     rsx! {
         ToastProvider {
-            AppShell {
-                Outlet::<LobbyRoute> {}
+            ConfirmProvider {
+                AppShell {
+                    Outlet::<LobbyRoute> {}
+                }
             }
         }
         if let Some(p) = (shell.playing)() {
@@ -220,9 +231,8 @@ fn App() -> Element {
     if on_cli_auth {
         let (port, state) = read_cli_auth_params_from_location();
         return rsx! {
-            document::Stylesheet {
-                href: asset!("/assets/tailwind.css"),
-            }
+            document::Stylesheet { href: CRITICAL_CSS }
+            document::Stylesheet { href: TAILWIND_CSS }
             div { class: "min-h-screen bg-background text-on-surface",
                 CliAuthPage { port, state }
             }
@@ -230,9 +240,8 @@ fn App() -> Element {
     }
 
     rsx! {
-        document::Stylesheet {
-            href: asset!("/assets/tailwind.css"),
-        }
+        document::Stylesheet { href: CRITICAL_CSS }
+        document::Stylesheet { href: TAILWIND_CSS }
         div { class: "min-h-screen bg-background text-on-surface",
             if !session_checked() {
                 LoadingState {

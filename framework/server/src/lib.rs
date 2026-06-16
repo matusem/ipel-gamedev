@@ -1,6 +1,7 @@
 pub mod deploy_webhook;
 pub mod auth_password;
 pub mod auth_sessions;
+pub mod google_oauth;
 pub mod component_db;
 pub mod db;
 pub mod game_db;

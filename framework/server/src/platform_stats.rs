@@ -39,6 +39,7 @@ pub struct UserProfileStats {
     pub games_published: u32,
     pub wins: u32,
     pub rep_score: u32,
+    pub avatar_url: Option<String>,
 }
 
 pub fn identity_display_map(seats_json: &str) -> HashMap<String, String> {
@@ -256,6 +257,7 @@ pub async fn build_user_profile(
     let Some((_, display_name, created_at)) = db::get_user(pool, user_id).await? else {
         return Ok(None);
     };
+    let avatar_url = db::get_user_avatar_url(pool, user_id).await?;
     let matches = db::count_user_finished_matches(pool, user_id).await? as u32;
     let published = db::count_published_drafts_for_user(pool, user_id).await? as u32;
 
@@ -275,6 +277,7 @@ pub async fn build_user_profile(
         games_published: published,
         wins,
         rep_score,
+        avatar_url,
     }))
 }
 

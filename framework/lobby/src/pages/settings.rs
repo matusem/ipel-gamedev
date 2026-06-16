@@ -1,4 +1,4 @@
-use crate::api::{graphql_exec, graphql_post, stored_user_id};
+use crate::api::{clear_auth_session, graphql_exec, graphql_post, stored_user_id};
 use crate::components::ui::*;
 use crate::models::{format_relative_time, NotificationGql, PublishTokenSummary, UserProfile};
 use crate::stub::demo_mode;
@@ -11,12 +11,15 @@ pub fn SettingsPage() -> Element {
     let user_id = stored_user_id().unwrap_or_else(|| "—".into());
     let mut profile = use_signal(|| None::<UserProfile>);
     let mut display_name_edit = use_signal(String::new);
+    let mut avatar_url_edit = use_signal(String::new);
     let mut saving_name = use_signal(|| false);
+    let mut saving_avatar = use_signal(|| false);
     let mut tokens = use_signal(Vec::<PublishTokenSummary>::new);
     let mut loading_tokens = use_signal(|| true);
     let mut creating_token = use_signal(|| false);
     let mut notifications = use_signal(Vec::<NotificationGql>::new);
     let toast = use_toast();
+    let confirm = use_confirm();
 
     let fetch_notifications = move || {
         spawn(async move {
@@ -59,13 +62,14 @@ pub fn SettingsPage() -> Element {
                 my_profile: Option<UserProfile>,
             }
             if let Ok(w) = graphql_post::<Wrap>(
-                "query { myProfile { displayName createdAt matchesPlayed gamesPublished wins repScore } }",
+                "query { myProfile { displayName createdAt matchesPlayed gamesPublished wins repScore avatarUrl } }",
             )
             .await
             {
                 profile.set(w.my_profile.clone());
                 if let Some(p) = w.my_profile {
                     display_name_edit.set(p.display_name);
+                    avatar_url_edit.set(p.avatar_url.unwrap_or_default());
                 }
             }
             fetch_notifications();
@@ -134,8 +138,8 @@ pub fn SettingsPage() -> Element {
                             label { class: "text-label-caps font-label-caps text-outline uppercase block mb-1", "User ID" }
                             input { class: "input-field font-mono-code", value: "{user_id}", readonly: true }
                         }
-                        div {
-                            label { class: "text-label-caps font-label-caps text-outline uppercase block mb-1", "Display name" }
+                        div { class: "space-y-2",
+                            label { class: "text-label-caps font-label-caps text-outline uppercase block", "Display name" }
                             input {
                                 class: "input-field",
                                 placeholder: "Your display name",
@@ -159,6 +163,69 @@ pub fn SettingsPage() -> Element {
                                         saving_name.set(false);
                                     });
                                 },
+                            }
+                        }
+                        div { class: "space-y-2",
+                            label { class: "text-label-caps font-label-caps text-outline uppercase block", "Avatar image URL" }
+                            div { class: "flex items-center gap-4",
+                                Avatar {
+                                    seed: user_id.clone(),
+                                    size: AvatarSize::Md,
+                                    image_url: if avatar_url_edit().trim().is_empty() { None } else { Some(avatar_url_edit()) },
+                                }
+                                input {
+                                    class: "input-field flex-1",
+                                    placeholder: "https://example.com/avatar.jpg",
+                                    value: "{avatar_url_edit}",
+                                    oninput: move |e| avatar_url_edit.set(e.value()),
+                                }
+                            }
+                            p { class: "text-body-sm text-outline", "Paste a URL to any image. Leave empty to use the generated avatar." }
+                            PrimaryButton {
+                                label: if saving_avatar() { "Saving…".to_string() } else { "Save avatar".to_string() },
+                                disabled: saving_avatar(),
+                                onclick: move |_| {
+                                    let url = avatar_url_edit().trim().to_string();
+                                    let toast = toast;
+                                    saving_avatar.set(true);
+                                    spawn(async move {
+                                        let val = if url.is_empty() { serde_json::Value::Null } else { serde_json::json!(url) };
+                                        let q = "mutation A($u: String) { setAvatarUrl(avatarUrl: $u) }";
+                                        let vars = serde_json::json!({ "u": val });
+                                        match graphql_exec::<serde_json::Value>(q, Some(vars)).await {
+                                            Ok(_) => push_toast(toast.show, "Avatar updated", ToastKind::Success),
+                                            Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                        }
+                                        saving_avatar.set(false);
+                                    });
+                                },
+                            }
+                        }
+                        div { class: "pt-4 border-t border-outline-variant/30",
+                            button {
+                                class: "btn-ghost text-error border-error/40 text-sm",
+                                onclick: move |_| {
+                                    let confirm = confirm;
+                                    spawn(async move {
+                                        if !confirm
+                                            .confirm_with(
+                                                ConfirmOptions::new("Log out of your account?")
+                                                    .destructive()
+                                                    .confirm_label("Log out"),
+                                            )
+                                            .await
+                                        {
+                                            return;
+                                        }
+                                        let _ = graphql_post::<serde_json::Value>("mutation { logout }").await;
+                                        clear_auth_session();
+                                        if let Some(w) = web_sys::window() {
+                                            let _ = w.location().set_href("/");
+                                        }
+                                    });
+                                },
+                                Icon { name: "logout", filled: false }
+                                "Log out"
                             }
                         }
                     }

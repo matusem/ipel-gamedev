@@ -564,6 +564,8 @@ pub struct UserProfile {
     pub games_published: u32,
     pub wins: u32,
     pub rep_score: u32,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

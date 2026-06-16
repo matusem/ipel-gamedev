@@ -323,6 +323,27 @@
     @apply absolute inset-0 bg-black/55 backdrop-blur-[3px] cursor-pointer;
   }
 
+  .confirm-modal-layer {
+    @apply fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6;
+  }
+
+  .confirm-modal-backdrop {
+    @apply absolute inset-0 bg-black/55 backdrop-blur-[3px] cursor-pointer;
+  }
+
+  .confirm-modal-card {
+    @apply relative z-10 w-full max-w-sm rounded-2xl border border-outline-variant/40
+      bg-surface-container-lowest/95 backdrop-blur-xl shadow-2xl p-5 sm:p-6;
+  }
+
+  .confirm-modal-message {
+    @apply text-body-sm text-on-surface leading-relaxed;
+  }
+
+  .confirm-modal-actions {
+    @apply flex items-center justify-end gap-2 mt-5;
+  }
+
   .lobby-game-modal {
     @apply relative z-10 flex flex-col w-full max-w-lg max-h-[min(85vh,40rem)]
       rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/95 backdrop-blur-xl shadow-2xl;
@@ -1339,5 +1360,23 @@
   .auth-divider::after {
     content: "";
     @apply flex-1 h-px bg-outline-variant/40;
+  }
+
+  .auth-google-btn {
+    @apply flex w-full items-center justify-center gap-3 rounded-xl border border-outline-variant/50
+      bg-white px-4 py-3 text-sm font-medium text-[#1f1f1f] shadow-sm
+      transition-colors hover:bg-gray-50 hover:border-outline-variant/70;
+  }
+
+  .auth-google-icon {
+    @apply h-5 w-5 shrink-0;
+  }
+
+  .auth-toggle-wrap {
+    @apply text-center text-body-sm text-on-surface-variant;
+  }
+
+  .auth-toggle-link {
+    @apply font-medium text-primary hover:text-primary-container cursor-pointer bg-transparent border-0 p-0;
   }
 }

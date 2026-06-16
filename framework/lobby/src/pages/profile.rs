@@ -1,4 +1,4 @@
-use crate::api::{graphql_post, stored_user_id};
+use crate::api::{clear_auth_session, graphql_post, stored_user_id};
 use crate::components::ui::*;
 use crate::models::{ActivityEventGql, BadgeGql, UserProfile};
 use crate::LobbyRoute;
@@ -8,6 +8,7 @@ use serde::Deserialize;
 #[component]
 pub fn ProfilePage() -> Element {
     let nav = use_navigator();
+    let confirm = use_confirm();
     let user_id = stored_user_id().unwrap_or_else(|| "guest".into());
     let mut profile: Signal<Option<UserProfile>> = use_signal(|| None);
     let mut activity: Signal<Vec<ActivityEventGql>> = use_signal(Vec::new);
@@ -19,7 +20,7 @@ pub fn ProfilePage() -> Element {
             #[serde(rename_all = "camelCase")]
             struct P { my_profile: Option<UserProfile> }
             if let Ok(p) = graphql_post::<P>(
-                "query { myProfile { displayName createdAt matchesPlayed gamesPublished wins repScore } }",
+                "query { myProfile { displayName createdAt matchesPlayed gamesPublished wins repScore avatarUrl } }",
             )
             .await
             {
@@ -49,6 +50,7 @@ pub fn ProfilePage() -> Element {
     });
 
     let display_name = profile().as_ref().map(|x| x.display_name.clone()).unwrap_or_else(|| user_id.clone());
+    let avatar_url = profile().as_ref().and_then(|x| x.avatar_url.clone());
     let rep_score = profile().map(|x| x.rep_score).unwrap_or(0);
     let matches_played = profile().map(|x| x.matches_played).unwrap_or(0);
     let matches_target = 200u32;
@@ -59,7 +61,7 @@ pub fn ProfilePage() -> Element {
     rsx! {
         div { class: "space-y-8",
             section { class: "section-card flex flex-col sm:flex-row gap-6 items-start",
-                Avatar { seed: user_id.clone(), size: AvatarSize::Xl, image_url: None }
+                Avatar { seed: user_id.clone(), size: AvatarSize::Xl, image_url: avatar_url }
                 div { class: "flex-1 min-w-0",
                     div { class: "flex items-center gap-2 flex-wrap",
                         h1 { class: "font-manrope text-h1 text-2xl text-on-surface", "{display_name}" }
@@ -81,9 +83,36 @@ pub fn ProfilePage() -> Element {
                     }
                     p { class: "text-body-sm text-outline mt-1", "{rank_progress}% to next rank" }
                 }
-                GhostButton {
-                    label: "Settings".to_string(),
-                    onclick: move |_| { nav.push(LobbyRoute::Settings {}); },
+                div { class: "flex flex-col gap-2 shrink-0",
+                    GhostButton {
+                        label: "Settings".to_string(),
+                        onclick: move |_| { nav.push(LobbyRoute::Settings {}); },
+                    }
+                    button {
+                        class: "btn-ghost text-error border-error/40 text-sm",
+                        onclick: move |_| {
+                            let confirm = confirm;
+                            spawn(async move {
+                                if !confirm
+                                    .confirm_with(
+                                        ConfirmOptions::new("Log out of your account?")
+                                            .destructive()
+                                            .confirm_label("Log out"),
+                                    )
+                                    .await
+                                {
+                                    return;
+                                }
+                                let _ = graphql_post::<serde_json::Value>("mutation { logout }").await;
+                                clear_auth_session();
+                                if let Some(w) = web_sys::window() {
+                                    let _ = w.location().set_href("/");
+                                }
+                            });
+                        },
+                        Icon { name: "logout", filled: false }
+                        "Log out"
+                    }
                 }
             }
 

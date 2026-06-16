@@ -1,5 +1,5 @@
 use crate::api::{graphql_error_message, lobby_mutation_needs_force, set_lobby_game_type};
-use crate::components::ui::{push_toast, use_toast, Icon, ToastKind};
+use crate::components::ui::{push_toast, use_confirm, use_toast, Icon, ToastKind};
 use crate::models::{
     game_type_cover_url, game_type_display_title, GameTypeInfo, LobbyDetail,
 };
@@ -160,6 +160,7 @@ pub fn LobbyGameModal(
     }
 
     let toast = use_toast();
+    let confirm = use_confirm();
     let no_game_yet = selected_game_type.trim().is_empty();
 
     rsx! {
@@ -214,6 +215,7 @@ pub fn LobbyGameModal(
                                             let lid = lid.clone();
                                             let gtn = gtn.clone();
                                             let toast = toast;
+                                            let confirm = confirm;
                                             let on_close = on_close;
                                             let on_detail_updated = on_detail_updated;
                                             spawn(async move {
@@ -224,14 +226,11 @@ pub fn LobbyGameModal(
                                                         push_toast(toast.show, "Game selected", ToastKind::Success);
                                                     }
                                                     Err(e) if lobby_mutation_needs_force(&e) => {
-                                                        let force = web_sys::window()
-                                                            .map(|w| {
-                                                                w.confirm_with_message(
-                                                                    "Changing mode resets claimed seats. Continue?",
-                                                                )
-                                                                .unwrap_or(false)
-                                                            })
-                                                            .unwrap_or(false);
+                                                        let force = confirm
+                                                            .confirm(
+                                                                "Changing mode resets claimed seats. Continue?",
+                                                            )
+                                                            .await;
                                                         if force {
                                                             match set_lobby_game_type(&lid, &gtn, true).await {
                                                                 Ok(updated) => {

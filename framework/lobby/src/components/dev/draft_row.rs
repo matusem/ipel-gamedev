@@ -1,5 +1,6 @@
 ﻿use base64::{engine::general_purpose::STANDARD, Engine};
 use crate::api::graphql_exec;
+use crate::components::ui::use_confirm;
 use crate::models::{GameDraftShort, manifest_description_from_json};
 use dioxus::html::FileData;
 use dioxus::prelude::*;
@@ -17,6 +18,7 @@ pub fn DeveloperDraftRow(
     let mut publish_version = use_signal(|| draft.version.clone());
     let mut publish_desc = use_signal(|| desc0);
     let mut saving = use_signal(|| false);
+    let confirm = use_confirm();
 
     use_effect({
         let d = draft.clone();
@@ -155,15 +157,16 @@ pub fn DeveloperDraftRow(
                     disabled: draft.status != "published",
                     onclick: move |_| {
                         let id2 = id_unpub.clone();
-                        let Some(win) = web_sys::window() else {
-                            return;
-                        };
-                        let Ok(true) = win.confirm_with_message(
-                            "Remove this game from the live lobby? Players will not see it until someone publishes again.",
-                        ) else {
-                            return;
-                        };
+                        let confirm = confirm;
                         spawn(async move {
+                            if !confirm
+                                .confirm(
+                                    "Remove this game from the live lobby? Players will not see it until someone publishes again.",
+                                )
+                                .await
+                            {
+                                return;
+                            }
                             let q = "mutation U($id: ID!) { unpublishGameDraft(draftId: $id) { id status } }";
                             let vars = serde_json::json!({ "id": id2 });
                             match graphql_exec::<Value>(q, Some(vars)).await {

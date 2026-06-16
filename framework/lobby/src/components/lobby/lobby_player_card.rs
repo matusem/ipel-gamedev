@@ -1,5 +1,5 @@
 use crate::api::{graphql_exec, kick_lobby_player, transfer_lobby_ownership};
-use crate::components::ui::{push_toast, use_toast, Avatar, AvatarSize, Icon, ToastKind};
+use crate::components::ui::{push_toast, use_confirm, use_toast, Avatar, AvatarSize, Icon, ToastKind};
 use crate::models::{LobbyDetail, LobbySeat};
 use dioxus::prelude::*;
 use serde_json::Value;
@@ -15,6 +15,7 @@ pub fn LobbyPlayerCard(
     on_detail_updated: EventHandler<LobbyDetail>,
 ) -> Element {
     let toast = use_toast();
+    let confirm = use_confirm();
     let taken = seat.claimed_by_user_id.is_some();
     let is_me = my_user_id
         .as_deref()
@@ -93,19 +94,17 @@ pub fn LobbyPlayerCard(
                                                 let new_owner = new_owner.clone();
                                                 let label = label.clone();
                                                 let toast = toast;
+                                                let confirm = confirm;
                                                 let on_detail_updated = on_detail_updated;
-                                                let confirm = web_sys::window()
-                                                    .map(|w| {
-                                                        w.confirm_with_message(&format!(
+                                                spawn(async move {
+                                                    if !confirm
+                                                        .confirm(format!(
                                                             "Make {label} the lobby host? You will lose host controls.",
                                                         ))
-                                                        .unwrap_or(false)
-                                                    })
-                                                    .unwrap_or(false);
-                                                if !confirm {
-                                                    return;
-                                                }
-                                                spawn(async move {
+                                                        .await
+                                                    {
+                                                        return;
+                                                    }
                                                     match transfer_lobby_ownership(&lid, &new_owner).await {
                                                         Ok(updated) => {
                                                             on_detail_updated.call(updated);
@@ -141,19 +140,15 @@ pub fn LobbyPlayerCard(
                                                 let target = target.clone();
                                                 let label = label.clone();
                                                 let toast = toast;
+                                                let confirm = confirm;
                                                 let on_detail_updated = on_detail_updated;
-                                                let confirm = web_sys::window()
-                                                    .map(|w| {
-                                                        w.confirm_with_message(&format!(
-                                                            "Remove {label} from the lobby?",
-                                                        ))
-                                                        .unwrap_or(false)
-                                                    })
-                                                    .unwrap_or(false);
-                                                if !confirm {
-                                                    return;
-                                                }
                                                 spawn(async move {
+                                                    if !confirm
+                                                        .confirm(format!("Remove {label} from the lobby?"))
+                                                        .await
+                                                    {
+                                                        return;
+                                                    }
                                                     match kick_lobby_player(&lid, &target).await {
                                                         Ok(updated) => {
                                                             on_detail_updated.call(updated);

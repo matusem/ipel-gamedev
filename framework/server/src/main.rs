@@ -438,6 +438,7 @@ fn cleanup_old_drafts(drafts_dir: &std::path::Path) {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let _ = dotenvy::dotenv();
     server::logging::init();
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
     let port: u16 = std::env::var("PORT")
@@ -512,7 +513,12 @@ async fn main() -> std::io::Result<()> {
                     .to(graphql_post),
             )
             .route("/graphql", web::get().to(graphql_ws))
-            .route("/graphql/playground", web::get().to(graphql_playground));
+            .route("/graphql/playground", web::get().to(graphql_playground))
+            .route("/auth/google", web::get().to(server::google_oauth::google_start))
+            .route(
+                "/auth/google/callback",
+                web::get().to(server::google_oauth::google_callback),
+            );
 
         if lib_dir.exists() {
             app = app.service(Files::new("/lib", &lib_dir));

@@ -246,6 +246,19 @@ impl MutationRoot {
         })
     }
 
+    async fn set_avatar_url(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "avatarUrl")] avatar_url: Option<String>,
+    ) -> Result<bool> {
+        let pool = ctx.data::<SqlitePool>()?;
+        let uid = require_registered_user(ctx).await?;
+        let url = avatar_url.as_deref().map(str::trim).filter(|u| !u.is_empty());
+        db::set_user_avatar_url(pool, uid, url)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
     async fn logout(&self, ctx: &Context<'_>) -> Result<bool> {
         let pool = ctx.data::<SqlitePool>()?;
         let RequestUser(raw) = ctx.data::<RequestUser>()?;

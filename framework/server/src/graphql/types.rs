@@ -121,6 +121,7 @@ pub struct UserProfileGql {
     pub games_published: u32,
     pub wins: u32,
     pub rep_score: u32,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(SimpleObject, Clone)]

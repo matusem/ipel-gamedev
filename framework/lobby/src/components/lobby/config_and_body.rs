@@ -2,7 +2,7 @@
 use crate::components::lobby::{
     LobbyFloatingChat, LobbyGameModal, LobbyGameRulesModal, LobbyPlayerCard, LobbyRoomHeader,
 };
-use crate::components::ui::{push_toast, status_variant_from_lobby, Icon, JsonConsole, StatusBadge, use_toast, ToastKind};
+use crate::components::ui::{push_toast, status_variant_from_lobby, Icon, JsonConsole, StatusBadge, use_confirm, use_toast, ToastKind};
 use crate::models::*;
 use crate::stub::game_media;
 use crate::LobbyRoute;
@@ -77,6 +77,7 @@ pub fn LobbyConfigPanel(
     server_config_json: Option<String>,
 ) -> Element {
     let toast = use_toast();
+    let confirm = use_confirm();
     let init_cfg = server_config_json
         .as_deref()
         .map(str::trim)
@@ -177,6 +178,7 @@ pub fn LobbyConfigPanel(
                     let cfg = draft_for_apply.borrow().clone();
                     let lid = lobby_id_apply.clone();
                     let toast = toast;
+                    let confirm = confirm;
                     spawn(async move {
                         let q = "mutation U($id: ID!, $c: String!, $f: Boolean!) { updateLobbyConfig(lobbyId: $id, configJson: $c, force: $f) { id } }";
                         let vars = serde_json::json!({ "id": lid, "c": cfg, "f": false });
@@ -184,14 +186,11 @@ pub fn LobbyConfigPanel(
                         if r.is_ok() {
                             push_toast(toast.show, "Configuration applied", ToastKind::Success);
                         } else if let Err(_) = r {
-                            let force = web_sys::window()
-                                .map(|w| {
-                                    w.confirm_with_message(
-                                        "Config change needs resetting seats. Apply and reset claims?",
-                                    )
-                                    .unwrap_or(false)
-                                })
-                                .unwrap_or(false);
+                            let force = confirm
+                                .confirm(
+                                    "Config change needs resetting seats. Apply and reset claims?",
+                                )
+                                .await;
                             if force {
                                 let vars2 = serde_json::json!({ "id": lid, "c": cfg, "f": true });
                                 if graphql_exec::<Value>(q, Some(vars2)).await.is_ok() {

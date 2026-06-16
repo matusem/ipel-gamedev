@@ -213,6 +213,30 @@ pub async fn update_user_display_name(
     Ok(res.rows_affected() > 0)
 }
 
+pub async fn get_user_avatar_url(
+    pool: &SqlitePool,
+    user_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query("SELECT avatar_url FROM users WHERE id = ?")
+        .bind(user_id.to_string())
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.and_then(|r| r.get::<Option<String>, _>(0)))
+}
+
+pub async fn set_user_avatar_url(
+    pool: &SqlitePool,
+    user_id: Uuid,
+    url: Option<&str>,
+) -> Result<bool, sqlx::Error> {
+    let res = sqlx::query("UPDATE users SET avatar_url = ? WHERE id = ?")
+        .bind(url)
+        .bind(user_id.to_string())
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
+}
+
 pub async fn count_finished_games_since(
     pool: &SqlitePool,
     since_ts: i64,
@@ -296,6 +320,39 @@ pub async fn sign_up(
     .execute(pool)
     .await?;
     Ok((id, display_name.to_string(), now))
+}
+
+/// Find an existing Google-linked user or create a new one.
+/// Returns `(id, display_name, created_at, is_new)`.
+pub async fn find_or_create_google_user(
+    pool: &SqlitePool,
+    google_sub: &str,
+    display_name: &str,
+) -> Result<(Uuid, String, i64, bool), sqlx::Error> {
+    let row = sqlx::query("SELECT id, display_name, created_at FROM users WHERE google_sub = ?")
+        .bind(google_sub)
+        .fetch_optional(pool)
+        .await?;
+    if let Some(r) = row {
+        let sid: String = r.get(0);
+        let name: String = r.get(1);
+        let created: i64 = r.get(2);
+        let id = Uuid::parse_str(&sid).unwrap_or_else(|_| Uuid::new_v4());
+        return Ok((id, name, created, false));
+    }
+
+    let id = Uuid::new_v4();
+    let now = GameInstanceStore::now_secs();
+    sqlx::query(
+        "INSERT INTO users (id, display_name, google_sub, created_at) VALUES (?, ?, ?, ?)",
+    )
+    .bind(id.to_string())
+    .bind(display_name)
+    .bind(google_sub)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok((id, display_name.to_string(), now, true))
 }
 
 pub async fn get_user(
