@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod cli_auth;
 pub mod developer;
 pub mod game_detail;
 pub mod game_result;
@@ -12,6 +13,7 @@ pub mod settings;
 
 pub use admin::AdminPage;
 pub use auth::AuthGate;
+pub use cli_auth::CliAuthPage;
 pub use developer::DeveloperUploadsPage;
 pub use game_detail::GameDetailPage;
 pub use game_result::GameResultPage;

@@ -3,11 +3,12 @@
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 thread_local! {
     static DEMO_LOBBY_GAME_TYPES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     static DEMO_LOBBY_OWNERS: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    static DEMO_LOBBY_KICKED: RefCell<HashMap<String, HashSet<String>>> = RefCell::new(HashMap::new());
 }
 
 fn now() -> i64 {
@@ -568,6 +569,35 @@ fn finished_sessions(game: &str) -> Value {
     ])
 }
 
+fn finished_games_by_lobby(lobby_id: &str, game: &str) -> Value {
+    let seats = json!([
+        { "seatIndex": 0, "playerIdentity": "p1", "claimedDisplayName": "NovaPilot", "claimedByUserId": "demo-user-nova" },
+        { "seatIndex": 1, "playerIdentity": "p2", "claimedDisplayName": "CipherFox", "claimedByUserId": "demo-user-cipher" }
+    ]);
+    json!([
+        {
+            "gameId": "demo-result-1",
+            "gameType": game,
+            "lobbyId": lobby_id,
+            "finishedAt": ago_mins(20),
+            "resultJson": r#"{"per_player_outcome":{"p1":"Win","p2":"Loss"},"version":1}"#,
+            "playerScoresJson": r#"{"p1":1.0,"p2":0.0}"#,
+            "seatsSnapshotJson": seats,
+            "resultUiPath": null
+        },
+        {
+            "gameId": "demo-result-2",
+            "gameType": game,
+            "lobbyId": lobby_id,
+            "finishedAt": ago_hours(2),
+            "resultJson": r#"{"per_player_outcome":{"p1":"Loss","p2":"Win"},"version":1}"#,
+            "playerScoresJson": r#"{"p1":0.0,"p2":1.0}"#,
+            "seatsSnapshotJson": seats,
+            "resultUiPath": null
+        }
+    ])
+}
+
 fn points_leaderboard() -> Value {
     json!([
         { "rank": 1, "displayName": "NovaPilot", "totalScore": 2840, "wins": 42, "winRatePct": 78 },
@@ -669,7 +699,7 @@ fn lobby_id_from_vars(variables: &Option<Value>) -> String {
 fn demo_owner_for_lobby(id: &str, seats: &Value) -> (String, String) {
     let owner_id = DEMO_LOBBY_OWNERS
         .with(|m| m.borrow().get(id).cloned())
-        .unwrap_or_else(|| "u-nova".into());
+        .unwrap_or_else(|| "demo-user-nova".into());
     let owner_name = seats
         .as_array()
         .and_then(|arr| {
@@ -702,16 +732,41 @@ fn lobby_detail(id: &str) -> Value {
         json!([])
     } else if game == "checkers" {
         json!([
-            { "seatIndex": 0, "playerIdentity": "p1", "claimedByUserId": "u-nova", "claimedDisplayName": "NovaPilot", "ready": true },
-            { "seatIndex": 1, "playerIdentity": "p2", "claimedByUserId": "u-cipher", "claimedDisplayName": "CipherFox", "ready": true }
+            { "seatIndex": 0, "playerIdentity": "p1", "claimedByUserId": "demo-user-nova", "claimedDisplayName": "NovaPilot", "ready": true },
+            { "seatIndex": 1, "playerIdentity": "p2", "claimedByUserId": "demo-user-cipher", "claimedDisplayName": "CipherFox", "ready": true }
         ])
     } else {
         json!([
-            { "seatIndex": 0, "playerIdentity": "p1", "claimedByUserId": "u-nova", "claimedDisplayName": "NovaPilot", "ready": true },
+            { "seatIndex": 0, "playerIdentity": "p1", "claimedByUserId": "demo-user-nova", "claimedDisplayName": "NovaPilot", "ready": true },
             { "seatIndex": 1, "playerIdentity": "p2", "claimedByUserId": null, "claimedDisplayName": null, "ready": false },
-            { "seatIndex": 2, "playerIdentity": "p3", "claimedByUserId": "u-byte", "claimedDisplayName": "ByteRunner", "ready": false },
+            { "seatIndex": 2, "playerIdentity": "p3", "claimedByUserId": "demo-user-byte", "claimedDisplayName": "ByteRunner", "ready": false },
             { "seatIndex": 3, "playerIdentity": "p4", "claimedByUserId": null, "claimedDisplayName": null, "ready": false }
         ])
+    };
+    let kicked = DEMO_LOBBY_KICKED.with(|m| {
+        m.borrow()
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
+    });
+    let seats = if kicked.is_empty() {
+        seats
+    } else {
+        let mut arr = seats.as_array().cloned().unwrap_or_default();
+        for seat in &mut arr {
+            if seat
+                .get("claimedByUserId")
+                .and_then(|v| v.as_str())
+                .is_some_and(|uid| kicked.contains(uid))
+            {
+                seat.as_object_mut().map(|o| {
+                    o.insert("claimedByUserId".into(), Value::Null);
+                    o.insert("claimedDisplayName".into(), Value::Null);
+                    o.insert("ready".into(), json!(false));
+                });
+            }
+        }
+        Value::Array(arr)
     };
     let (owner_id, owner_name) = demo_owner_for_lobby(id, &seats);
     json!({
@@ -775,10 +830,26 @@ pub async fn demo_graphql<T: DeserializeOwned>(
             let new_owner = variables
                 .as_ref()
                 .and_then(|v| v.get("u").and_then(|x| x.as_str()))
-                .unwrap_or("u-byte")
+                .unwrap_or("demo-user-byte")
                 .to_string();
             DEMO_LOBBY_OWNERS.with(|m| m.borrow_mut().insert(id.clone(), new_owner));
             json!({ "transferLobbyOwnership": lobby_detail(&id) })
+        } else if q.contains("kickLobbyPlayer") {
+            let id = lobby_id_from_vars(&variables);
+            let target = variables
+                .as_ref()
+                .and_then(|v| v.get("u").and_then(|x| x.as_str()))
+                .unwrap_or("")
+                .to_string();
+            if !target.is_empty() {
+                DEMO_LOBBY_KICKED.with(|m| {
+                    m.borrow_mut()
+                        .entry(id.clone())
+                        .or_default()
+                        .insert(target);
+                });
+            }
+            json!({ "kickLobbyPlayer": lobby_detail(&id) })
         } else if q.contains("submitGameReview") || q.contains("submitGameComment") || q.contains("updateGameStorefront") {
             if q.contains("updateGameStorefront") {
                 json!({ "updateGameStorefront": true })
@@ -812,6 +883,12 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         json!({ "gameReviews": reviews(&gt) })
     } else if q.contains("gameComments") {
         json!({ "gameComments": comments() })
+    } else if q.contains("finishedGamesByLobby") {
+        let id = variables
+            .as_ref()
+            .and_then(|v| v.get("id").and_then(|x| x.as_str()))
+            .unwrap_or("lob-a1f2");
+        json!({ "finishedGamesByLobby": finished_games_by_lobby(id, &gt) })
     } else if q.contains("finishedGamesByType") {
         json!({ "finishedGamesByType": finished_sessions(&gt) })
     } else if q.contains("gamePlayTimeLeaderboard") {

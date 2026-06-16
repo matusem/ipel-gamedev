@@ -3,10 +3,13 @@
 Workflow (from project root):
 
 1. `gamedev doctor` — verify layout, client pages, and toolchain
-2. `gamedev test` — run logic / workspace tests
-3. `gamedev build` — produce `dist/game.zip` for the framework
-4. `gamedev login --user-id <uuid>`
-5. `gamedev deploy --draft-only` (or `--auto-publish`)
+2. `gamedev codegen` — generate typed client bindings from your game types
+3. `gamedev test` — run logic / workspace tests
+4. `gamedev build` — produce `dist/game.zip` for the framework (runs codegen)
+5. `gamedev login --display-name <name> --password <pass>` (or `--publish-token` from lobby)
+6. `gamedev deploy` (add `--publish` to go live; `--profile prod` for production)
+
+You only edit **game logic** (Rust `GameCore` / Java `GameRules`) and **client UI** against generated types. WASM wiring and the WebSocket protocol are handled by the SDKs.
 
 ### Layout matrix
 
@@ -19,32 +22,27 @@ Workflow (from project root):
 
 Unsupported in `init` today: C#, C++, Unity, Godot, Three.js.
 
-### Rust + Bevy (flat layout)
+### SDK surfaces
 
-- Workspace: `logic`, `component`, `bevy`, `tests`, `client/`
-- `build` compiles the Wasm component and runs `wasm-bindgen` for the Bevy play client into `client/`
-- Install once if `doctor` warns: `cargo install wasm-bindgen-cli`, `rustup target add wasm32-unknown-unknown`
-
-### Rust + Bevy (nested layout)
-
-- Workspace: `backend/rust/*`, `frontend/bevy`, `client/`
-- `build` compiles the Wasm component and runs `wasm-bindgen` for the Bevy web client into `client/`
-- When created under the framework tree, `frontend/bevy` links `upjs-gdd-bevy` automatically
-
-### Rust + Dioxus (nested layout)
-
-- Workspace: `backend/rust/*`, `frontend/dioxus`, `client/`
-- `build` compiles the Wasm component and runs `wasm-bindgen` for the Dioxus web client into `client/`
-- When created under the framework tree, `frontend/dioxus` links `upjs-gdd-dioxus` automatically
-
-### Java + JS / TS
-
-- Workspace: `backend/java/` (TeaVM guest), `frontend/web`, `client/`
-- `build` runs Gradle `exportLogicComponent` and packages upload-ready `logic.wasm`
-- See `framework/sdk/java/README.md` for JDK / wit-bindgen toolchain pins
+| Layer | Package | Your code |
+|-------|---------|-----------|
+| Server logic | `game` crate / `sk.upjs.gdd:game` | Rules, state, scoring |
+| Client (JS/TS) | `@upjs-gdd/game-sdk` + generated types | UI only |
+| Client (Bevy) | `upjs-gdd-bevy` | Rendering + typed events |
+| Tooling | `gamedev-cli` | build, deploy, codegen |
 
 ### JS / TS frontend
 
-- Sources live in `frontend/web/`
-- `build` runs `npm run build` when possible and merges output into `client/` for packaging
-- When created under the framework tree, `package.json` links `@upjs-gdd/sdk-js` via a local `file:` dependency
+- Sources in `frontend/web/` use `@upjs-gdd/game-sdk` for live play
+- `gamedev codegen` writes `frontend/web/src/generated/` and `generated/schema/`
+- `build` runs `npm run build` when possible and merges into `client/`
+
+### Rust + Bevy
+
+- Flat or nested workspace; `build` runs `wasm-bindgen` into `client/`
+- Play client connects via lobby URL params (`ws`, `id`, `player`)
+
+### Java + JS / TS
+
+- `backend/java/` exports `logic.wasm` via Gradle `exportLogicComponent`
+- Types codegen via Gradle `:game:exportJsonSchema` when configured

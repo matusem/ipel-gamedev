@@ -142,7 +142,7 @@ fn layout_tooling_checks(
         } else {
             warn(
                 "cargo-component",
-                "not on PATH — install with: cargo install cargo-component",
+                "not on PATH - install with: cargo install cargo-component",
             )
         });
     }
@@ -167,7 +167,7 @@ fn layout_tooling_checks(
         } else {
             warn(
                 "wasm-bindgen-cli",
-                "not on PATH — `cargo install wasm-bindgen-cli` required for wasm web build",
+                "not on PATH - `cargo install wasm-bindgen-cli` required for wasm web build",
             )
         });
         let target_installed = Command::new("rustup")
@@ -192,7 +192,7 @@ fn layout_tooling_checks(
             } else {
                 warn(
                     ".cargo/config.toml",
-                    "missing — build will auto-create; needed for getrandom on wasm",
+                    "missing - build will auto-create; needed for getrandom on wasm",
                 )
             });
         }
@@ -207,7 +207,7 @@ fn layout_tooling_checks(
         out.push(if command_ok("npm", &["--version"]) {
             ok("npm", "available")
         } else {
-            warn("npm", "not on PATH — static frontend merge only")
+            warn("npm", "not on PATH - static frontend merge only")
         });
     }
     out
@@ -232,7 +232,7 @@ fn toolchain_checks(
         out.push(if command_ok("java", &["-version"]) {
             ok("java", "available")
         } else {
-            fail("java", "not on PATH — JDK 21+ required")
+            fail("java", "not on PATH - JDK 21+ required")
         });
     }
     out
@@ -282,32 +282,47 @@ pub fn print_report(checks: &[CheckResult]) {
     let mut fails = 0u32;
     let mut warns = 0u32;
     for c in checks {
-        let (tag, color_hint) = match c.status {
-            CheckStatus::Ok => ("OK", ""),
+        match c.status {
+            CheckStatus::Ok => crate::reporter::status(&c.label, &c.detail),
             CheckStatus::Warn => {
                 warns += 1;
-                ("WARN", "")
+                crate::reporter::warn(&c.label, &c.detail);
             }
             CheckStatus::Fail => {
                 fails += 1;
-                ("FAIL", "")
+                crate::reporter::error(&c.label, &c.detail);
             }
-        };
-        let _ = color_hint;
-        println!("[{tag}] {} — {}", c.label, c.detail);
+        }
     }
-    println!();
-    if fails > 0 {
-        println!(
-            "Doctor: {fails} failure(s), {warns} warning(s). Fix FAIL items before build/deploy."
-        );
-    } else if warns > 0 {
-        println!("Doctor: all required checks passed; {warns} warning(s).");
-    } else {
-        println!("Doctor: all checks passed.");
-    }
+    crate::reporter::print_doctor_summary(fails, warns);
 }
 
 pub fn has_failures(checks: &[CheckResult]) -> bool {
     checks.iter().any(|c| c.status == CheckStatus::Fail)
+}
+
+/// Report scaffold template coverage for backend x frontend matrix.
+pub fn print_matrix_report() {
+    use crate::cli::{BackendKind, FrontendKind};
+    crate::reporter::section("Matrix coverage");
+    let backends = [BackendKind::Rust, BackendKind::Java];
+    let frontends = [
+        FrontendKind::Js,
+        FrontendKind::Ts,
+        FrontendKind::Bevy,
+    ];
+    for b in backends {
+        for f in frontends {
+            let status = if b.is_implemented() && f.is_implemented() {
+                "supported"
+            } else {
+                "planned"
+            };
+            crate::reporter::status(
+                "combo",
+                &format!("{b:?} x {f:?} - {status} (templates + build wiring)"),
+            );
+        }
+    }
+    crate::reporter::hint("run `gamedev doctor --matrix` in CI to guard template coverage");
 }

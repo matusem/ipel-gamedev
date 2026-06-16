@@ -68,6 +68,196 @@ pub struct LoadedGameResult {
     pub iframe_src: Option<String>,
 }
 
+pub fn loaded_game_result_from_row(r: GameResultRow) -> LoadedGameResult {
+    let iframe_src = r.result_ui_path.as_ref().and_then(|path| {
+        let result_v: serde_json::Value =
+            serde_json::from_str(&r.result_json).unwrap_or(serde_json::Value::Null);
+        let scores_v: serde_json::Value =
+            serde_json::from_str(&r.player_scores_json).unwrap_or(serde_json::Value::Null);
+        let seats_v: serde_json::Value =
+            serde_json::from_str(&r.seats_snapshot_json).unwrap_or(serde_json::Value::Null);
+        let payload = serde_json::json!({
+            "gameId": &r.game_id,
+            "gameType": &r.game_type,
+            "finishedAt": r.finished_at,
+            "lobbyId": &r.lobby_id,
+            "result": result_v,
+            "scores": scores_v,
+            "seats": seats_v,
+        });
+        let payload_str = payload.to_string();
+        let enc = urlencoding::encode(&payload_str);
+        Some(format!("/games/{}/{}?payload={}", r.game_type, path, enc))
+    });
+    LoadedGameResult { row: r, iframe_src }
+}
+
+pub fn game_result_summary(row: &GameResultRow) -> String {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&row.result_json) {
+        if let Some(outcomes) = v.get("per_player_outcome").and_then(|o| o.as_object()) {
+            let id_to_name = seat_identity_display_map(&row.seats_snapshot_json);
+            let winners: Vec<String> = outcomes
+                .iter()
+                .filter(|(_, o)| o.as_str() == Some("Win"))
+                .map(|(pid, _)| {
+                    id_to_name
+                        .get(pid.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| pid.clone())
+                })
+                .collect();
+            if winners.len() == 1 {
+                return format!("{} wins", winners[0]);
+            }
+            if winners.is_empty() && outcomes.values().all(|o| o.as_str() == Some("Draw")) {
+                return "Draw".to_string();
+            }
+        }
+        for key in ["winnerDisplayName", "winner", "message", "status", "outcome"] {
+            if let Some(s) = v.get(key).and_then(|x| x.as_str()).filter(|s| !s.is_empty()) {
+                return s.to_string();
+            }
+        }
+    }
+    format!(
+        "Match #{}",
+        row.game_id.chars().take(8).collect::<String>()
+    )
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MatchPlayerScore {
+    pub display_name: String,
+    pub points: i32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LobbyStanding {
+    pub display_name: String,
+    pub total_points: i32,
+    pub matches_played: u32,
+}
+
+pub fn seat_identity_display_map(seats_json: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(seats_json) else {
+        return map;
+    };
+    let Some(arr) = v.as_array() else {
+        return map;
+    };
+    for seat in arr {
+        let identity = seat
+            .get("player_identity")
+            .or_else(|| seat.get("playerIdentity"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let name = seat
+            .get("claimed_display_name")
+            .or_else(|| seat.get("claimedDisplayName"))
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&identity)
+            .to_string();
+        if !identity.is_empty() {
+            map.insert(identity, name);
+        }
+    }
+    map
+}
+
+fn score_to_points(score: f64) -> i32 {
+    if score.fract() == 0.0 && score.abs() < 10_000.0 {
+        score.round() as i32
+    } else {
+        (score * 1000.0).round() as i32
+    }
+}
+
+pub fn parse_match_player_scores(row: &GameResultRow) -> Vec<MatchPlayerScore> {
+    let id_to_name = seat_identity_display_map(&row.seats_snapshot_json);
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&row.player_scores_json) else {
+        return Vec::new();
+    };
+    let mut scores = Vec::new();
+    if let Some(obj) = v.as_object() {
+        for (pid, score_v) in obj {
+            let points = score_v
+                .as_f64()
+                .or_else(|| score_v.as_i64().map(|n| n as f64))
+                .map(score_to_points)
+                .unwrap_or(0);
+            let display_name = id_to_name
+                .get(pid.as_str())
+                .cloned()
+                .unwrap_or_else(|| pid.clone());
+            scores.push(MatchPlayerScore {
+                display_name,
+                points,
+            });
+        }
+    } else if let Some(arr) = v.as_array() {
+        for entry in arr {
+            let display_name = entry
+                .get("displayName")
+                .or_else(|| entry.get("display_name"))
+                .or_else(|| entry.get("player"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("Player")
+                .to_string();
+            let points = entry
+                .get("score")
+                .or_else(|| entry.get("points"))
+                .and_then(|x| x.as_f64().or_else(|| x.as_i64().map(|n| n as f64)))
+                .map(score_to_points)
+                .unwrap_or(0);
+            scores.push(MatchPlayerScore {
+                display_name,
+                points,
+            });
+        }
+    }
+    scores.sort_by(|a, b| b.points.cmp(&a.points).then(a.display_name.cmp(&b.display_name)));
+    scores
+}
+
+pub fn format_match_points(scores: &[MatchPlayerScore]) -> String {
+    if scores.is_empty() {
+        return "—".to_string();
+    }
+    scores
+        .iter()
+        .map(|s| format!("{} +{}", s.display_name, s.points))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+pub fn compute_lobby_standings(rows: &[GameResultRow]) -> Vec<LobbyStanding> {
+    let mut by_name: std::collections::HashMap<String, LobbyStanding> = std::collections::HashMap::new();
+    for row in rows {
+        for score in parse_match_player_scores(row) {
+            let entry = by_name
+                .entry(score.display_name.clone())
+                .or_insert(LobbyStanding {
+                    display_name: score.display_name.clone(),
+                    total_points: 0,
+                    matches_played: 0,
+                });
+            entry.total_points += score.points;
+            entry.matches_played += 1;
+        }
+    }
+    let mut list: Vec<_> = by_name.into_values().collect();
+    list.sort_by(|a, b| {
+        b.total_points
+            .cmp(&a.total_points)
+            .then(b.matches_played.cmp(&a.matches_played))
+            .then(a.display_name.cmp(&b.display_name))
+    });
+    list
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentFinishedRow {
@@ -140,6 +330,7 @@ pub struct PlayOverlay {
     pub player: String,
     pub return_lobby_id: Option<String>,
     pub spectator: bool,
+    pub is_lobby_owner: bool,
 }
 
 #[derive(Deserialize)]

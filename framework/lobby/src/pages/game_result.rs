@@ -1,10 +1,9 @@
 ﻿use crate::api::graphql_exec;
 use crate::components::ui::*;
-use crate::models::{GameResultRow, LoadedGameResult};
+use crate::models::{loaded_game_result_from_row, GameResultRow, LoadedGameResult};
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
-use serde_json::Value;
 
 #[component]
 pub fn GameResultPage(game_id: String) -> Element {
@@ -30,24 +29,7 @@ pub fn GameResultPage(game_id: String) -> Element {
             match graphql_exec::<Wrap>(q, Some(vars)).await {
                 Ok(w) => {
                     if let Some(r) = w.finished_game {
-                        let iframe_src = r.result_ui_path.as_ref().and_then(|path| {
-                            let result_v: Value = serde_json::from_str(&r.result_json).unwrap_or(Value::Null);
-                            let scores_v: Value = serde_json::from_str(&r.player_scores_json).unwrap_or(Value::Null);
-                            let seats_v: Value = serde_json::from_str(&r.seats_snapshot_json).unwrap_or(Value::Null);
-                            let payload = serde_json::json!({
-                                "gameId": &r.game_id,
-                                "gameType": &r.game_type,
-                                "finishedAt": r.finished_at,
-                                "lobbyId": &r.lobby_id,
-                                "result": result_v,
-                                "scores": scores_v,
-                                "seats": seats_v,
-                            });
-                            let payload_str = payload.to_string();
-                            let enc = urlencoding::encode(&payload_str);
-                            Some(format!("/games/{}/{}?payload={}", r.game_type, path, enc))
-                        });
-                        loaded.set(Some(LoadedGameResult { row: r, iframe_src }));
+                        loaded.set(Some(loaded_game_result_from_row(r)));
                     } else {
                         loaded.set(None);
                     }

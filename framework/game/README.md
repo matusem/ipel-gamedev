@@ -1,5 +1,7 @@
 # `game` Crate Architecture
 
+> **Developer surface:** implement `GameCore` in a logic crate; run `gamedev codegen` for typed client bindings; use `@upjs-gdd/game-sdk` or `upjs-gdd-bevy` for the play UI. You do not wire WASM or the WebSocket protocol yourself.
+
 This crate defines the framework's core contract for turn-based multiplayer game logic. A game implementation does not talk to the server, WebSocket layer, or lobby directly. Instead, it implements `GameCore` and a few supporting traits, and the framework hosts that implementation inside `logic.wasm`.
 
 The important design idea is that the framework keeps **two views of the same match**:

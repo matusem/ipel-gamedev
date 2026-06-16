@@ -119,6 +119,26 @@ impl QueryRoot {
             .collect())
     }
 
+    async fn finished_games_by_lobby(
+        &self,
+        ctx: &Context<'_>,
+        lobby_id: async_graphql::types::ID,
+        limit: Option<i32>,
+    ) -> Result<Vec<FinishedGameGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let lim = limit.unwrap_or(50).clamp(1, 100) as i64;
+        let rows = db::list_finished_games_by_lobby(pool, lid, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| map_finished_row(r, registry))
+            .collect())
+    }
+
     async fn user(
         &self,
         ctx: &Context<'_>,

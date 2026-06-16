@@ -15,7 +15,7 @@ if (-not (Test-Path "assets/tailwind.css")) {
 
 Write-Host ""
 Write-Host "Starting lobby at http://127.0.0.1:8080"
-Write-Host "Backend must run separately on :8081 — from framework/: .\scripts\dev-backend.ps1"
+Write-Host "Backend must run separately on :8081 - from framework/: .\scripts\dev-backend.ps1"
 Write-Host ""
 
 dx serve --platform web

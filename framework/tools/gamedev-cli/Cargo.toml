@@ -17,13 +17,23 @@ assets = [
     ["target/release/gamedev-cli", "usr/bin/gamedev-cli", "755"],
 ]
 
+[features]
+default = []
+# Production defaults baked into CI/release binaries (see .github/workflows/reusable-build-cli.yml).
+packaged = []
+
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
+comfy-table = "7"
+console = "0.15"
 ctrlc = "3"
 crossterm = "0.29"
 dirs = "6"
+indicatif = "0.17"
+owo-colors = "4"
+rand = "0.8"
 ratatui = { version = "0.30", features = ["crossterm"] }
 ratatui-interact = "0.5"
 tui-input = { version = "0.15", default-features = false, features = ["ratatui-crossterm"] }
@@ -31,8 +41,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
+tiny_http = "0.12"
 toml = "0.9"
 pathdiff = "0.2"
+urlencoding = "2"
+webbrowser = "1"
 zip = "4"
 semver = "1"
 sha2 = "0.10"

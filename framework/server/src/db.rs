@@ -168,6 +168,21 @@ pub async fn list_finished_games_by_type(
     Ok(rows.into_iter().filter_map(map_finished_row).collect())
 }
 
+pub async fn list_finished_games_by_lobby(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+    limit: i64,
+) -> Result<Vec<FinishedGameRow>, sqlx::Error> {
+    let rows = sqlx::query(&format!(
+        "{FINISHED_SELECT} WHERE status = 'finished' AND finished_at IS NOT NULL AND lobby_id = ? ORDER BY finished_at DESC LIMIT ?"
+    ))
+    .bind(lobby_id.to_string())
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().filter_map(map_finished_row).collect())
+}
+
 pub async fn count_active_players_by_type(
     pool: &SqlitePool,
 ) -> Result<std::collections::HashMap<String, i32>, sqlx::Error> {

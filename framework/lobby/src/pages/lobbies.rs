@@ -167,6 +167,7 @@ pub fn LobbiesBrowserPage() -> Element {
                                                                     player: String::new(),
                                                                     return_lobby_id: Some(lobby_id_for_spec.clone()),
                                                                     spectator: true,
+                                                                    is_lobby_owner: false,
                                                                 }));
                                                             } else {
                                                                 push_toast(toast.show, "Game not started yet", ToastKind::Info);

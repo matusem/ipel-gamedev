@@ -17,7 +17,7 @@ pub fn new_session_token() -> String {
     format!("sess_{}", Uuid::new_v4())
 }
 
-pub async fn create_session(pool: &SqlitePool, user_id: Uuid) -> Result<String, sqlx::Error> {
+pub async fn create_session(pool: &SqlitePool, user_id: Uuid) -> Result<(String, i64), sqlx::Error> {
     let token = new_session_token();
     let now = GameInstanceStore::now_secs();
     let expires_at = now + SESSION_TTL_SECS;
@@ -30,7 +30,7 @@ pub async fn create_session(pool: &SqlitePool, user_id: Uuid) -> Result<String, 
     .bind(expires_at)
     .execute(pool)
     .await?;
-    Ok(token)
+    Ok((token, expires_at))
 }
 
 pub async fn resolve_session(pool: &SqlitePool, token: &str) -> Result<Option<Uuid>, sqlx::Error> {

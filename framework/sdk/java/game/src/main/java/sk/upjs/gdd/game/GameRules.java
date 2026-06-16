@@ -46,4 +46,13 @@ public interface GameRules<
 
     /** Apply a visible per-player event to that player's view state (mirrors Rust {@code PlayerState::apply_event}). */
     void applyPlayerEvent(PlayerStateT playerState, PlayerViewEventT event);
+
+    /**
+     * Final float scores per player when a game ends (mirrors Rust {@code GameCore::scores_at_end}).
+     * Default: empty — server falls back to win/loss heuristics from GameOver events.
+     */
+    default java.util.List<java.util.AbstractMap.SimpleEntry<PlayerT, Double>> scoresAtEnd(
+            GameResultT result) {
+        return java.util.List.of();
+    }
 }

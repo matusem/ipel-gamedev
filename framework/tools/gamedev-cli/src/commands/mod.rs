@@ -10,11 +10,16 @@ use crate::api;
 use crate::auth::{self, AuthEntry};
 use crate::build;
 use crate::cli::{
-    BackendKind, BuildArgs, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands, LoginArgs,
-    ManifestArgs, ManifestSubcommands, TestArgs, UpdateArgs, ValidateArgs,
+    BackendKind, BuildArgs, CodegenArgs, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands,
+    LoginArgs, ManifestArgs, ManifestSubcommands, LogoutArgs, TestArgs, UpdateArgs, ValidateArgs,
 };
+use crate::config;
 use crate::doctor::{self, has_failures, print_report};
-use crate::project::{game_cargo_command, load_config, resolve_java_backend_dir, resolve_test_dir};
+use crate::project::{
+    game_cargo_command, load_config, resolve_java_backend_dir, resolve_rust_logic_wasm_path,
+    resolve_test_dir,
+};
+use crate::reporter::{self, LoggedCommand, SpinnerFinish};
 
 pub fn run_init(args: crate::cli::InitArgs) -> Result<()> {
     crate::scaffold::cmd_init(args)
@@ -25,42 +30,94 @@ pub fn run_build(args: BuildArgs) -> Result<()> {
 }
 
 pub fn run_login(args: LoginArgs) -> Result<()> {
-    let (token, user_id, expires_at) = if let (Some(name), Some(pass)) =
+    let server_url = config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?;
+    let has_password_field = args.display_name.is_some() || args.password.is_some();
+    if has_password_field && (args.display_name.is_none() || args.password.is_none()) {
+        bail!("provide both --display-name and --password");
+    }
+    let use_web = args.web
+        || (!has_password_field
+            && args.publish_token.is_none()
+            && args.user_id.is_none());
+
+    let (token, user_id, expires_at) = if let Some(pt) = args.publish_token.as_deref() {
+        let publish = api::store_publish_token(&server_url, pt, None)?;
+        (publish.token, publish.user_id, publish.expires_at)
+    } else if let (Some(name), Some(pass)) =
         (args.display_name.as_deref(), args.password.as_deref())
     {
-        let session = api::gql_login_with_password(&args.server_url, name, pass)?;
+        let session = api::gql_login_with_password(&server_url, name, pass)?;
         (session.token, session.user_id, session.expires_at)
     } else if let Some(uid) = args.user_id.as_deref() {
-        let publish = api::gql_create_publish_token(&args.server_url, uid)?;
+        reporter::warn(
+            "login",
+            "--user-id is deprecated; use browser login, --display-name/--password, or --publish-token",
+        );
+        let publish = api::gql_create_publish_token(&server_url, uid)?;
+        (publish.token, publish.user_id, publish.expires_at)
+    } else if use_web {
+        let platform_base =
+            config::resolve_platform_base(args.profile.as_deref(), &args.server_url)?;
+        let web = crate::auth_web::login_via_browser(&platform_base)?;
+        let publish = api::store_publish_token(&server_url, &web.token, Some(web.expires_at))?;
         (publish.token, publish.user_id, publish.expires_at)
     } else {
-        bail!("provide --display-name and --password, or deprecated --user-id");
+        bail!("provide credentials, --publish-token, or use browser login (default)");
     };
     let path = auth::auth_db_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let mut db = auth::load_auth_store(&path)?;
-    db.retain(|e| e.server_url != args.server_url);
+    db.retain(|e| e.server_url != server_url);
     db.push(AuthEntry {
-        server_url: args.server_url,
+        server_url: server_url.clone(),
         token: token.clone(),
         expires_at,
         user_id: user_id.clone(),
     });
     fs::write(path, serde_json::to_vec_pretty(&db)?)?;
-    println!("Login successful for {user_id}. Token expires at {expires_at}");
+    reporter::status(
+        "login",
+        &format!("authenticated as {user_id} on {server_url} (expires {expires_at})"),
+    );
+    Ok(())
+}
+
+pub fn run_logout(args: LogoutArgs) -> Result<()> {
+    if args.all {
+        auth::clear_all_auth()?;
+        reporter::status("logout", "cleared all stored credentials");
+        return Ok(());
+    }
+
+    let server_url = if args.profile.is_some() || args.server_url != crate::cli::DEFAULT_GRAPHQL_URL
+    {
+        config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?
+    } else if let Some(auth) = auth::current_auth_summary() {
+        auth.server_url
+    } else {
+        bail!("not logged in");
+    };
+
+    if auth::logout_server(&server_url)? {
+        reporter::status("logout", &format!("signed out from {server_url}"));
+    } else {
+        reporter::warn("logout", &format!("no credentials stored for {server_url}"));
+    }
     Ok(())
 }
 
 pub fn run_deploy(args: DeployArgs) -> Result<()> {
     let root = args.project_dir.unwrap_or(std::env::current_dir()?);
-    let base = crate::update::base_from_server_url(&args.server_url);
+    let server_url = config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?;
+    let base = config::resolve_platform_base(args.profile.as_deref(), &args.server_url)?;
     if let Ok(m) = crate::platform::fetch_platform_manifest(&base) {
         crate::platform::check_local_toolchain_against_platform(&m)?;
     } else {
-        eprintln!(
-            "warning: could not fetch platform manifest from {base} — skipping version check"
+        reporter::warn(
+            "platform-manifest",
+            &format!("could not fetch from {base} - skipping version check"),
         );
     }
     run_build(BuildArgs {
@@ -69,67 +126,159 @@ pub fn run_deploy(args: DeployArgs) -> Result<()> {
         strict: false,
     })?;
     let zip_path = root.join("dist/game.zip");
-    let tok = auth::load_token(&args.server_url)?;
-    let resp = api::gql_upload_game_zip(&args.server_url, &tok.token, &zip_path)?;
-    println!(
-        "Upload {} report ok={} errors={} warnings={} infos={}",
-        resp.upload_id, resp.report.ok, resp.report.errors, resp.report.warnings, resp.report.infos
+    let tok = auth::load_token(&server_url)?;
+    let zip_len = fs::metadata(&zip_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let resp = if zip_len > 0 {
+        let upload_pb = reporter::progress_bytes("Uploading game package", zip_len);
+        let resp = api::gql_upload_game_zip(&server_url, &tok.token, &zip_path)?;
+        upload_pb.finish_and_clear();
+        reporter::status("upload", "package sent to server");
+        resp
+    } else {
+        let upload_pb = reporter::spinner("Uploading game package...");
+        let resp = api::gql_upload_game_zip(&server_url, &tok.token, &zip_path)?;
+        upload_pb.finish_ok("package sent to server");
+        resp
+    };
+    reporter::print_validation_report(
+        &resp.upload_id,
+        resp.report.ok,
+        resp.report.errors,
+        resp.report.warnings,
+        resp.report.infos,
+        &resp.report.diagnostics,
     );
-    for d in &resp.report.diagnostics {
-        println!("[{}] {}: {}", d.severity, d.code, d.message);
-    }
     if !resp.report.ok {
         bail!("validation failed");
     }
     let Some(draft) = resp.draft else {
         bail!("no draft returned");
     };
-    println!(
-        "Draft {} {} {} {}",
-        draft.id, draft.game_name, draft.version, draft.status
+    reporter::status(
+        "draft",
+        &format!(
+            "{} {} {} {}",
+            draft.id, draft.game_name, draft.version, draft.status
+        ),
     );
-    if !args.draft_only && args.auto_publish {
-        api::gql_simple_mutation(&args.server_url, &tok.token, "publishGameDraft", &draft.id)?;
-        println!("Published draft {}", draft.id);
+    let should_publish = (args.publish || args.auto_publish) && !args.draft_only;
+    if should_publish {
+        api::gql_simple_mutation(&server_url, &tok.token, "publishGameDraft", &draft.id)?;
+        reporter::status("publish", &format!("published draft {}", draft.id));
+    } else {
+        reporter::hint("upload-only - pass --publish to publish the draft");
     }
     Ok(())
 }
 
 pub fn run_drafts(args: DraftsArgs) -> Result<()> {
-    let tok = auth::load_token(&args.server_url)?;
+    let server_url = config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?;
+    let tok = auth::load_token(&server_url)?;
     match args.command {
         DraftsSubcommands::List => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Draft {
+                id: String,
+                game_name: String,
+                version: String,
+                status: String,
+            }
             let q = r#"query { myGameDrafts { id gameName version status } }"#;
-            println!(
-                "{}",
-                api::gql_raw(&args.server_url, &tok.token, q, json!({}))?
-            );
+            let raw = api::gql_raw(&server_url, &tok.token, q, json!({}))?;
+            let v: serde_json::Value = serde_json::from_str(&raw)?;
+            let drafts: Vec<Draft> = serde_json::from_value(
+                v.get("data")
+                    .and_then(|d| d.get("myGameDrafts"))
+                    .cloned()
+                    .unwrap_or(json!([])),
+            )?;
+            if drafts.is_empty() {
+                reporter::hint("no drafts found");
+            } else {
+                reporter::print_table(
+                    &["ID", "Game", "Version", "Status"],
+                    drafts
+                        .iter()
+                        .map(|d| {
+                            vec![
+                                d.id.clone(),
+                                d.game_name.clone(),
+                                d.version.clone(),
+                                d.status.clone(),
+                            ]
+                        })
+                        .collect(),
+                );
+            }
+            reporter::status("drafts", &format!("{} draft(s)", drafts.len()));
         }
         DraftsSubcommands::Publish { draft_id } => {
-            api::gql_simple_mutation(&args.server_url, &tok.token, "publishGameDraft", &draft_id)?
+            api::gql_simple_mutation(&server_url, &tok.token, "publishGameDraft", &draft_id)?;
+            reporter::status("publish", &format!("published draft {draft_id}"));
         }
-        DraftsSubcommands::Unpublish { draft_id } => api::gql_simple_mutation(
-            &args.server_url,
-            &tok.token,
-            "unpublishGameDraft",
-            &draft_id,
-        )?,
+        DraftsSubcommands::Unpublish { draft_id } => {
+            api::gql_simple_mutation(&server_url, &tok.token, "unpublishGameDraft", &draft_id)?;
+            reporter::status("unpublish", &format!("unpublished draft {draft_id}"));
+        }
         DraftsSubcommands::Discard { draft_id } => {
-            api::gql_simple_mutation(&args.server_url, &tok.token, "discardGameDraft", &draft_id)?
+            api::gql_simple_mutation(&server_url, &tok.token, "discardGameDraft", &draft_id)?;
+            reporter::status("discard", &format!("discarded draft {draft_id}"));
         }
     }
     Ok(())
 }
 
 pub fn run_manifest(args: ManifestArgs) -> Result<()> {
-    let tok = auth::load_token(&args.server_url)?;
+    let server_url = config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?;
+    let tok = auth::load_token(&server_url)?;
     match args.command {
         ManifestSubcommands::Show { draft_id } => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Draft {
+                id: String,
+                game_name: String,
+                display_name: String,
+                version: String,
+                status: String,
+                manifest_json: String,
+            }
             let q = r#"query($id: ID!) { gameDraft(id: $id) { id gameName displayName version status manifestJson } }"#;
-            println!(
-                "{}",
-                api::gql_raw(&args.server_url, &tok.token, q, json!({ "id": draft_id }))?
+            let raw = api::gql_raw(&server_url, &tok.token, q, json!({ "id": draft_id }))?;
+            let v: serde_json::Value = serde_json::from_str(&raw)?;
+            let draft: Draft = serde_json::from_value(
+                v.get("data")
+                    .and_then(|d| d.get("gameDraft"))
+                    .cloned()
+                    .context("missing gameDraft")?,
+            )?;
+            reporter::print_table(
+                &["Field", "Value"],
+                vec![
+                    vec!["id".into(), draft.id],
+                    vec!["gameName".into(), draft.game_name],
+                    vec!["displayName".into(), draft.display_name],
+                    vec!["version".into(), draft.version],
+                    vec!["status".into(), draft.status],
+                ],
             );
+            if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&draft.manifest_json)
+            {
+                reporter::section("manifest.json");
+                if let Some(obj) = manifest.as_object() {
+                    let rows: Vec<Vec<String>> = obj
+                        .iter()
+                        .map(|(k, v)| vec![k.clone(), v.to_string()])
+                        .collect();
+                    reporter::print_table(&["Key", "Value"], rows);
+                } else {
+                    reporter::hint(&draft.manifest_json);
+                }
+            }
+            reporter::status("manifest", &format!("draft {draft_id}"));
         }
         ManifestSubcommands::Edit {
             draft_id,
@@ -144,7 +293,7 @@ pub fn run_manifest(args: ManifestArgs) -> Result<()> {
             println!(
                 "{}",
                 api::gql_raw(
-                    &args.server_url,
+                    &server_url,
                     &tok.token,
                     q,
                     json!({
@@ -165,15 +314,22 @@ pub fn run_doctor(args: DoctorArgs) -> Result<()> {
     let root = args.project_dir.unwrap_or(std::env::current_dir()?);
     let checks = doctor::run(&root)?;
     print_report(&checks);
+    if args.matrix {
+        doctor::print_matrix_report();
+    }
     if let Some(base) = args.platform.as_deref() {
         let m = crate::platform::fetch_platform_manifest(base)?;
         crate::platform::check_local_toolchain_against_platform(&m)?;
-        println!("Platform compatibility: OK ({})", m.framework_version);
+        reporter::status("platform", &format!("compatibility OK ({})", m.framework_version));
     }
     if has_failures(&checks) {
         bail!("doctor found blocking issues");
     }
     Ok(())
+}
+
+pub fn run_codegen(args: CodegenArgs) -> Result<()> {
+    crate::codegen::run(args)
 }
 
 pub fn run_update(args: UpdateArgs) -> Result<()> {
@@ -182,30 +338,35 @@ pub fn run_update(args: UpdateArgs) -> Result<()> {
 
 pub fn run_validate(args: ValidateArgs) -> Result<()> {
     let root = args.project_dir.unwrap_or(std::env::current_dir()?);
-    let logic = if let Some(p) = args.logic_wasm {
-        p
+    // Keep zip extraction on disk until validation finishes (NamedTempFile deletes on drop).
+    let mut extracted_wasm: Option<tempfile::NamedTempFile> = None;
+    let (logic, label) = if let Some(p) = args.logic_wasm {
+        (p, None)
     } else {
         let zip = root.join("dist/game.zip");
         if zip.is_file() {
             let f = fs::File::open(&zip)?;
             let mut archive = zip::ZipArchive::new(f)?;
-            let mut entry = archive.by_name("logic.wasm")?;
+            let mut entry = archive
+                .by_name("logic.wasm")
+                .with_context(|| format!("{} has no logic.wasm entry; run `gamedev build`", zip.display()))?;
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut bytes)?;
             let tmp = tempfile::NamedTempFile::new()?;
             fs::write(tmp.path(), &bytes)?;
-            tmp.path().to_path_buf()
+            let path = tmp.path().to_path_buf();
+            extracted_wasm = Some(tmp);
+            (path, Some(zip))
         } else {
             let cfg = load_config(&root)?;
-            match cfg.backend {
-                BackendKind::Rust => {
-                    root.join("backend/rust/component/target/wasm32-wasip2/release/logic.wasm")
-                }
+            let path = match cfg.backend {
+                BackendKind::Rust => resolve_rust_logic_wasm_path(&root),
                 BackendKind::Java => {
                     resolve_java_backend_dir(&root).join("component/build/out/logic.wasm")
                 }
                 _ => bail!("validate: specify --logic-wasm or run gamedev build first"),
-            }
+            };
+            (path, None)
         }
     };
     if !logic.is_file() {
@@ -215,7 +376,13 @@ pub fn run_validate(args: ValidateArgs) -> Result<()> {
         );
     }
     build::validate_logic_component_file(&logic)?;
-    println!("OK: {} is a valid WebAssembly component", logic.display());
+    let msg = if let Some(zip) = label {
+        format!("logic.wasm in {} is a valid WebAssembly component", zip.display())
+    } else {
+        format!("{} is a valid WebAssembly component", logic.display())
+    };
+    reporter::status("validate", &msg);
+    let _ = extracted_wasm;
     Ok(())
 }
 
@@ -228,7 +395,7 @@ pub fn run_test(args: TestArgs) -> Result<()> {
             let status = game_cargo_command()
                 .arg("test")
                 .current_dir(&test_dir)
-                .status()?;
+                .status_logged()?;
             if !status.success() {
                 bail!("tests failed");
             }
@@ -257,7 +424,7 @@ pub fn run_test(args: TestArgs) -> Result<()> {
             let status = cmd
                 .arg(compile_task)
                 .args(["--no-daemon", "-q"])
-                .status()
+                .status_logged()
                 .context("failed to run Gradle for Java backend")?;
             if !status.success() {
                 bail!("Java compile failed");
@@ -278,7 +445,7 @@ pub fn run_test(args: TestArgs) -> Result<()> {
             let export = export_cmd
                 .arg(export_task)
                 .args(["--no-daemon", "-q"])
-                .status()
+                .status_logged()
                 .context("failed to export Java logic component")?;
             if !export.success() {
                 bail!("Java exportLogicComponent failed");
@@ -295,5 +462,6 @@ pub fn run_test(args: TestArgs) -> Result<()> {
         }
         _ => bail!("backend test adapter not implemented yet"),
     }
+    reporter::status("test", "all tests passed");
     Ok(())
 }

@@ -1,10 +1,11 @@
 use crate::api::{graphql_exec, graphql_post, set_lobby_game_type, start_lobby_room_subscription, stored_user_id};
-use crate::components::lobby::LobbyRoomBody;
-use crate::components::ui::{Avatar, AvatarSize, EmptyState, ErrorBanner, Icon, Skeleton, StatusBadge, status_variant_from_lobby};
+use crate::components::lobby::{LobbyResultsModal, LobbyRoomBody};
+use crate::components::ui::{EmptyState, ErrorBanner, Skeleton};
 use crate::models::{GameTypeInfo, LobbyDetail, PlayOverlay};
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
+use serde_json::Value;
 
 #[component]
 pub fn LobbyRoomPage(
@@ -17,6 +18,10 @@ pub fn LobbyRoomPage(
     let mut game_types: Signal<Vec<GameTypeInfo>> = use_signal(Vec::new);
     let mut loading = use_signal(|| true);
     let mut seats_bootstrapped = use_signal(|| false);
+    let mut results_open = use_signal(|| false);
+    let mut results_initial_game = use_signal(|| None::<String>);
+    let mut results_shown_for_game = use_signal(|| None::<String>);
+    let mut reopened_for_game = use_signal(|| None::<String>);
 
     use_hook(move || {
         let lid_fetch = lobby_id.clone();
@@ -59,6 +64,7 @@ pub fn LobbyRoomPage(
                         player: seat.player_identity.clone(),
                         return_lobby_id: Some(l.id.clone()),
                         spectator: false,
+                        is_lobby_owner: user_id.as_deref() == Some(l.owner_user_id.as_str()),
                     }));
                     return;
                 }
@@ -67,6 +73,26 @@ pub fn LobbyRoomPage(
         let overlay_this_lobby = playing().as_ref().and_then(|p| p.return_lobby_id.as_deref()) == Some(l.id.as_str());
         if overlay_this_lobby && l.status != "in_game" {
             playing.set(None);
+        }
+        if l.status == "finished" {
+            if let Some(gid) = l.game_instance_id.clone() {
+                if results_shown_for_game().as_deref() != Some(gid.as_str()) {
+                    results_shown_for_game.set(Some(gid.clone()));
+                    results_initial_game.set(Some(gid.clone()));
+                    results_open.set(true);
+                }
+                if user_id.as_deref() == Some(l.owner_user_id.as_str())
+                    && reopened_for_game().as_deref() != Some(gid.as_str())
+                {
+                    reopened_for_game.set(Some(gid.clone()));
+                    let lid = l.id.clone();
+                    spawn(async move {
+                        let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
+                        let vars = serde_json::json!({ "id": lid });
+                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                    });
+                }
+            }
         }
     });
 
@@ -111,33 +137,13 @@ pub fn LobbyRoomPage(
                     Skeleton { class: Some("h-64 w-full rounded-2xl".into()) }
                 }
             } else if let Some(ref l) = d {
-                header { class: "lobby-command-bar lobby-command-bar-slim",
-                    button {
-                        class: "lobby-command-back",
-                        onclick: move |_| { nav.push(LobbyRoute::LobbiesBrowser {}); },
-                        Icon { name: "arrow_back", filled: false }
-                        "Lobbies"
-                    }
-                    div { class: "lobby-command-host shrink-0 ml-auto",
-                        Avatar {
-                            seed: l.owner_user_id.clone(),
-                            size: AvatarSize::Sm,
-                            image_url: None,
-                        }
-                        div { class: "min-w-0 hidden sm:block",
-                            p { class: "text-[10px] font-label-caps uppercase text-outline", "Host" }
-                            p { class: "text-body-sm font-medium text-on-surface truncate", "{l.owner_display_name}" }
-                        }
-                    }
-                    StatusBadge {
-                        label: l.status.clone(),
-                        variant: status_variant_from_lobby(
-                            &l.status,
-                            l.seats.iter().filter(|s| s.claimed_by_user_id.is_some()).count() as i32,
-                            l.seats.len() as i32,
-                        ),
-                    }
-                }
+                {
+                    let lobby_id_results = l.id.clone();
+                    let game_type_results = l.game_type.clone();
+                    let is_owner = uid.as_deref() == Some(l.owner_user_id.as_str());
+                    let lobby_finished = l.status == "finished";
+                    let lid_play_again = l.id.clone();
+                    rsx! {
                 LobbyRoomBody {
                     lobby_for_cols: l.clone(),
                     gt_list: gt_list.clone(),
@@ -145,6 +151,30 @@ pub fn LobbyRoomPage(
                     on_detail_updated: EventHandler::new(move |updated: LobbyDetail| {
                         detail_for_body.set(Some(updated));
                     }),
+                    on_open_history: EventHandler::new(move |_| {
+                        results_initial_game.set(None);
+                        results_open.set(true);
+                    }),
+                }
+                LobbyResultsModal {
+                    open: results_open(),
+                    on_close: EventHandler::new(move |_| results_open.set(false)),
+                    lobby_id: lobby_id_results.clone(),
+                    game_type: game_type_results.clone(),
+                    is_owner,
+                    lobby_finished,
+                    initial_game_id: results_initial_game(),
+                    on_play_again: EventHandler::new(move |_| {
+                        let lid = lid_play_again.clone();
+                        spawn(async move {
+                            let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
+                            let vars = serde_json::json!({ "id": lid });
+                            let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                        });
+                        results_open.set(false);
+                    }),
+                }
+                    }
                 }
             } else {
                 EmptyState {

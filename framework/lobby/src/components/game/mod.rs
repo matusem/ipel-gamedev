@@ -58,6 +58,7 @@ pub fn GameCard(
                                         player: pid.clone(),
                                         return_lobby_id: None,
                                         spectator: false,
+                                        is_lobby_owner: false,
                                     }));
                                 },
                                 "Join as {pid}"

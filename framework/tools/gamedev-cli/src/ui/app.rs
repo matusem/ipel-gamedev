@@ -6,30 +6,46 @@ use anyhow::{Result, bail};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use ratatui_interact::components::{Breadcrumb, BreadcrumbStyle};
 
 use crate::cli::{
-    BuildArgs, DEFAULT_GRAPHQL_URL, DeployArgs, DoctorArgs, DraftsArgs, DraftsSubcommands,
-    LoginArgs, ManifestArgs, ManifestSubcommands, TestArgs,
+    BuildArgs, CodegenArgs, DEFAULT_GRAPHQL_URL, DeployArgs, DoctorArgs, DraftsArgs,
+    DraftsSubcommands, LoginArgs, LogoutArgs, ManifestArgs, ManifestSubcommands, TestArgs, UpdateArgs,
+    ValidateArgs,
 };
-use crate::project::{is_game_project, resolve_test_dir};
+use crate::project::resolve_test_dir;
+use crate::theme;
 
+use super::banner;
 use super::init_wizard::{InitWizardOutcome, InitWizardState};
+use super::nav;
+use super::job::{JobKeyAction, JobRun};
 use super::router::{DraftMenuAction, ManifestNext, RouteFrame, breadcrumb_state};
+use super::status::{self, HomeStatus, layout_label};
 use super::{UiCommand, interrupted};
+
+enum SessionAction {
+    Exit,
+    Run(UiCommand),
+}
 
 #[derive(Clone, Copy)]
 enum MainMenuAction {
     Init,
     Login,
+    Logout,
     Build,
     Deploy,
     Drafts,
     Manifest,
     Test,
     Doctor,
+    Validate,
+    Codegen,
+    Update,
     Exit,
 }
 
@@ -38,44 +54,116 @@ impl MainMenuAction {
         match self {
             Self::Init => "init",
             Self::Login => "login",
+            Self::Logout => "logout",
             Self::Build => "build",
             Self::Deploy => "deploy",
             Self::Drafts => "drafts",
             Self::Manifest => "manifest",
             Self::Test => "test",
             Self::Doctor => "doctor",
+            Self::Validate => "validate",
+            Self::Codegen => "codegen",
+            Self::Update => "update",
             Self::Exit => "exit program",
         }
     }
-}
 
-fn main_menu_actions() -> Vec<MainMenuAction> {
-    let in_project = std::env::current_dir()
-        .map(|p| is_game_project(&p))
-        .unwrap_or(false);
-    if in_project {
-        vec![
-            MainMenuAction::Init,
-            MainMenuAction::Login,
-            MainMenuAction::Build,
-            MainMenuAction::Deploy,
-            MainMenuAction::Drafts,
-            MainMenuAction::Manifest,
-            MainMenuAction::Test,
-            MainMenuAction::Doctor,
-            MainMenuAction::Exit,
-        ]
-    } else {
-        vec![
-            MainMenuAction::Init,
-            MainMenuAction::Login,
-            MainMenuAction::Doctor,
-            MainMenuAction::Exit,
-        ]
+    fn icon(self) -> &'static str {
+        match self {
+            Self::Init => "*",
+            Self::Login => ">",
+            Self::Logout => "<",
+            Self::Build => "#",
+            Self::Deploy => "^",
+            Self::Drafts => "=",
+            Self::Manifest => "@",
+            Self::Test => "t",
+            Self::Doctor => "+",
+            Self::Validate => "?",
+            Self::Codegen => "%",
+            Self::Update => "v",
+            Self::Exit => "!",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Init => "Scaffold a new game project with backend, frontend, and client templates.",
+            Self::Login => "Authenticate via browser or password to obtain a publish token.",
+            Self::Logout => "Remove the stored publish token and sign out locally.",
+            Self::Build => "Compile logic WASM and package dist/game.zip for upload.",
+            Self::Deploy => "Upload your build to the platform as a draft or published game.",
+            Self::Drafts => "List, publish, unpublish, or discard server-side game drafts.",
+            Self::Manifest => "Show or edit draft metadata (name, version, description).",
+            Self::Test => "Run cargo test in the project workspace.",
+            Self::Doctor => "Check project layout, client files, and toolchain prerequisites.",
+            Self::Validate => "Validate logic.wasm as a WebAssembly component.",
+            Self::Codegen => "Generate typed client bindings from game types.",
+            Self::Update => "Check for CLI updates against the production platform.",
+            Self::Exit => "Leave the interactive session.",
+        }
+    }
+
+    fn shell_hint(self) -> &'static str {
+        match self {
+            Self::Init => "gamedev init",
+            Self::Login => "gamedev login",
+            Self::Logout => "gamedev logout",
+            Self::Build => "gamedev build",
+            Self::Deploy => "gamedev deploy --publish",
+            Self::Drafts => "gamedev drafts list",
+            Self::Manifest => "gamedev manifest show <draft-id>",
+            Self::Test => "gamedev test",
+            Self::Doctor => "gamedev doctor",
+            Self::Validate => "gamedev validate",
+            Self::Codegen => "gamedev codegen",
+            Self::Update => "gamedev update --check",
+            Self::Exit => "q / Esc",
+        }
+    }
+
+    fn requires_project(self) -> bool {
+        !matches!(
+            self,
+            Self::Init | Self::Login | Self::Logout | Self::Doctor | Self::Exit
+        )
+    }
+
+    fn requires_login(self) -> bool {
+        matches!(self, Self::Logout)
+    }
+
+    fn requires_auth(self) -> bool {
+        matches!(self, Self::Deploy | Self::Drafts | Self::Manifest)
     }
 }
 
-pub fn run_terminal_session(auth_user: Option<String>) -> Result<UiCommand> {
+fn all_menu_actions() -> Vec<MainMenuAction> {
+    vec![
+        MainMenuAction::Init,
+        MainMenuAction::Login,
+        MainMenuAction::Logout,
+        MainMenuAction::Build,
+        MainMenuAction::Deploy,
+        MainMenuAction::Drafts,
+        MainMenuAction::Manifest,
+        MainMenuAction::Test,
+        MainMenuAction::Doctor,
+        MainMenuAction::Validate,
+        MainMenuAction::Codegen,
+        MainMenuAction::Update,
+        MainMenuAction::Exit,
+    ]
+}
+
+fn action_enabled(action: MainMenuAction, in_project: bool, logged_in: bool) -> bool {
+    if action.requires_login() {
+        return logged_in;
+    }
+    !action.requires_project() || in_project
+}
+
+pub fn run_terminal_session(mut home_status: HomeStatus) -> Result<()> {
     let mut terminal = ratatui::try_init().map_err(|e| anyhow::anyhow!(e))?;
     let mut stack: Vec<RouteFrame> = vec![RouteFrame::MainMenu {
         list: ratatui::widgets::ListState::default().with_selected(Some(0)),
@@ -88,22 +176,37 @@ pub fn run_terminal_session(auth_user: Option<String>) -> Result<UiCommand> {
             bail!("cancelled");
         }
 
+        if let Some(RouteFrame::JobRun(job)) = stack.last_mut() {
+            job.tick();
+        }
+
         terminal.draw(|frame| {
             let area = frame.area();
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(2),
-                    Constraint::Length(1),
-                    Constraint::Min(0),
-                    Constraint::Length(1),
-                ])
-                .split(area);
+            let on_home = stack.len() == 1;
 
-            draw_header(frame, chunks[0], &auth_user);
-            draw_breadcrumb(frame, chunks[1], &stack);
-            draw_body(frame, chunks[2], &mut stack);
-            draw_footer(frame, chunks[3], &stack);
+            if on_home {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(0), Constraint::Length(1)])
+                    .split(area);
+                draw_home_dashboard(frame, chunks[0], &home_status, &mut stack);
+                draw_footer(frame, chunks[1], &stack);
+            } else {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(2),
+                        Constraint::Length(1),
+                        Constraint::Min(0),
+                        Constraint::Length(1),
+                    ])
+                    .split(area);
+
+                draw_header(frame, chunks[0], &home_status);
+                draw_breadcrumb(frame, chunks[1], &stack);
+                draw_body(frame, chunks[2], &mut stack, &home_status);
+                draw_footer(frame, chunks[3], &stack);
+            }
         })?;
 
         if !event::poll(poll)? {
@@ -117,125 +220,427 @@ pub fn run_terminal_session(auth_user: Option<String>) -> Result<UiCommand> {
             continue;
         }
 
-        if let Some(cmd) = handle_event(&mut stack, key, &evt)? {
-            ratatui::try_restore()?;
-            return Ok(cmd);
+        if let Some(action) = handle_event(&mut stack, key, &evt, &mut home_status)? {
+            match action {
+                SessionAction::Exit => {
+                    ratatui::try_restore()?;
+                    return Ok(());
+                }
+                SessionAction::Run(cmd) => {
+                    while stack.len() > 1 {
+                        stack.pop();
+                    }
+                    stack.push(RouteFrame::JobRun(JobRun::start(cmd)));
+                }
+            }
         }
     }
 }
 
-fn project_hint() -> String {
-    std::env::current_dir()
-        .ok()
+fn draw_header(frame: &mut Frame, area: Rect, home: &HomeStatus) {
+    let user = home
+        .auth
         .as_ref()
-        .and_then(|root| crate::project::load_config(root).ok().map(|c| c.name))
-        .unwrap_or_else(|| "—".to_string())
-}
-
-fn draw_header(frame: &mut Frame, area: Rect, auth_user: &Option<String>) {
-    let user = auth_user.as_deref().unwrap_or("not authenticated");
-    let title = format!("gamedev-cli · project: {} · user: {}", project_hint(), user);
+        .map(|a| a.user_id.as_str())
+        .unwrap_or("not authenticated");
+    let project = home
+        .project
+        .as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or(theme::ui_none());
+    let title = format!(
+        "gamedev-cli{}project: {project}{}user: {user}",
+        theme::ui_sep(),
+        theme::ui_sep()
+    );
     let block = Block::new()
         .title(title)
         .borders(Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(theme::tui_header_border());
     frame.render_widget(Paragraph::new("").block(block), area);
 }
 
-fn draw_breadcrumb(frame: &mut Frame, area: Rect, stack: &[RouteFrame]) {
-    let state = breadcrumb_state(stack);
-    let bc = Breadcrumb::new(&state).style(BreadcrumbStyle::chevron());
-    bc.render_stateful(area, frame.buffer_mut());
+fn draw_home_dashboard(
+    frame: &mut Frame,
+    area: Rect,
+    home: &HomeStatus,
+    stack: &mut [RouteFrame],
+) {
+    let banner_h = banner::banner_height(area.width);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(banner_h),
+            Constraint::Length(8),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    banner::draw_banner(frame, chunks[0], &home.cli_version);
+    draw_status_cards(frame, chunks[1], home);
+    if let Some(RouteFrame::MainMenu { list }) = stack.last_mut() {
+        draw_menu_panels(frame, chunks[2], home, list);
+    }
+}
+
+fn draw_status_cards(frame: &mut Frame, area: Rect, home: &HomeStatus) {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(34),
+            Constraint::Percentage(33),
+            Constraint::Percentage(33),
+        ])
+        .split(area);
+
+    // User card
+    let user_lines = if let Some(auth) = &home.auth {
+        vec![
+            Line::from(vec![
+                Span::styled(format!("{} logged in as ", theme::glyph_ok()), theme::status_style(true)),
+                Span::styled(&auth.user_id, Style::default().add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(format!("server {}", auth.server_url)),
+            Line::from(format!(
+                "expires in {}",
+                crate::auth::expires_in_human(auth.expires_at)
+            )),
+        ]
+    } else {
+        vec![
+            Line::from(Span::styled(
+                format!("{} not authenticated", theme::glyph_fail()),
+                theme::status_style(false),
+            )),
+            Line::from("run login to connect"),
+            Line::from(""),
+        ]
+    };
+    frame.render_widget(
+        Paragraph::new(user_lines).block(theme::card_block(" User ")),
+        cols[0],
+    );
+
+    // Project card
+    let project_lines = if home.in_project {
+        if let Some(cfg) = &home.project {
+            vec![
+                Line::from(Span::styled(
+                    &cfg.name,
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from(format!(
+                    "{:?} {} {:?}",
+                    cfg.backend,
+                    theme::ui_arrow(),
+                    cfg.frontend
+                )),
+                Line::from(format!("layout: {}", layout_label(home.layout))),
+            ]
+        } else {
+            vec![Line::from("gamedev.toml present")]
+        }
+    } else {
+        vec![Line::from(Span::styled(
+            "no game project",
+            theme::tui_footer(),
+        ))]
+        .into_iter()
+        .chain([
+            Line::from("init / login / doctor only"),
+            Line::from(""),
+        ])
+        .collect()
+    };
+    frame.render_widget(
+        Paragraph::new(project_lines).block(theme::card_block(" Project ")),
+        cols[1],
+    );
+
+    // Environment card
+    let cargo = if home.cargo_ok {
+        format!("{} cargo", theme::glyph_ok())
+    } else {
+        format!("{} cargo", theme::glyph_fail())
+    };
+    let wasm = if home.wasm_bindgen_ok {
+        format!("{} wasm-bindgen", theme::glyph_ok())
+    } else {
+        format!("{} wasm-bindgen", theme::glyph_warn())
+    };
+    let env_lines = vec![
+        Line::from(format!("CLI v{}", home.cli_version)),
+        Line::from(format!("profile: {}", home.default_profile)),
+        Line::from(vec![
+            Span::raw(cargo),
+            Span::raw("  "),
+            Span::raw(wasm),
+        ]),
+    ];
+    frame.render_widget(
+        Paragraph::new(env_lines).block(theme::card_block(" Environment ")),
+        cols[2],
+    );
+}
+
+fn draw_menu_panels(
+    frame: &mut Frame,
+    area: Rect,
+    home: &HomeStatus,
+    list: &mut ratatui::widgets::ListState,
+) {
+    let panes = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(area);
+
+    let actions = all_menu_actions();
+    let selected = list.selected().unwrap_or(0);
+    let logged_in = home.auth.is_some();
+    let items: Vec<ListItem> = actions
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let enabled = action_enabled(*a, home.in_project, logged_in);
+            let prefix = if !enabled { theme::tui_lock_prefix() } else { "" };
+            let text = format!("{}{}  {}", prefix, a.icon(), a.label());
+            let style = if i == selected {
+                theme::tui_highlight()
+            } else if !enabled {
+                theme::tui_disabled()
+            } else {
+                Style::default()
+            };
+            ListItem::new(text).style(style)
+        })
+        .collect();
+
+    let menu = List::new(items)
+        .block(theme::card_block(" Commands "))
+        .highlight_symbol(theme::tui_list_marker())
+        .highlight_style(theme::tui_highlight());
+    frame.render_stateful_widget(menu, panes[0], list);
+
+    let action = actions.get(selected).copied().unwrap_or(MainMenuAction::Init);
+    let enabled = action_enabled(action, home.in_project, logged_in);
+    let mut detail_lines = vec![
+        Line::from(Span::styled(
+            action.description(),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("command: "),
+            Span::styled(
+                action.shell_hint(),
+                Style::default().fg(theme::tui_accent()),
+            ),
+        ]),
+    ];
+    if action.requires_login() && home.auth.is_none() {
+        detail_lines.push(Line::from(Span::styled(
+            "not logged in",
+            Style::default().fg(theme::tui_warn()),
+        )));
+    }
+    if action.requires_auth() && home.auth.is_none() {
+        detail_lines.push(Line::from(Span::styled(
+            "requires login",
+            Style::default().fg(theme::tui_warn()),
+        )));
+    }
+    if action.requires_project() && !home.in_project {
+        detail_lines.push(Line::from(Span::styled(
+            "requires game project (gamedev.toml)",
+            Style::default().fg(theme::tui_warn()),
+        )));
+    }
+    if !enabled {
+        detail_lines.push(Line::from(Span::styled(
+            format!("locked{}open a game project directory first", theme::ui_dash()),
+            theme::tui_disabled(),
+        )));
+    }
+    frame.render_widget(
+        Paragraph::new(detail_lines).block(theme::card_block(" Details ")),
+        panes[1],
+    );
+}
+
+fn footer_sep() -> Span<'static> {
+    Span::styled(theme::ui_sep(), theme::tui_footer())
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, stack: &[RouteFrame]) {
-    let hint = if stack.len() <= 1 {
-        "↑↓/jk: menu · Enter: open · q: quit"
-    } else {
-        "Esc: back · Enter: confirm · Tab: next field"
+    let line = match stack.last() {
+        Some(RouteFrame::MainMenu { .. }) if stack.len() == 1 => Line::from(vec![
+            Span::styled(theme::key_cycle(), theme::tui_keycap()),
+            Span::raw(" cycle"),
+            footer_sep(),
+            Span::styled(theme::key_enter(), theme::tui_keycap()),
+            Span::raw(" open"),
+            footer_sep(),
+            Span::styled("q", theme::tui_keycap()),
+            Span::raw(" quit"),
+        ]),
+        Some(RouteFrame::LoginBrowser { .. })
+        | Some(RouteFrame::Login { .. })
+        | Some(RouteFrame::DeployServer { .. })
+        | Some(RouteFrame::DraftsServer { .. })
+        | Some(RouteFrame::DraftId { .. })
+        | Some(RouteFrame::ManifestServer { .. })
+        | Some(RouteFrame::ManifestDraftId { .. })
+        | Some(RouteFrame::ManifestEditFields { .. }) => Line::from(vec![
+            Span::styled("esc", theme::tui_keycap()),
+            Span::raw(" back"),
+            footer_sep(),
+            Span::styled(theme::key_enter(), theme::tui_keycap()),
+            Span::raw(" confirm"),
+            footer_sep(),
+            Span::styled("tab", theme::tui_keycap()),
+            Span::raw(" next field"),
+        ]),
+        Some(RouteFrame::JobRun(job)) => {
+            let hints = if job.is_done() {
+                vec![
+                    Span::styled(theme::key_enter(), theme::tui_keycap()),
+                    Span::raw(" home"),
+                    footer_sep(),
+                    Span::styled(theme::key_cycle(), theme::tui_keycap()),
+                    Span::raw(" scroll log"),
+                ]
+            } else {
+                vec![
+                    Span::styled("[..]", theme::tui_keycap()),
+                    Span::raw(" running"),
+                ]
+            };
+            Line::from(hints)
+        }
+        Some(RouteFrame::Init(_)) => Line::from(vec![
+            Span::styled("esc", theme::tui_keycap()),
+            Span::raw(" back"),
+            footer_sep(),
+            Span::styled("tab", theme::tui_keycap()),
+            Span::raw(" next field"),
+            footer_sep(),
+            Span::styled(theme::key_cycle(), theme::tui_keycap()),
+            Span::raw(" change"),
+            footer_sep(),
+            Span::styled(theme::key_enter(), theme::tui_keycap()),
+            Span::raw(" confirm"),
+        ]),
+        _ => Line::from(vec![
+            Span::styled("esc", theme::tui_keycap()),
+            Span::raw(" back"),
+            footer_sep(),
+            Span::styled(theme::key_enter(), theme::tui_keycap()),
+            Span::raw(" confirm"),
+            footer_sep(),
+            Span::styled(theme::key_cycle(), theme::tui_keycap()),
+            Span::raw(" select"),
+        ]),
     };
-    let p = Paragraph::new(hint).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(p, area);
+    frame.render_widget(Paragraph::new(line).style(theme::tui_footer()), area);
 }
 
-fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
+fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame], _home: &HomeStatus) {
     let Some(top) = stack.last_mut() else {
         return;
     };
     match top {
-        RouteFrame::MainMenu { list } => {
-            let actions = main_menu_actions();
-            let items: Vec<ListItem> = actions.iter().map(|a| ListItem::new(a.label())).collect();
-            let subtitle = if actions.len() <= 4 {
-                " (outside game project — init / login / doctor only)"
-            } else {
-                ""
-            };
-            let list_w = List::new(items)
-                .block(
-                    Block::new()
-                        .title(format!("Main menu{subtitle}"))
-                        .borders(Borders::ALL),
-                )
-                .highlight_symbol(">> ");
-            frame.render_stateful_widget(list_w, area, list);
+        RouteFrame::MainMenu { .. } => {
+            frame.render_widget(
+                Paragraph::new("").block(theme::card_block(" Main menu ")),
+                area,
+            );
         }
         RouteFrame::Init(w) => w.draw(frame, area),
+        RouteFrame::LoginMode { list } => {
+            let items = vec![
+                ListItem::new("login via browser (recommended)"),
+                ListItem::new("login with password / publish token"),
+            ];
+            let list_w = List::new(items)
+                .block(theme::panel_block("Login"))
+                .highlight_symbol(theme::tui_list_marker())
+                .highlight_style(theme::tui_highlight());
+            frame.render_stateful_widget(list_w, area, list);
+        }
+        RouteFrame::LoginBrowser { server } => {
+            frame.render_widget(
+                Paragraph::new(server.to_string())
+                    .block(theme::panel_block("Server URL (browser login)")),
+                area,
+            );
+        }
         RouteFrame::Login {
-            user,
+            display_name,
+            password,
+            publish_token,
             server,
             field,
         } => {
+            let labels = [
+                ("Display name", display_name, *field == 0),
+                ("Password", password, *field == 1),
+                ("Publish token (optional)", publish_token, *field == 2),
+                ("Server URL", server, *field == 3),
+            ];
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Min(0),
-                ])
+                .constraints([Constraint::Length(3); 4].as_ref())
                 .split(area);
-            let u_title = if *field == 0 {
-                "User id (UUID) »"
-            } else {
-                "User id"
-            };
-            let s_title = if *field == 1 {
-                "Server URL »"
-            } else {
-                "Server URL"
-            };
-            let ub = Block::new().title(u_title).borders(Borders::ALL);
-            let sb = Block::new().title(s_title).borders(Borders::ALL);
-            frame.render_widget(Paragraph::new(user.to_string()).block(ub), chunks[0]);
-            frame.render_widget(Paragraph::new(server.to_string()).block(sb), chunks[1]);
-            frame.render_widget(
-                Paragraph::new("Tab: switch field · Enter: submit (on server field)"),
-                chunks[2],
-            );
+            for (i, (label, inp, active)) in labels.into_iter().enumerate() {
+                let t = if active {
+                    format!("{label} >")
+                } else {
+                    label.to_string()
+                };
+                let display = if i == 1 {
+                    "*".repeat(inp.to_string().chars().count())
+                } else {
+                    inp.to_string()
+                };
+                let b = theme::field_block(t);
+                frame.render_widget(Paragraph::new(display).block(b), chunks[i]);
+            }
         }
         RouteFrame::BuildConfirm => {
             frame.render_widget(
                 Paragraph::new(
-                    "Build current directory into dist/game.zip?\n\nEnter: run build · Esc: back",
+                    "Build current directory into dist/game.zip?\n\nEnter: run build | Esc: back",
                 )
-                .block(Block::new().title("Build").borders(Borders::ALL)),
+                .block(theme::panel_block("Build")),
                 area,
             );
         }
         RouteFrame::DeployMode { list } => {
             let items = vec![
-                ListItem::new("deploy draft only"),
-                ListItem::new("deploy and publish"),
+                ListItem::new("upload draft only"),
+                ListItem::new("upload and publish"),
             ];
             let list_w = List::new(items)
-                .block(Block::new().title("Deploy mode").borders(Borders::ALL))
-                .highlight_symbol(">> ");
+                .block(theme::panel_block("Deploy mode"))
+                .highlight_symbol(theme::tui_list_marker())
+                .highlight_style(theme::tui_highlight());
             frame.render_stateful_widget(list_w, area, list);
         }
-        RouteFrame::DeployServer { server, .. } => {
+        RouteFrame::DeployServer { server, publish } => {
+            let title = if *publish {
+                "Server URL - PUBLISH (live)"
+            } else {
+                "Server URL - upload draft only"
+            };
+            let border = if *publish {
+                Style::default().fg(theme::tui_danger())
+            } else {
+                theme::tui_header_border()
+            };
             frame.render_widget(
-                Paragraph::new(server.to_string())
-                    .block(Block::new().title("Server URL").borders(Borders::ALL)),
+                Paragraph::new(server.to_string()).block(
+                    theme::panel_block(title).border_style(border),
+                ),
                 area,
             );
         }
@@ -247,42 +652,44 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
                 ListItem::new("discard"),
             ];
             let list_w = List::new(items)
-                .block(Block::new().title("Drafts").borders(Borders::ALL))
-                .highlight_symbol(">> ");
+                .block(theme::panel_block("Drafts"))
+                .highlight_symbol(theme::tui_list_marker())
+                .highlight_style(theme::tui_highlight());
             frame.render_stateful_widget(list_w, area, list);
         }
         RouteFrame::DraftsServer { server, .. } => {
             frame.render_widget(
                 Paragraph::new(server.to_string())
-                    .block(Block::new().title("Server URL").borders(Borders::ALL)),
+                    .block(theme::panel_block("Server URL")),
                 area,
             );
         }
         RouteFrame::DraftId { draft_id, .. } => {
             frame.render_widget(
                 Paragraph::new(draft_id.to_string())
-                    .block(Block::new().title("Draft id").borders(Borders::ALL)),
+                    .block(theme::panel_block("Draft id")),
                 area,
             );
         }
         RouteFrame::ManifestMode { list } => {
             let items = vec![ListItem::new("show"), ListItem::new("edit")];
             let list_w = List::new(items)
-                .block(Block::new().title("Manifest").borders(Borders::ALL))
-                .highlight_symbol(">> ");
+                .block(theme::panel_block("Manifest"))
+                .highlight_symbol(theme::tui_list_marker())
+                .highlight_style(theme::tui_highlight());
             frame.render_stateful_widget(list_w, area, list);
         }
         RouteFrame::ManifestServer { server, .. } => {
             frame.render_widget(
                 Paragraph::new(server.to_string())
-                    .block(Block::new().title("Server URL").borders(Borders::ALL)),
+                    .block(theme::panel_block("Server URL")),
                 area,
             );
         }
         RouteFrame::ManifestDraftId { draft_id, .. } => {
             frame.render_widget(
                 Paragraph::new(draft_id.to_string())
-                    .block(Block::new().title("Draft id").borders(Borders::ALL)),
+                    .block(theme::panel_block("Draft id")),
                 area,
             );
         }
@@ -306,11 +713,11 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
                 .split(area);
             for (i, (label, inp, active)) in labels.into_iter().enumerate() {
                 let t = if active {
-                    format!("{label} »")
+                    format!("{label} >")
                 } else {
                     label.to_string()
                 };
-                let b = Block::new().title(t).borders(Borders::ALL);
+                let b = theme::field_block(t);
                 frame.render_widget(Paragraph::new(inp.to_string()).block(b), chunks[i]);
             }
         }
@@ -319,42 +726,94 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame]) {
                 .map(|root| {
                     let dir = resolve_test_dir(&root);
                     format!(
-                        "Run `cargo test` in {}?\n\nEnter: run · Esc: back",
+                        "Run `cargo test` in {}?\n\nEnter: run | Esc: back",
                         dir.display()
                     )
                 })
                 .unwrap_or_else(|_| {
-                    "Run `cargo test` in project?\n\nEnter: run · Esc: back".to_string()
+                    "Run `cargo test` in project?\n\nEnter: run | Esc: back".to_string()
                 });
             frame.render_widget(
-                Paragraph::new(hint).block(Block::new().title("Test").borders(Borders::ALL)),
+                Paragraph::new(hint).block(theme::panel_block("Test")),
                 area,
             );
         }
         RouteFrame::DoctorConfirm => {
             frame.render_widget(
                 Paragraph::new(
-                    "Check project layout, client files, and toolchain (cargo, wasm-bindgen, npm)?\n\nEnter: run doctor · Esc: back",
+                    "Check project layout, client files, and toolchain (cargo, wasm-bindgen, npm)?\n\nEnter: run doctor | Esc: back",
                 )
-                .block(Block::new().title("Doctor").borders(Borders::ALL)),
+                .block(theme::panel_block("Doctor")),
                 area,
             );
         }
+        RouteFrame::ValidateConfirm => {
+            frame.render_widget(
+                Paragraph::new(
+                    "Validate logic.wasm as a WebAssembly component?\n\nEnter: run validate | Esc: back",
+                )
+                .block(theme::panel_block("Validate")),
+                area,
+            );
+        }
+        RouteFrame::CodegenConfirm => {
+            frame.render_widget(
+                Paragraph::new(
+                    "Generate typed client bindings from game types?\n\nEnter: run codegen | Esc: back",
+                )
+                .block(theme::panel_block("Codegen")),
+                area,
+            );
+        }
+        RouteFrame::UpdateConfirm => {
+            frame.render_widget(
+                Paragraph::new(
+                    "Check for CLI updates against production platform?\n\nEnter: run update --check | Esc: back",
+                )
+                .block(theme::panel_block("Update")),
+                area,
+            );
+        }
+        RouteFrame::LogoutConfirm { user_id, server_url } => {
+            let msg = format!(
+                "Sign out {user_id}?\n\nServer: {server_url}\n\nStored publish token will be removed from this machine.\n\nEnter: confirm | Esc: back"
+            );
+            frame.render_widget(
+                Paragraph::new(msg).block(theme::panel_block("Logout")),
+                area,
+            );
+        }
+        RouteFrame::JobRun(job) => job.draw(frame, area),
     }
+}
+
+fn draw_breadcrumb(frame: &mut Frame, area: Rect, stack: &[RouteFrame]) {
+    let state = breadcrumb_state(stack);
+    let bc = Breadcrumb::new(&state).style(BreadcrumbStyle::chevron());
+    bc.render_stateful(area, frame.buffer_mut());
 }
 
 fn handle_event(
     stack: &mut Vec<RouteFrame>,
     key: event::KeyEvent,
     evt: &Event,
-) -> Result<Option<UiCommand>> {
+    home_status: &mut HomeStatus,
+) -> Result<Option<SessionAction>> {
+    if let Some(RouteFrame::JobRun(job)) = stack.last_mut() {
+        if matches!(job.handle_key(key.code), JobKeyAction::Dismiss) {
+            stack.pop();
+            *home_status = status::build_home_status();
+        }
+        return Ok(None);
+    }
+
     match key.code {
-        KeyCode::Char('q') if stack.len() == 1 => return Ok(Some(UiCommand::ExitProgram)),
+        KeyCode::Char('q') if stack.len() == 1 => return Ok(Some(SessionAction::Exit)),
         KeyCode::Esc => {
             if stack.len() > 1 {
                 stack.pop();
             } else {
-                return Ok(Some(UiCommand::ExitProgram));
+                return Ok(Some(SessionAction::Exit));
             }
             return Ok(None);
         }
@@ -362,39 +821,45 @@ fn handle_event(
     }
 
     if matches!(stack.last(), Some(RouteFrame::MainMenu { .. })) {
+        if nav::is_list_prev(key.code) {
+            if let Some(RouteFrame::MainMenu { list }) = stack.last_mut() {
+                nav::cycle_list(list, -1, all_menu_actions().len());
+            }
+            return Ok(None);
+        }
+        if nav::is_list_next(key.code) {
+            if let Some(RouteFrame::MainMenu { list }) = stack.last_mut() {
+                nav::cycle_list(list, 1, all_menu_actions().len());
+            }
+            return Ok(None);
+        }
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                if let Some(RouteFrame::MainMenu { list }) = stack.last_mut() {
-                    let i = list.selected().unwrap_or(0).saturating_sub(1);
-                    list.select(Some(i));
-                }
-                return Ok(None);
-            }
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                if let Some(RouteFrame::MainMenu { list }) = stack.last_mut() {
-                    let max = main_menu_actions().len().saturating_sub(1);
-                    let i = (list.selected().unwrap_or(0) + 1).min(max);
-                    list.select(Some(i));
-                }
-                return Ok(None);
-            }
             KeyCode::Enter => {
                 let idx = if let Some(RouteFrame::MainMenu { list }) = stack.last_mut() {
                     list.selected().unwrap_or(0)
                 } else {
                     return Ok(None);
                 };
-                let actions = main_menu_actions();
+                let actions = all_menu_actions();
                 let Some(action) = actions.get(idx) else {
                     return Ok(None);
                 };
+                if !action_enabled(*action, home_status.in_project, home_status.auth.is_some()) {
+                    return Ok(None);
+                }
                 match action {
                     MainMenuAction::Init => stack.push(RouteFrame::Init(InitWizardState::new())),
-                    MainMenuAction::Login => stack.push(RouteFrame::Login {
-                        user: tui_input::Input::default(),
-                        server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
-                        field: 0,
+                    MainMenuAction::Login => stack.push(RouteFrame::LoginMode {
+                        list: ratatui::widgets::ListState::default().with_selected(Some(0)),
                     }),
+                    MainMenuAction::Logout => {
+                        if let Some(auth) = home_status.auth.clone() {
+                            stack.push(RouteFrame::LogoutConfirm {
+                                user_id: auth.user_id,
+                                server_url: auth.server_url,
+                            });
+                        }
+                    }
                     MainMenuAction::Build => stack.push(RouteFrame::BuildConfirm),
                     MainMenuAction::Deploy => stack.push(RouteFrame::DeployMode {
                         list: ratatui::widgets::ListState::default().with_selected(Some(0)),
@@ -407,7 +872,10 @@ fn handle_event(
                     }),
                     MainMenuAction::Test => stack.push(RouteFrame::TestConfirm),
                     MainMenuAction::Doctor => stack.push(RouteFrame::DoctorConfirm),
-                    MainMenuAction::Exit => return Ok(Some(UiCommand::ExitProgram)),
+                    MainMenuAction::Validate => stack.push(RouteFrame::ValidateConfirm),
+                    MainMenuAction::Codegen => stack.push(RouteFrame::CodegenConfirm),
+                    MainMenuAction::Update => stack.push(RouteFrame::UpdateConfirm),
+                    MainMenuAction::Exit => return Ok(Some(SessionAction::Exit)),
                 }
                 return Ok(None);
             }
@@ -420,48 +888,130 @@ fn handle_event(
     };
 
     match top {
+        RouteFrame::JobRun(_) => Ok(None),
         RouteFrame::MainMenu { .. } => Ok(None),
         RouteFrame::Init(w) => {
             if let Some(out) = w.handle_key(key) {
                 stack.pop();
                 match out {
-                    InitWizardOutcome::Submit(args) => return Ok(Some(UiCommand::Init(args))),
+                    InitWizardOutcome::Submit(args) => {
+                        return Ok(Some(SessionAction::Run(UiCommand::Init(args))));
+                    }
                     InitWizardOutcome::Cancel => {}
                 }
             }
             Ok(None)
         }
+        RouteFrame::LoginMode { list } => {
+            if nav::is_list_prev(key.code) {
+                nav::cycle_list(list, -1, 2);
+                return Ok(None);
+            }
+            if nav::is_list_next(key.code) {
+                nav::cycle_list(list, 1, 2);
+                return Ok(None);
+            }
+            match key.code {
+            KeyCode::Enter => {
+                let i = list.selected().unwrap_or(0);
+                stack.pop();
+                if i == 0 {
+                    stack.push(RouteFrame::LoginBrowser {
+                        server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
+                    });
+                } else {
+                    stack.push(RouteFrame::Login {
+                        display_name: tui_input::Input::default(),
+                        password: tui_input::Input::default(),
+                        publish_token: tui_input::Input::default(),
+                        server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
+                        field: 0,
+                    });
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+            }
+        }
+        RouteFrame::LoginBrowser { server } => {
+            if let Some(req) = tui_input::backend::crossterm::to_input_request(evt) {
+                server.handle(req);
+            }
+            if key.code == KeyCode::Enter {
+                let s = server.to_string().trim().to_string();
+                if s.is_empty() {
+                    return Ok(None);
+                }
+                stack.pop();
+                return Ok(Some(SessionAction::Run(UiCommand::Login(LoginArgs {
+                    server_url: s,
+                    profile: None,
+                    user_id: None,
+                    display_name: None,
+                    password: None,
+                    publish_token: None,
+                    web: true,
+                }))));
+            }
+            Ok(None)
+        }
         RouteFrame::Login {
-            user,
+            display_name,
+            password,
+            publish_token,
             server,
             field,
         } => {
             match key.code {
-                KeyCode::Tab => *field = (*field + 1) % 2,
-                KeyCode::Enter if *field == 1 => {
-                    let u = user.to_string().trim().to_string();
+                KeyCode::Tab => *field = (*field + 1) % 4,
+                KeyCode::Enter if *field == 3 => {
                     let s = server.to_string().trim().to_string();
-                    if u.is_empty() || s.is_empty() {
+                    if s.is_empty() {
                         return Ok(None);
                     }
+                    let pt = publish_token.to_string().trim().to_string();
+                    let name = display_name.to_string().trim().to_string();
+                    let pass = password.to_string().trim().to_string();
                     stack.pop();
-                    return Ok(Some(UiCommand::Login(LoginArgs {
+                    if !pt.is_empty() {
+                        return Ok(Some(SessionAction::Run(UiCommand::Login(LoginArgs {
+                            server_url: s,
+                            profile: None,
+                            user_id: None,
+                            display_name: None,
+                            password: None,
+                            publish_token: Some(pt),
+                            web: false,
+                        }))));
+                    }
+                    if name.is_empty() || pass.is_empty() {
+                        return Ok(None);
+                    }
+                    return Ok(Some(SessionAction::Run(UiCommand::Login(LoginArgs {
                         server_url: s,
-                        user_id: Some(u),
-                        display_name: None,
-                        password: None,
-                    })));
+                        profile: None,
+                        user_id: None,
+                        display_name: Some(name),
+                        password: Some(pass),
+                        publish_token: None,
+                        web: false,
+                    }))));
                 }
                 _ => {
                     if let Some(req) = tui_input::backend::crossterm::to_input_request(evt) {
                         match *field {
                             0 => {
-                                user.handle(req);
+                                let _ = display_name.handle(req);
                             }
                             1 => {
-                                server.handle(req);
+                                let _ = password.handle(req);
                             }
-                            _ => {}
+                            2 => {
+                                let _ = publish_token.handle(req);
+                            }
+                            _ => {
+                                let _ = server.handle(req);
+                            }
                         }
                     }
                 }
@@ -471,43 +1021,38 @@ fn handle_event(
         RouteFrame::BuildConfirm => match key.code {
             KeyCode::Enter => {
                 stack.pop();
-                Ok(Some(UiCommand::Build(BuildArgs {
+                Ok(Some(SessionAction::Run(UiCommand::Build(BuildArgs {
                     project_dir: None,
                     out: None,
                     strict: false,
-                })))
+                }))))
             }
             _ => Ok(None),
         },
-        RouteFrame::DeployMode { list } => match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                let i = list.selected().unwrap_or(0).saturating_sub(1);
-                list.select(Some(i));
-                Ok(None)
+        RouteFrame::DeployMode { list } => {
+            if nav::is_list_prev(key.code) {
+                nav::cycle_list(list, -1, 2);
+                return Ok(None);
             }
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                let i = (list.selected().unwrap_or(0) + 1).min(1);
-                list.select(Some(i));
-                Ok(None)
+            if nav::is_list_next(key.code) {
+                nav::cycle_list(list, 1, 2);
+                return Ok(None);
             }
+            match key.code {
             KeyCode::Enter => {
                 let i = list.selected().unwrap_or(0);
-                let (draft_only, auto_publish) = if i == 0 { (true, false) } else { (false, true) };
+                let publish = i == 1;
                 stack.pop();
                 stack.push(RouteFrame::DeployServer {
                     server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
-                    draft_only,
-                    auto_publish,
+                    publish,
                 });
                 Ok(None)
             }
             _ => Ok(None),
-        },
-        RouteFrame::DeployServer {
-            server,
-            draft_only,
-            auto_publish,
-        } => {
+            }
+        }
+        RouteFrame::DeployServer { server, publish } => {
             if let Some(req) = tui_input::backend::crossterm::to_input_request(evt) {
                 server.handle(req);
             }
@@ -516,29 +1061,29 @@ fn handle_event(
                 if s.is_empty() {
                     return Ok(None);
                 }
-                let dp = *draft_only;
-                let ap = *auto_publish;
+                let pub_flag = *publish;
                 stack.pop();
-                return Ok(Some(UiCommand::Deploy(DeployArgs {
+                return Ok(Some(SessionAction::Run(UiCommand::Deploy(DeployArgs {
                     project_dir: None,
                     server_url: s,
-                    auto_publish: ap,
-                    draft_only: dp,
-                })));
+                    profile: None,
+                    publish: pub_flag,
+                    auto_publish: false,
+                    draft_only: false,
+                }))));
             }
             Ok(None)
         }
-        RouteFrame::DraftsMode { list } => match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                let i = list.selected().unwrap_or(0).saturating_sub(1);
-                list.select(Some(i));
-                Ok(None)
+        RouteFrame::DraftsMode { list } => {
+            if nav::is_list_prev(key.code) {
+                nav::cycle_list(list, -1, 4);
+                return Ok(None);
             }
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                let i = (list.selected().unwrap_or(0) + 1).min(3);
-                list.select(Some(i));
-                Ok(None)
+            if nav::is_list_next(key.code) {
+                nav::cycle_list(list, 1, 4);
+                return Ok(None);
             }
+            match key.code {
             KeyCode::Enter => {
                 let action = match list.selected().unwrap_or(0) {
                     0 => DraftMenuAction::List,
@@ -554,7 +1099,8 @@ fn handle_event(
                 Ok(None)
             }
             _ => Ok(None),
-        },
+            }
+        }
         RouteFrame::DraftsServer { server, action } => {
             if let Some(req) = tui_input::backend::crossterm::to_input_request(evt) {
                 server.handle(req);
@@ -567,10 +1113,11 @@ fn handle_event(
                 let a = *action;
                 stack.pop();
                 if matches!(a, DraftMenuAction::List) {
-                    return Ok(Some(UiCommand::Drafts(DraftsArgs {
+                    return Ok(Some(SessionAction::Run(UiCommand::Drafts(DraftsArgs {
                         command: DraftsSubcommands::List,
                         server_url: s,
-                    })));
+                        profile: None,
+                    }))));
                 }
                 stack.push(RouteFrame::DraftId {
                     server: s,
@@ -601,23 +1148,24 @@ fn handle_event(
                     DraftMenuAction::Discard => DraftsSubcommands::Discard { draft_id: id },
                 };
                 stack.pop();
-                return Ok(Some(UiCommand::Drafts(DraftsArgs {
+                return Ok(Some(SessionAction::Run(UiCommand::Drafts(DraftsArgs {
                     command: cmd,
                     server_url: srv,
-                })));
+                    profile: None,
+                }))));
             }
             Ok(None)
         }
-        RouteFrame::ManifestMode { list } => match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                list.select(Some(list.selected().unwrap_or(0).saturating_sub(1)));
-                Ok(None)
+        RouteFrame::ManifestMode { list } => {
+            if nav::is_list_prev(key.code) {
+                nav::cycle_list(list, -1, 2);
+                return Ok(None);
             }
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                let i = (list.selected().unwrap_or(0) + 1).min(1);
-                list.select(Some(i));
-                Ok(None)
+            if nav::is_list_next(key.code) {
+                nav::cycle_list(list, 1, 2);
+                return Ok(None);
             }
+            match key.code {
             KeyCode::Enter => {
                 let next = if list.selected() == Some(0) {
                     ManifestNext::Show
@@ -632,7 +1180,8 @@ fn handle_event(
                 Ok(None)
             }
             _ => Ok(None),
-        },
+            }
+        }
         RouteFrame::ManifestServer { server, next } => {
             if let Some(req) = tui_input::backend::crossterm::to_input_request(evt) {
                 server.handle(req);
@@ -670,10 +1219,11 @@ fn handle_event(
                 stack.pop();
                 match n {
                     ManifestNext::Show => {
-                        return Ok(Some(UiCommand::Manifest(ManifestArgs {
+                        return Ok(Some(SessionAction::Run(UiCommand::Manifest(ManifestArgs {
                             command: ManifestSubcommands::Show { draft_id: id },
                             server_url: srv,
-                        })));
+                            profile: None,
+                        }))));
                     }
                     ManifestNext::Edit => {
                         stack.push(RouteFrame::ManifestEditFields {
@@ -720,7 +1270,7 @@ fn handle_event(
                     let srv = server.clone();
                     let did = draft_id.clone();
                     stack.pop();
-                    return Ok(Some(UiCommand::Manifest(ManifestArgs {
+                    return Ok(Some(SessionAction::Run(UiCommand::Manifest(ManifestArgs {
                         command: ManifestSubcommands::Edit {
                             draft_id: did,
                             name: n,
@@ -729,7 +1279,8 @@ fn handle_event(
                             description: desc,
                         },
                         server_url: srv,
-                    })));
+                        profile: None,
+                    }))));
                 }
                 _ => {}
             }
@@ -738,17 +1289,57 @@ fn handle_event(
         RouteFrame::TestConfirm => match key.code {
             KeyCode::Enter => {
                 stack.pop();
-                Ok(Some(UiCommand::Test(TestArgs { project_dir: None })))
+                Ok(Some(SessionAction::Run(UiCommand::Test(TestArgs { project_dir: None }))))
             }
             _ => Ok(None),
         },
         RouteFrame::DoctorConfirm => match key.code {
             KeyCode::Enter => {
                 stack.pop();
-                Ok(Some(UiCommand::Doctor(DoctorArgs {
+                Ok(Some(SessionAction::Run(UiCommand::Doctor(DoctorArgs {
                     project_dir: None,
                     platform: None,
-                })))
+                    matrix: false,
+                }))))
+            }
+            _ => Ok(None),
+        },
+        RouteFrame::ValidateConfirm => match key.code {
+            KeyCode::Enter => {
+                stack.pop();
+                Ok(Some(SessionAction::Run(UiCommand::Validate(ValidateArgs {
+                    project_dir: None,
+                    logic_wasm: None,
+                }))))
+            }
+            _ => Ok(None),
+        },
+        RouteFrame::CodegenConfirm => match key.code {
+            KeyCode::Enter => {
+                stack.pop();
+                Ok(Some(SessionAction::Run(UiCommand::Codegen(CodegenArgs { project_dir: None }))))
+            }
+            _ => Ok(None),
+        },
+        RouteFrame::UpdateConfirm => match key.code {
+            KeyCode::Enter => {
+                stack.pop();
+                Ok(Some(SessionAction::Run(UiCommand::Update(UpdateArgs {
+                    platform: crate::config::PROD_PLATFORM_BASE.to_string(),
+                    check: true,
+                }))))
+            }
+            _ => Ok(None),
+        },
+        RouteFrame::LogoutConfirm { server_url, .. } => match key.code {
+            KeyCode::Enter => {
+                let url = server_url.clone();
+                stack.pop();
+                Ok(Some(SessionAction::Run(UiCommand::Logout(LogoutArgs {
+                    server_url: url,
+                    profile: None,
+                    all: false,
+                }))))
             }
             _ => Ok(None),
         },

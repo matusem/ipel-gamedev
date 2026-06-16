@@ -1,6 +1,6 @@
 ﻿use crate::api::*;
 use crate::components::lobby::{
-    LobbyActiveGame, LobbyFloatingChat, LobbyGameModal, LobbyGameRulesModal, LobbyPlayerCard,
+    LobbyFloatingChat, LobbyGameModal, LobbyGameRulesModal, LobbyPlayerCard, LobbyRoomHeader,
 };
 use crate::components::ui::{push_toast, status_variant_from_lobby, Icon, JsonConsole, StatusBadge, use_toast, ToastKind};
 use crate::models::*;
@@ -385,6 +385,7 @@ pub fn LobbyRoomBody(
     gt_list: Vec<GameTypeInfo>,
     uid: Option<String>,
     on_detail_updated: EventHandler<LobbyDetail>,
+    on_open_history: EventHandler<()>,
 ) -> Element {
     let nav = use_navigator();
     let is_owner = uid.as_deref() == Some(lobby_for_cols.owner_user_id.as_str());
@@ -428,11 +429,12 @@ pub fn LobbyRoomBody(
         && claimed == total
         && all_ready
         && (lobby_for_cols.status == "waiting" || lobby_for_cols.status == "configuring");
-    let in_staging = lobby_for_cols.status == "waiting" || lobby_for_cols.status == "configuring";
-    let lobby_id_default_config = lobby_for_cols.id.clone();
+    let in_staging = lobby_for_cols.status == "waiting"
+        || lobby_for_cols.status == "configuring"
+        || lobby_for_cols.status == "finished";
     let lobby_finished = lobby_for_cols.status == "finished";
-    let game_id_for_results_btn = lobby_for_cols.game_instance_id.clone();
-    let lobby_id_reopen_finished = lobby_for_cols.id.clone();
+    let lobby_id_reopen_bar = lobby_for_cols.id.clone();
+    let lobby_id_default_config = lobby_for_cols.id.clone();
 
     let toast = use_toast();
     let game_name = lobby_for_cols.game_type.clone();
@@ -472,40 +474,24 @@ pub fn LobbyRoomBody(
 
     rsx! {
         div { class: "lobby-room-body",
+        LobbyRoomHeader {
+            owner_user_id: lobby_for_cols.owner_user_id.clone(),
+            owner_display_name: lobby_for_cols.owner_display_name.clone(),
+            game_type: lobby_for_cols.game_type.clone(),
+            status: lobby_for_cols.status.clone(),
+            status_variant,
+            gt_list: gt_list.clone(),
+            is_owner,
+            show_config: has_config,
+            show_rules,
+            on_open_history,
+            on_open_games: EventHandler::new(move |_| games_open.set(true)),
+            on_open_config: EventHandler::new(move |_| config_open.set(true)),
+            on_open_rules: EventHandler::new(move |_| rules_open.set(true)),
+        }
+
         div { class: "lobby-stage",
             div { class: "lobby-stage-bg" }
-
-            if lobby_finished {
-                div { class: "lobby-finished-banner mx-auto max-w-3xl w-full",
-                    Icon { name: "emoji_events", filled: true }
-                    div { class: "min-w-0 flex-1",
-                        p { class: "font-manrope font-semibold text-on-surface", "Match complete" }
-                    }
-                    div { class: "flex flex-wrap gap-2",
-                        if let Some(g) = game_id_for_results_btn.clone() {
-                            button {
-                                class: "btn-primary",
-                                onclick: move |_| { nav.push(LobbyRoute::GameResult { id: g.clone() }); },
-                                "Results"
-                            }
-                        }
-                        if is_owner {
-                            button {
-                                class: "btn-secondary",
-                                onclick: move |_| {
-                                    let lid = lobby_id_reopen_finished.clone();
-                                    spawn(async move {
-                                        let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
-                                        let vars = serde_json::json!({ "id": lid });
-                                        let _ = graphql_exec::<Value>(q, Some(vars)).await;
-                                    });
-                                },
-                                "Play again"
-                            }
-                        }
-                    }
-                }
-            }
 
             LobbyGameModal {
                 open: games_open(),
@@ -542,19 +528,6 @@ pub fn LobbyRoomBody(
             }
 
             div { class: "lobby-stage-main",
-                div { class: "lobby-panel-top",
-                    LobbyActiveGame {
-                        selected_game_type: lobby_for_cols.game_type.clone(),
-                        gt_list: gt_list.clone(),
-                        is_owner,
-                        on_open_games: EventHandler::new(move |_| games_open.set(true)),
-                        show_config: has_config,
-                        on_open_config: EventHandler::new(move |_| config_open.set(true)),
-                        show_rules,
-                        on_open_rules: EventHandler::new(move |_| rules_open.set(true)),
-                    }
-                }
-
                 div { class: "lobby-panel-middle",
                     if !no_game_yet {
                         div { class: "lobby-squad-ambient bg-gradient-to-b {media.accent_gradient}" }
@@ -688,22 +661,42 @@ pub fn LobbyRoomBody(
                             },
                             "Disband"
                         }
-                        button {
-                            class: "btn-primary shadow-[0_0_20px_rgba(79,70,229,0.4)]",
-                            disabled: !can_start,
-                            onclick: move |_| {
-                                let lid = lobby_id_start_bar.clone();
-                                let toast = toast;
-                                spawn(async move {
-                                    let q = "mutation St($id: ID!) { startLobby(lobbyId: $id) }";
-                                    let vars = serde_json::json!({ "id": lid });
-                                    match graphql_exec::<Value>(q, Some(vars)).await {
-                                        Ok(_) => push_toast(toast.show, "Match started", ToastKind::Success),
-                                        Err(e) => push_toast(toast.show, e, ToastKind::Error),
-                                    }
-                                });
-                            },
-                            "START MATCH"
+                        if lobby_finished {
+                            button {
+                                class: "btn-primary shadow-[0_0_20px_rgba(79,70,229,0.4)]",
+                                onclick: move |_| {
+                                    let lid = lobby_id_reopen_bar.clone();
+                                    let toast = toast;
+                                    spawn(async move {
+                                        let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
+                                        let vars = serde_json::json!({ "id": lid });
+                                        match graphql_exec::<Value>(q, Some(vars)).await {
+                                            Ok(_) => push_toast(toast.show, "Lobby reopened", ToastKind::Success),
+                                            Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                        }
+                                    });
+                                },
+                                Icon { name: "replay", filled: false }
+                                "Play again"
+                            }
+                        } else {
+                            button {
+                                class: "btn-primary shadow-[0_0_20px_rgba(79,70,229,0.4)]",
+                                disabled: !can_start,
+                                onclick: move |_| {
+                                    let lid = lobby_id_start_bar.clone();
+                                    let toast = toast;
+                                    spawn(async move {
+                                        let q = "mutation St($id: ID!) { startLobby(lobbyId: $id) }";
+                                        let vars = serde_json::json!({ "id": lid });
+                                        match graphql_exec::<Value>(q, Some(vars)).await {
+                                            Ok(_) => push_toast(toast.show, "Match started", ToastKind::Success),
+                                            Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                        }
+                                    });
+                                },
+                                "START MATCH"
+                            }
                         }
                     }
                 }

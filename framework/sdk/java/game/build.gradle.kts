@@ -32,6 +32,14 @@ tasks.test {
     useJUnitPlatform()
 }
 
+tasks.register<JavaExec>("exportJsonSchema") {
+    group = "gamedev"
+    description = "Emit JSON Schema IR for client codegen"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("sk.upjs.gdd.game.tooling.ExportJsonSchema")
+    args(layout.buildDirectory.dir("schema").get().asFile.absolutePath)
+}
+
 // Maven Central publication — see docs/sdk-publishing.md
 // Apply com.vanniktech.maven.publish plugin in CI when releasing.
 publishing {

@@ -10,9 +10,10 @@ use components::{AppShell, LoadingState, ToastProvider};
 use dioxus::prelude::*;
 use models::*;
 use pages::{
-    AuthGate, AdminPage, DeveloperUploadsPage, GameDetailPage, GameResultPage, GamesListPage, HomePage,
+    AuthGate, AdminPage, CliAuthPage, DeveloperUploadsPage, GameDetailPage, GameResultPage, GamesListPage, HomePage,
     LobbiesBrowserPage, LobbyRoomPage, ProfilePage, SettingsPage,
 };
+use pages::cli_auth::{is_cli_auth_location, read_cli_auth_params_from_location};
 
 #[derive(Clone, Copy)]
 pub struct AppShellContext {
@@ -23,6 +24,8 @@ pub struct AppShellContext {
 #[derive(Clone, Debug, PartialEq, Routable)]
 #[rustfmt::skip]
 pub enum LobbyRoute {
+    #[route("/cli-auth?:port&:state", CliAuthRoute)]
+    CliAuth { port: String, state: String },
     #[layout(OverlayLayout)]
     #[route("/", HomePageRoute)]
     Home {},
@@ -126,6 +129,15 @@ fn AdminRoute() -> Element {
 }
 
 #[component]
+fn CliAuthRoute(port: String, state: String) -> Element {
+    rsx! {
+        div { class: "min-h-screen bg-background text-on-surface",
+            CliAuthPage { port, state }
+        }
+    }
+}
+
+#[component]
 pub fn OverlayLayout() -> Element {
     let mut shell = use_context::<AppShellContext>();
     let nav = use_navigator();
@@ -142,6 +154,7 @@ pub fn OverlayLayout() -> Element {
                 player: p.player.clone(),
                 return_lobby_id: p.return_lobby_id.clone(),
                 spectator: p.spectator,
+                is_lobby_owner: p.is_lobby_owner,
                 on_close: move |_| {
                     shell.playing.set(None);
                 },
@@ -163,12 +176,16 @@ fn AuthedShell(playing: Signal<Option<PlayOverlay>>, error_msg: Signal<Option<St
 
 #[component]
 fn App() -> Element {
+    let on_cli_auth = is_cli_auth_location();
     let mut session_ok: Signal<bool> = use_signal(|| false);
-    let mut session_checked: Signal<bool> = use_signal(|| false);
+    let mut session_checked: Signal<bool> = use_signal(|| on_cli_auth);
     let mut playing: Signal<Option<PlayOverlay>> = use_signal(|| None);
     let error_msg: Signal<Option<String>> = use_signal(|| None);
 
     use_effect(move || {
+        if is_cli_auth_location() {
+            return;
+        }
         let mut session_ok = session_ok;
         let mut session_checked = session_checked;
         let mut error_msg = error_msg;
@@ -200,6 +217,18 @@ fn App() -> Element {
         });
     });
 
+    if on_cli_auth {
+        let (port, state) = read_cli_auth_params_from_location();
+        return rsx! {
+            document::Stylesheet {
+                href: asset!("/assets/tailwind.css"),
+            }
+            div { class: "min-h-screen bg-background text-on-surface",
+                CliAuthPage { port, state }
+            }
+        };
+    }
+
     rsx! {
         document::Stylesheet {
             href: asset!("/assets/tailwind.css"),
@@ -210,17 +239,17 @@ fn App() -> Element {
                     title: "Checking session…".to_string(),
                     subtitle: "Hang tight".to_string(),
                 }
-            } else if !session_ok() {
+            } else if session_ok() {
+                AuthedShell {
+                    playing,
+                    error_msg,
+                }
+            } else {
                 AuthGate {
                     on_ready: move |_| {
                         session_ok.set(true);
                         session_checked.set(true);
                     }
-                }
-            } else {
-                AuthedShell {
-                    playing,
-                    error_msg,
                 }
             }
         }

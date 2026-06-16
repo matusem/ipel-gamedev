@@ -48,7 +48,7 @@ pub fn ToastProvider(children: Element) -> Element {
 
     rsx! {
         {children}
-        div { class: "fixed bottom-20 md:bottom-6 right-6 z-[60] flex flex-col gap-2 max-w-sm",
+        div { class: "fixed bottom-24 left-6 md:left-[17.5rem] z-[60] flex flex-col gap-2 max-w-sm",
             for (i, t) in show().iter().enumerate() {
                 {
                     let kind_class = match t.kind {

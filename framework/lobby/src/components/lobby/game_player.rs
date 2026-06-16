@@ -10,6 +10,7 @@ pub fn GamePlayer(
     player: String,
     return_lobby_id: Option<String>,
     spectator: bool,
+    is_lobby_owner: bool,
     on_close: EventHandler<()>,
     on_navigate_lobby: EventHandler<String>,
 ) -> Element {
@@ -29,11 +30,14 @@ pub fn GamePlayer(
                     class: "btn-ghost",
                     onclick: move |_| {
                         let lid = ret.clone();
+                        let reopen = is_lobby_owner;
                         spawn(async move {
-                            if let Some(ref id) = lid {
-                                let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
-                                let vars = serde_json::json!({ "id": id });
-                                let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                            if reopen {
+                                if let Some(ref id) = lid {
+                                    let q = "mutation R($id: ID!) { reopenLobbyAfterGame(lobbyId: $id) }";
+                                    let vars = serde_json::json!({ "id": id });
+                                    let _ = graphql_exec::<Value>(q, Some(vars)).await;
+                                }
                             }
                             on_close.call(());
                             if let Some(id) = lid {

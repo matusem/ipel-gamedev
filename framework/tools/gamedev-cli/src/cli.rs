@@ -5,14 +5,13 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
 
-/// Default GraphQL endpoint (matches `#[arg(long, default_value = ...)]` on several commands).
-pub const DEFAULT_GRAPHQL_URL: &str = "http://localhost:8080/graphql";
+pub use crate::defaults::DEFAULT_GRAPHQL_URL;
 
 #[derive(Parser)]
 #[command(
     name = "gamedev-cli",
     version,
-    about = "UPJŠ GDD Platform developer CLI"
+    about = "UPJS GDD Platform developer CLI"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -24,12 +23,15 @@ pub enum Commands {
     Init(InitArgs),
     Build(BuildArgs),
     Login(LoginArgs),
+    Logout(LogoutArgs),
     Deploy(DeployArgs),
     Drafts(DraftsArgs),
     Manifest(ManifestArgs),
     Test(TestArgs),
     Doctor(DoctorArgs),
     Validate(ValidateArgs),
+    /// Generate typed client bindings and JSON Schema from game types
+    Codegen(CodegenArgs),
     /// Download and install the platform-matching CLI release
     Update(UpdateArgs),
 }
@@ -60,13 +62,34 @@ pub struct BuildArgs {
 pub struct LoginArgs {
     #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
     pub server_url: String,
-    /// Deprecated: raw user UUID for publish-token bootstrap. Prefer `--display-name` + `--password`.
+    /// Server profile from `config.toml` (`local`, `prod`). Overrides default server URL when set.
     #[arg(long)]
+    pub profile: Option<String>,
+    /// Deprecated: raw user UUID for publish-token bootstrap. Prefer `--display-name` + `--password` or `--publish-token`.
+    #[arg(long, hide = true)]
     pub user_id: Option<String>,
     #[arg(long)]
     pub display_name: Option<String>,
     #[arg(long)]
     pub password: Option<String>,
+    /// Publish token from lobby settings (alternative to password login).
+    #[arg(long)]
+    pub publish_token: Option<String>,
+    /// Log in via browser loopback (default when no other credentials are given).
+    #[arg(long)]
+    pub web: bool,
+}
+
+#[derive(Args)]
+pub struct LogoutArgs {
+    #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
+    pub server_url: String,
+    /// Server profile from `config.toml` (`local`, `prod`).
+    #[arg(long)]
+    pub profile: Option<String>,
+    /// Remove credentials for every stored server.
+    #[arg(long)]
+    pub all: bool,
 }
 
 #[derive(Args)]
@@ -76,8 +99,15 @@ pub struct DeployArgs {
     #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
     pub server_url: String,
     #[arg(long)]
-    pub auto_publish: bool,
+    pub profile: Option<String>,
+    /// Publish the draft after a successful upload (default: upload only).
     #[arg(long)]
+    pub publish: bool,
+    /// Deprecated: use default upload-only behavior or `--publish`.
+    #[arg(long, hide = true)]
+    pub auto_publish: bool,
+    /// Deprecated: upload-only is already the default.
+    #[arg(long, hide = true)]
     pub draft_only: bool,
 }
 
@@ -87,6 +117,8 @@ pub struct DraftsArgs {
     pub command: DraftsSubcommands,
     #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
     pub server_url: String,
+    #[arg(long)]
+    pub profile: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -103,6 +135,8 @@ pub struct ManifestArgs {
     pub command: ManifestSubcommands,
     #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
     pub server_url: String,
+    #[arg(long)]
+    pub profile: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -129,15 +163,26 @@ pub struct TestArgs {
 pub struct DoctorArgs {
     #[arg(long)]
     pub project_dir: Option<PathBuf>,
-    /// Platform base URL (e.g. https://gamedev.jinxwashere.com) — checks CLI/SDK versions against production
+    /// Platform base URL (e.g. https://gamedev.jinxwashere.com) - checks CLI/SDK versions against production
     #[arg(long)]
     pub platform: Option<String>,
+    /// Verify scaffold template coverage for all backend x frontend combinations
+    #[arg(long)]
+    pub matrix: bool,
 }
 
 #[derive(Args)]
+pub struct CodegenArgs {
+    #[arg(long)]
+    pub project_dir: Option<PathBuf>,
+}
+
+use crate::defaults::DEFAULT_PLATFORM_BASE;
+
+#[derive(Args)]
 pub struct UpdateArgs {
-    /// GraphQL or platform base URL (default: production)
-    #[arg(long, default_value = "https://gamedev.jinxwashere.com")]
+    /// GraphQL or platform base URL (default: production for packaged releases, localhost for dev builds)
+    #[arg(long, default_value = DEFAULT_PLATFORM_BASE)]
     pub platform: String,
     /// Exit with error if an update is available (CI-friendly)
     #[arg(long)]
@@ -148,7 +193,7 @@ pub struct UpdateArgs {
 pub struct ValidateArgs {
     #[arg(long)]
     pub project_dir: Option<PathBuf>,
-    /// Path to logic.wasm (default: dist/game.zip → logic.wasm or backend build output).
+    /// Path to logic.wasm (default: dist/game.zip -> logic.wasm or backend build output).
     #[arg(long)]
     pub logic_wasm: Option<PathBuf>,
 }

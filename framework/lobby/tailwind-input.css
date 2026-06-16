@@ -180,6 +180,91 @@
     @apply mb-3 py-3 shrink-0 mx-6;
   }
 
+  .lobby-room-header {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-2 sm:gap-x-4 mb-3 mx-6 px-3 sm:px-4 py-2.5
+      rounded-2xl border border-outline-variant/30 bg-surface-container/80 backdrop-blur-md shrink-0;
+  }
+
+  .lobby-room-header-nav {
+    @apply flex items-center shrink-0;
+  }
+
+  .lobby-room-header-divider {
+    @apply hidden lg:block self-stretch w-px my-1 bg-outline-variant/30 shrink-0;
+  }
+
+  .lobby-room-header-game {
+    @apply flex flex-1 min-w-[9rem] items-center gap-2.5 sm:gap-3;
+  }
+
+  .lobby-room-header-art {
+    @apply h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-xl overflow-hidden ring-1 ring-outline-variant/25
+      flex items-center justify-center text-secondary;
+  }
+
+  .lobby-room-header-cover {
+    @apply h-full w-full object-cover;
+  }
+
+  .lobby-room-header-emoji {
+    @apply text-xl sm:text-2xl leading-none;
+  }
+
+  .lobby-room-header-game-text {
+    @apply flex flex-col justify-center gap-0.5 min-w-0;
+  }
+
+  .lobby-room-header-title {
+    @apply font-manrope font-bold text-base sm:text-lg text-on-surface leading-tight;
+  }
+
+  .lobby-room-header-actions {
+    @apply flex items-center gap-1 shrink-0 p-1 rounded-xl
+      border border-outline-variant/25 bg-surface-container-low/60;
+  }
+
+  .lobby-room-header-action {
+    @apply flex flex-col items-center justify-center gap-1 w-[3.25rem] py-1.5 rounded-lg
+      border border-transparent text-center transition-colors
+      hover:bg-surface-container-high/70
+      disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-transparent
+      cursor-pointer bg-transparent;
+  }
+
+  .lobby-room-header-action-disabled {
+    @apply opacity-40 cursor-default pointer-events-none;
+  }
+
+  .lobby-room-header-action-icon {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-secondary shrink-0;
+  }
+
+  .lobby-room-header-action-label {
+    @apply text-[8px] sm:text-[9px] font-label-caps uppercase tracking-wider
+      text-on-surface-variant leading-none max-w-[4rem] truncate;
+  }
+
+  .lobby-room-header-right {
+    @apply flex flex-wrap items-center justify-end gap-x-3 gap-y-2 sm:gap-x-4 ml-auto;
+  }
+
+  .lobby-room-header-meta {
+    @apply flex flex-wrap items-center gap-2 sm:gap-3 shrink-0;
+  }
+
+  .lobby-room-header-host {
+    @apply flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full
+      border border-outline-variant/25 bg-surface-container-low/60 shrink-0;
+  }
+
+  .lobby-room-header-host-kicker {
+    @apply text-[9px] font-label-caps uppercase tracking-wider text-outline leading-none;
+  }
+
+  .lobby-room-header-host-name {
+    @apply text-body-sm font-semibold text-on-surface leading-tight;
+  }
+
   .lobby-room-main {
     @apply overflow-hidden px-0 pt-3 sm:pt-4 pb-0 md:ml-64;
     height: calc(100dvh - 4rem - 4rem);
@@ -482,6 +567,28 @@
     @apply flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 border-t border-outline-variant/20;
   }
 
+  .lobby-results-modal {
+    @apply relative z-10 flex flex-col w-full max-w-2xl max-h-[min(88vh,44rem)]
+      rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/95 backdrop-blur-xl shadow-2xl;
+  }
+
+  .lobby-results-modal-body {
+    @apply flex-1 min-h-0 overflow-y-auto p-4 sm:p-5;
+  }
+
+  .lobby-results-modal-footer {
+    @apply shrink-0 flex justify-end gap-2 px-4 sm:px-5 py-3 border-t border-outline-variant/30;
+  }
+
+  .lobby-results-back {
+    @apply inline-flex items-center gap-1.5 text-body-sm font-medium text-primary
+      hover:text-on-surface transition-colors;
+  }
+
+  .lobby-results-detail-layer {
+    @apply fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6;
+  }
+
   .lobby-chat-fab {
     @apply fixed z-40 flex items-center gap-2 max-w-[14rem] pl-3 pr-4 py-2.5 rounded-2xl
       border border-outline-variant/40 bg-surface-container/95 backdrop-blur-md shadow-xl
@@ -695,7 +802,7 @@
   }
 
   .lobby-player-card-transfer-row {
-    @apply w-full min-h-[1.5rem] flex items-center justify-center;
+    @apply w-full mt-2 flex flex-col items-stretch gap-1.5;
   }
 
   .lobby-player-card-ready {
@@ -743,9 +850,16 @@
   }
 
   .lobby-player-card-transfer {
-    @apply mt-1 inline-flex items-center gap-1 rounded-lg border border-secondary/35
-      bg-secondary/10 px-2 py-1 text-[9px] font-label-caps uppercase tracking-wider
+    @apply inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-secondary/35
+      bg-secondary/10 px-2 py-1.5 text-[9px] font-label-caps uppercase tracking-wider
       text-secondary transition-colors hover:bg-secondary/20 hover:border-secondary/55
+      cursor-pointer;
+  }
+
+  .lobby-player-card-kick {
+    @apply inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-error/35
+      bg-error/10 px-2 py-1.5 text-[9px] font-label-caps uppercase tracking-wider
+      text-error transition-colors hover:bg-error/20 hover:border-error/55
       cursor-pointer;
   }
 

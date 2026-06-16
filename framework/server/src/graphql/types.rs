@@ -12,6 +12,7 @@ use crate::lobby_db::{self, LobbyDetail, LobbyMessage, LobbySeat, LobbySummary};
 #[derive(SimpleObject, Clone)]
 pub struct AuthSessionGql {
     pub session_token: String,
+    pub expires_at: i64,
     pub user: UserGql,
 }
 

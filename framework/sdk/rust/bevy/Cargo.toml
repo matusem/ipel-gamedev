@@ -8,5 +8,6 @@ repository = "https://github.com/matusem/ipel-gamedev"
 
 [dependencies]
 bevy = "0.15"
+serde_json = "1"
 upjs-gdd-rust-shared = { path = "../shared" }
 upjs-gdd-shared-types = { path = "../shared-types" }

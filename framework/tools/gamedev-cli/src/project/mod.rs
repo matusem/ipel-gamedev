@@ -18,7 +18,7 @@ pub enum ProjectLayout {
     Unknown,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
     pub name: String,
     pub backend: BackendKind,
@@ -171,7 +171,7 @@ pub fn find_built_java_logic_wasm(java_backend: &Path) -> Result<PathBuf> {
         }
     }
     bail!(
-        "no logic.wasm found under {}; run Gradle `exportLogicWasm` in {}",
+        "no logic.wasm found under {}; run Gradle `exportLogicComponent` in {}",
         component.display(),
         java_backend.display()
     );
@@ -199,10 +199,12 @@ pub fn cargo_target_roots(root: &Path, member_dir: &Path) -> Vec<PathBuf> {
 }
 
 pub fn find_built_component_wasm(root: &Path, component_dir: &Path) -> Result<PathBuf> {
-    let out_dirs: Vec<PathBuf> = cargo_target_roots(root, component_dir)
-        .into_iter()
-        .map(|base| base.join("wasm32-wasip1").join("release"))
-        .collect();
+    let mut out_dirs: Vec<PathBuf> = Vec::new();
+    for base in cargo_target_roots(root, component_dir) {
+        for triple in ["wasm32-wasip1", "wasm32-wasip2"] {
+            out_dirs.push(base.join(triple).join("release"));
+        }
+    }
 
     let mut wasm_candidates: Vec<(PathBuf, SystemTime)> = Vec::new();
     for out_dir in out_dirs {
@@ -228,6 +230,24 @@ pub fn find_built_component_wasm(root: &Path, component_dir: &Path) -> Result<Pa
         bail!("no .wasm artifact produced by `cargo component build --release`");
     };
     Ok(latest)
+}
+
+/// Expected `logic.wasm` path for a Rust backend before packaging (used by validate).
+pub fn resolve_rust_logic_wasm_path(root: &Path) -> PathBuf {
+    let component_dir = resolve_component_dir(root);
+    for base in cargo_target_roots(root, &component_dir) {
+        for triple in ["wasm32-wasip1", "wasm32-wasip2"] {
+            let p = base.join(triple).join("release").join("logic.wasm");
+            if p.is_file() {
+                return p;
+            }
+        }
+    }
+    component_dir
+        .join("target")
+        .join("wasm32-wasip1")
+        .join("release")
+        .join("logic.wasm")
 }
 
 /// Walk parents from `from` until `game/Cargo.toml` exists.

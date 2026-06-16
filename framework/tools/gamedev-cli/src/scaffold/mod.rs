@@ -137,17 +137,16 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
     )
     .with_context(|| format!("write {}", root.join("README.md").display()))?;
     let layout = project::detect_layout(&root);
-    println!("Initialized game project at {}", root.display());
+    crate::reporter::status("init", &format!("project at {}", root.display()));
     print_init_next_steps(&root, &cfg, layout);
     Ok(())
 }
 
 fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout) {
-    println!();
-    println!("Next steps:");
-    println!("  gamedev doctor");
-    println!("  gamedev test");
-    println!("  gamedev build");
+    crate::reporter::section("Next steps");
+    crate::reporter::command_hint("gamedev doctor");
+    crate::reporter::command_hint("gamedev test");
+    crate::reporter::command_hint("gamedev build");
     match (cfg.backend, cfg.frontend, layout) {
         (BackendKind::Rust, FrontendKind::Bevy, ProjectLayout::FlatRustBevy) => {
             println!();
@@ -155,7 +154,7 @@ fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout
             println!("  cd {}", root.display());
             println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
             println!("  rustup target add wasm32-unknown-unknown");
-            println!("  gamedev build   # logic.wasm + Bevy wasm-bindgen → client/");
+            println!("  gamedev build   # logic.wasm + Bevy wasm-bindgen -> client/");
         }
         (_, FrontendKind::Js | FrontendKind::Ts, _) => {
             println!("  cd frontend/web && npm install && npm run dev   # local UI");
@@ -166,7 +165,7 @@ fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout
             println!("  cd {}", root.display());
             println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
             println!("  rustup target add wasm32-unknown-unknown");
-            println!("  gamedev build   # logic.wasm + Bevy wasm-bindgen → client/");
+            println!("  gamedev build   # logic.wasm + Bevy wasm-bindgen -> client/");
         }
         (BackendKind::Rust, FrontendKind::Dioxus, ProjectLayout::NestedRust) => {
             println!();
@@ -174,12 +173,15 @@ fn print_init_next_steps(root: &Path, cfg: &ProjectConfig, layout: ProjectLayout
             println!("  cd {}", root.display());
             println!("  cargo install wasm-bindgen-cli   # once, if doctor warns");
             println!("  rustup target add wasm32-unknown-unknown");
-            println!("  gamedev build   # logic.wasm + Dioxus wasm-bindgen → client/");
+            println!("  gamedev build   # logic.wasm + Dioxus wasm-bindgen -> client/");
         }
         _ => {}
     }
-    println!("  gamedev login --user-id <uuid>");
-    println!("  gamedev deploy --draft-only");
+    crate::reporter::command_hint("gamedev login   # browser login (default)");
+    crate::reporter::command_hint("gamedev login --display-name <name> --password <pass>");
+    crate::reporter::command_hint("gamedev deploy");
+    crate::reporter::command_hint("gamedev deploy --publish");
+    crate::reporter::command_hint("gamedev deploy --profile prod");
 }
 
 fn scaffold_rust_bevy_flat(root: &Path, cfg: &ProjectConfig) -> Result<()> {
@@ -370,6 +372,15 @@ fn scaffold_rust_backend(
         &shared_types_name.replace('-', "_"),
     );
     fs::write(shared_types_dir.join("src/bin/export_ts.rs"), export_ts)?;
+    let export_schema =
+        include_str!("../../templates/backend/rust_shared_types_export_schema.rs").replace(
+            "__SHARED_TYPES_CRATE__",
+            &shared_types_name.replace('-', "_"),
+        );
+    fs::write(
+        shared_types_dir.join("src/bin/export_schema.rs"),
+        export_schema,
+    )?;
 
     let logic_cargo = include_str!("../../templates/backend/rust_logic_flat_Cargo.toml")
         .replace("__CRATE_NAME__", &format!("{crate_name}_logic"))
@@ -436,18 +447,18 @@ fn scaffold_js_frontend(
             include_str!("../../templates/frontend/plain_static_package.json")
         }
     };
-    let pkg = wire_sdk_js_package_json(pkg, &web, root)?;
+    let pkg = wire_game_sdk_package_json(&wire_sdk_js_package_json(pkg, &web, root)?, &web, root)?;
     fs::write(web.join("package.json"), pkg)?;
 
     let (entry_path, entry_source) = if use_ts {
         (
             "src/main.ts",
-            include_str!("../../templates/frontend/main.ts"),
+            include_str!("../../templates/frontend/play_main.ts"),
         )
     } else {
         (
             "src/main.js",
-            include_str!("../../templates/frontend/main.js"),
+            include_str!("../../templates/frontend/play_main.js"),
         )
     };
     fs::write(web.join(entry_path), entry_source)?;
@@ -455,11 +466,12 @@ fn scaffold_js_frontend(
         include_str!("../../templates/frontend/index.html").replace("__ENTRY_PATH__", entry_path);
     fs::write(web.join("index.html"), index_html)?;
     if rust_backend {
-        let generated_types = r#"// Generated from Rust shared types.
-// Regenerate after model changes:
-// cargo run --manifest-path ../../backend/rust/shared-types/Cargo.toml --features typegen --bin export_ts
+        let generated_types = r#"// Generated by `gamedev codegen` from backend types.
 export type Player = "Player1" | "Player2";
-export type Move = { Place: { index: number } };
+export interface Config { side_length: number; win_length: number; }
+export type Action = { Place: { row: number; col: number } };
+export interface State { board: (Player | null)[]; current_player: Player; }
+export interface PlayerState { player: Player; view: State; }
 "#;
         fs::create_dir_all(web.join("src/generated"))?;
         fs::write(web.join("src/generated/types.ts"), generated_types)?;
@@ -541,6 +553,33 @@ fn scaffold_dioxus_frontend(root: &Path, cfg: &ProjectConfig, in_workspace: bool
     fs::write(root.join("client/index.html"), index_dioxus)
         .with_context(|| format!("write {}", root.join("client/index.html").display()))?;
     Ok(())
+}
+
+fn wire_game_sdk_package_json(pkg: &str, web_dir: &Path, root: &Path) -> Result<String> {
+    let Some(fw) = project::find_framework_root(root) else {
+        return Ok(pkg.to_string());
+    };
+    let game_sdk = fw.join("packages").join("game-sdk");
+    if !game_sdk.join("package.json").is_file() {
+        return Ok(pkg.to_string());
+    }
+    let Some(rel) = project::relative_path_from(web_dir, &game_sdk) else {
+        return Ok(pkg.to_string());
+    };
+    let mut value: serde_json::Value = serde_json::from_str(pkg)?;
+    let obj = value
+        .as_object_mut()
+        .context("package.json template must be a JSON object")?;
+    let deps = obj
+        .entry("dependencies")
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(deps_obj) = deps.as_object_mut() {
+        deps_obj.insert(
+            "@upjs-gdd/game-sdk".to_string(),
+            serde_json::json!(format!("file:{rel}")),
+        );
+    }
+    Ok(serde_json::to_string_pretty(&value)?)
 }
 
 fn wire_sdk_js_package_json(pkg: &str, web_dir: &Path, root: &Path) -> Result<String> {

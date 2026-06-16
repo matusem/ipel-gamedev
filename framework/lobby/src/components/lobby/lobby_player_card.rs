@@ -1,4 +1,4 @@
-use crate::api::{graphql_exec, transfer_lobby_ownership};
+use crate::api::{graphql_exec, kick_lobby_player, transfer_lobby_ownership};
 use crate::components::ui::{push_toast, use_toast, Avatar, AvatarSize, Icon, ToastKind};
 use crate::models::{LobbyDetail, LobbySeat};
 use dioxus::prelude::*;
@@ -26,10 +26,9 @@ pub fn LobbyPlayerCard(
     let can_transfer = viewer_is_owner
         && in_staging
         && taken
-        && seat
-            .claimed_by_user_id
-            .as_deref()
-            .is_some_and(|u| u != owner_user_id.as_str());
+        && !is_me
+        && !is_host;
+    let can_kick = can_transfer;
     let display = seat
         .claimed_display_name
         .clone()
@@ -124,6 +123,54 @@ pub fn LobbyPlayerCard(
                                             },
                                             Icon { name: "swap_horiz", filled: false }
                                             "Make host"
+                                        }
+                                    }
+                                }
+                            }
+                            if can_kick {
+                                {
+                                    let lid = lobby_id.clone();
+                                    let target = seat.claimed_by_user_id.clone().unwrap_or_default();
+                                    let label = display.clone();
+                                    rsx! {
+                                        button {
+                                            class: "lobby-player-card-kick",
+                                            title: "Remove this player from the lobby",
+                                            onclick: move |_| {
+                                                let lid = lid.clone();
+                                                let target = target.clone();
+                                                let label = label.clone();
+                                                let toast = toast;
+                                                let on_detail_updated = on_detail_updated;
+                                                let confirm = web_sys::window()
+                                                    .map(|w| {
+                                                        w.confirm_with_message(&format!(
+                                                            "Remove {label} from the lobby?",
+                                                        ))
+                                                        .unwrap_or(false)
+                                                    })
+                                                    .unwrap_or(false);
+                                                if !confirm {
+                                                    return;
+                                                }
+                                                spawn(async move {
+                                                    match kick_lobby_player(&lid, &target).await {
+                                                        Ok(updated) => {
+                                                            on_detail_updated.call(updated);
+                                                            push_toast(
+                                                                toast.show,
+                                                                format!("{label} was removed"),
+                                                                ToastKind::Success,
+                                                            );
+                                                        }
+                                                        Err(e) => {
+                                                            push_toast(toast.show, e, ToastKind::Error);
+                                                        }
+                                                    }
+                                                });
+                                            },
+                                            Icon { name: "person_remove", filled: false }
+                                            "Kick"
                                         }
                                     }
                                 }

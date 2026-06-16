@@ -9,6 +9,38 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 
+fn format_graphql_errors(errs: &serde_json::Value) -> String {
+    let Some(arr) = errs.as_array() else {
+        return errs.to_string();
+    };
+    let messages: Vec<String> = arr
+        .iter()
+        .filter_map(|e| e.get("message").and_then(|m| m.as_str()))
+        .map(str::to_string)
+        .collect();
+    if messages.is_empty() {
+        errs.to_string()
+    } else {
+        messages.join("; ")
+    }
+}
+
+fn bail_graphql(context: &str, errs: &serde_json::Value) -> anyhow::Error {
+    let msg = format_graphql_errors(errs);
+    if msg.contains("invalid or expired bearer") {
+        return anyhow::anyhow!("{context}: token is invalid or expired");
+    }
+    if msg.contains("developer permission required") {
+        return anyhow::anyhow!(
+            "{context}: developer access required - sign in with a developer account or ask an admin to grant the developer role (Settings -> user id for admins)"
+        );
+    }
+    if msg.contains("login required") {
+        return anyhow::anyhow!("{context}: not authenticated");
+    }
+    anyhow::anyhow!("{context}: {msg}")
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UploadResp {
     pub data: Option<UploadData>,
@@ -71,19 +103,48 @@ pub fn gql_login_with_password(
     display_name: &str,
     password: &str,
 ) -> Result<AuthSessionResp> {
-    let q = r#"mutation($n: String!, $p: String!) { loginWithPassword(displayName: $n, password: $p) { sessionToken user { id createdAt } } }"#;
+    let q = r#"mutation($n: String!, $p: String!) { loginWithPassword(displayName: $n, password: $p) { sessionToken expiresAt user { id displayName createdAt } } }"#;
     let body = gql_raw_anonymous(server_url, q, json!({ "n": display_name, "p": password }))?;
     let v: serde_json::Value = serde_json::from_str(&body)?;
     if let Some(errs) = v.get("errors") {
-        bail!("graphql errors: {errs}");
+        return Err(bail_graphql("login failed", errs));
     }
     let t = &v["data"]["loginWithPassword"];
     let user_id = t["user"]["id"].as_str().unwrap_or_default().to_string();
-    let created = t["user"]["createdAt"].as_i64().unwrap_or(0);
+    let expires_at = t["expiresAt"].as_i64().unwrap_or_else(|| {
+        let created = t["user"]["createdAt"].as_i64().unwrap_or(0);
+        created + 30 * 24 * 60 * 60
+    });
     Ok(AuthSessionResp {
         token: t["sessionToken"].as_str().unwrap_or_default().to_string(),
         user_id,
-        expires_at: created + 30 * 24 * 60 * 60,
+        expires_at,
+    })
+}
+
+/// Validate a publish token from the lobby and return metadata for local storage.
+pub fn store_publish_token(
+    server_url: &str,
+    publish_token: &str,
+    expires_at: Option<i64>,
+) -> Result<PublishTokenResp> {
+    let q = r#"query { myProfile { displayName } }"#;
+    let body = gql_raw(server_url, publish_token, q, json!({}))?;
+    let v: serde_json::Value = serde_json::from_str(&body)?;
+    if let Some(errs) = v.get("errors") {
+        return Err(bail_graphql("publish token rejected", errs));
+    }
+    let display_name = v
+        .pointer("/data/myProfile/displayName")
+        .and_then(|n| n.as_str())
+        .unwrap_or("user");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    Ok(PublishTokenResp {
+        token: publish_token.to_string(),
+        user_id: display_name.to_string(),
+        expires_at: expires_at.unwrap_or(now + 7 * 24 * 60 * 60),
     })
 }
 

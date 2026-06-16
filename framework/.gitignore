@@ -48,3 +48,7 @@ gamedev-actions-deploy
 gamedev-actions-deploy.pub
 gamedev-deploy
 gamedev-deploy.pub
+
+data/
+my_game/
+drafts/

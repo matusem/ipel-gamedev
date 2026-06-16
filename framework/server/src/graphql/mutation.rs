@@ -30,11 +30,12 @@ use super::{
 
 async fn issue_auth_session(pool: &SqlitePool, user: UserGql) -> Result<AuthSessionGql> {
     let uid = Uuid::parse_str(user.id.as_str()).map_err(|_| Error::new("invalid user id"))?;
-    let token = auth_sessions::create_session(pool, uid)
+    let (token, expires_at) = auth_sessions::create_session(pool, uid)
         .await
         .map_err(|e| Error::new(format!("db: {e}")))?;
     Ok(AuthSessionGql {
         session_token: token,
+        expires_at,
         user,
     })
 }
@@ -888,7 +889,7 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("lobby not found"))?;
-        if detail.status != "waiting" && detail.status != "configuring" {
+        if detail.status != "waiting" && detail.status != "configuring" && detail.status != "finished" {
             return Err(Error::new("cannot change ready status in this lobby state"));
         }
         let ok = lobby_db::set_seat_ready(pool, lid, uid, ready)
@@ -918,6 +919,28 @@ impl MutationRoot {
         let new_owner = Uuid::parse_str(new_owner_user_id.as_str())
             .map_err(|_| Error::new("invalid user id"))?;
         lobby_db::transfer_lobby_ownership(pool, lid, uid, new_owner)
+            .await
+            .map_err(Error::new)?;
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
+    }
+
+    async fn kick_lobby_player(
+        &self,
+        ctx: &Context<'_>,
+        lobby_id: async_graphql::types::ID,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<LobbyGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let target = Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        lobby_db::kick_lobby_player(pool, lid, uid, target)
             .await
             .map_err(Error::new)?;
         notify.ping();

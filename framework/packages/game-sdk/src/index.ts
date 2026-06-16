@@ -15,6 +15,10 @@ export {
 } from "./protocol.js";
 export { GameClient } from "./game-client.js";
 export { SpectatorClient } from "./spectator-client.js";
+export { TypedGameClient } from "./typed-game-client.js";
+export type { TypedGameClientHandlers } from "./typed-game-client.js";
+export { readTypedResultPayload } from "./typed-result.js";
+export type { TypedFinishedGame, TypedResultHandlers } from "./typed-result.js";
 export { LobbyConfigBridge } from "./lobby-config-bridge.js";
 export { readResultPayload } from "./result-payload.js";
 export {

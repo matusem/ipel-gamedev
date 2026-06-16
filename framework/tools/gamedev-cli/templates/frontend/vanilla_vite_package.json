@@ -1,12 +1,17 @@
 {
   "name": "game-frontend",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "sync:types": "cargo run --manifest-path ../../backend/rust/shared-types/Cargo.toml --features typegen --bin export_ts"
+    "codegen": "cargo run --manifest-path ../../backend/rust/shared-types/Cargo.toml --features typegen,schemars --bin export_ts && cargo run --manifest-path ../../backend/rust/shared-types/Cargo.toml --features schemars --bin export_schema"
+  },
+  "dependencies": {
+    "@upjs-gdd/game-sdk": "file:../../../../packages/game-sdk"
   },
   "devDependencies": {
+    "typescript": "~5.7.2",
     "vite": "^7.0.0"
   }
 }

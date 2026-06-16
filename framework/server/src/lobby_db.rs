@@ -477,6 +477,41 @@ pub async fn release_user_seats(
     Ok(())
 }
 
+pub async fn kick_lobby_player(
+    pool: &SqlitePool,
+    lobby_id: Uuid,
+    owner_id: Uuid,
+    target_user_id: Uuid,
+) -> Result<(), String> {
+    if owner_id == target_user_id {
+        return Err("cannot kick yourself".into());
+    }
+    let detail = get_lobby(pool, lobby_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "lobby not found".to_string())?;
+    if detail.owner_user_id != owner_id {
+        return Err("only the owner can kick players".into());
+    }
+    if detail.status == "in_game" {
+        return Err("cannot kick players while in game".into());
+    }
+    if detail.status == "cancelled" {
+        return Err("lobby is cancelled".into());
+    }
+    let seated = detail
+        .seats
+        .iter()
+        .any(|s| s.claimed_by_user_id == Some(target_user_id));
+    if !seated {
+        return Err("player is not in a seat".into());
+    }
+    release_user_seats(pool, lobby_id, target_user_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Sets `ready` for the seat claimed by `user_id` in this lobby. Returns false if the user has no seat.
 pub async fn set_seat_ready(
     pool: &SqlitePool,
@@ -546,6 +581,12 @@ pub async fn reopen_lobby_after_game(
     .bind(lobby_id.to_string())
     .execute(pool)
     .await?;
+    if r.rows_affected() > 0 {
+        sqlx::query("UPDATE lobby_seats SET ready = 0 WHERE lobby_id = ?")
+            .bind(lobby_id.to_string())
+            .execute(pool)
+            .await?;
+    }
     Ok(r.rows_affected() > 0)
 }
 

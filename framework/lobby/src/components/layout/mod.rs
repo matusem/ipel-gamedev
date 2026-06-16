@@ -33,6 +33,7 @@ impl NavTab {
             LobbyRoute::DeveloperUploads {} => NavTab::Developer,
             LobbyRoute::Admin {} => NavTab::Admin,
             LobbyRoute::Profile {} | LobbyRoute::Settings {} => NavTab::Profile,
+            LobbyRoute::CliAuth { .. } => NavTab::Profile,
         }
     }
 }
@@ -298,13 +299,6 @@ pub fn AppShell(children: Element) -> Element {
                             Icon { name: "auto_awesome", filled: false }
                             "Load demo data"
                         }
-                    }
-                    button {
-                        class: "w-full btn-primary btn-lg active:scale-95 transition-transform",
-                        disabled: creating(),
-                        onclick: create_lobby,
-                        Icon { name: "rocket_launch", filled: true }
-                        if creating() { "Creating…" } else { "Launch Game" }
                     }
                 }
             }

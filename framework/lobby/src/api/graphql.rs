@@ -139,6 +139,22 @@ pub async fn transfer_lobby_ownership(
         .transfer_lobby_ownership)
 }
 
+pub async fn kick_lobby_player(lobby_id: &str, user_id: &str) -> Result<LobbyDetail, String> {
+    let q = format!(
+        "mutation K($id: ID!, $u: ID!) {{ kickLobbyPlayer(lobbyId: $id, userId: $u) {{ {} }} }}",
+        LOBBY_DETAIL_FIELDS
+    );
+    let vars = serde_json::json!({ "id": lobby_id, "u": user_id });
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Kr {
+        kick_lobby_player: LobbyDetail,
+    }
+    Ok(graphql_exec::<Kr>(&q, Some(vars))
+        .await?
+        .kick_lobby_player)
+}
+
 /// Creates a lobby and, when `game_type` is provided, selects that game and materializes seats.
 pub async fn create_lobby_with_game(game_type: Option<&str>) -> Result<String, String> {
     #[derive(Deserialize)]

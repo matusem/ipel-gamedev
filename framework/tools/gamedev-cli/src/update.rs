@@ -9,6 +9,7 @@ use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
 
 use crate::platform::{current_asset_key, fetch_cli_manifest, platform_base_from_graphql};
+use crate::reporter::{SpinnerFinish, progress_bytes, spinner, status};
 use crate::version;
 
 pub fn run_update(base_url: &str, check_only: bool) -> Result<()> {
@@ -18,7 +19,10 @@ pub fn run_update(base_url: &str, check_only: bool) -> Result<()> {
     let min = semver::Version::parse(&m.min_supported)?;
 
     if local >= latest {
-        println!("gamedev-cli {local} is up to date (platform release {latest})");
+        status(
+            "update",
+            &format!("gamedev-cli {local} is up to date (platform release {latest})"),
+        );
         return Ok(());
     }
 
@@ -41,14 +45,21 @@ pub fn run_update(base_url: &str, check_only: bool) -> Result<()> {
         format!("{}{}", base_url.trim_end_matches('/'), asset.url)
     };
 
-    println!("Downloading gamedev-cli {latest} from {download_url} ...");
-    let bytes = Client::builder()
+    let client = Client::builder()
         .timeout(std::time::Duration::from_secs(120))
-        .build()?
-        .get(&download_url)
-        .send()?
-        .error_for_status()?
-        .bytes()?;
+        .build()?;
+    let resp = client.get(&download_url).send()?.error_for_status()?;
+    let total = resp.content_length().unwrap_or(0);
+    let bytes = resp.bytes()?;
+    if total > 0 {
+        let pb = progress_bytes(&format!("Downloading gamedev-cli {latest}"), total);
+        pb.set_position(total);
+        pb.finish_and_clear();
+        status("download", &format!("gamedev-cli {latest} ({total} bytes)"));
+    } else {
+        let pb = spinner(&format!("Downloading gamedev-cli {latest}..."));
+        pb.finish_ok(&format!("downloaded gamedev-cli {latest}"));
+    }
 
     let hash = hex_sha256(&bytes);
     if hash != asset.sha256.to_lowercase() {
@@ -59,7 +70,7 @@ pub fn run_update(base_url: &str, check_only: bool) -> Result<()> {
     let tmp = exe.with_extension("new");
     extract_binary(&bytes, &tmp)?;
     replace_executable(&exe, &tmp)?;
-    println!("Updated to gamedev-cli {latest}");
+    status("update", &format!("updated to gamedev-cli {latest}"));
     Ok(())
 }
 
@@ -97,7 +108,6 @@ fn extract_binary(archive_bytes: &[u8], out: &Path) -> Result<()> {
         bail!("zip archive did not contain gamedev binary");
     }
 
-    // Assume raw gzip tarball with single `gamedev` member — use external tar on unix
     #[cfg(unix)]
     {
         let tmp = tempfile::tempdir()?;

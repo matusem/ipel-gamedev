@@ -66,7 +66,7 @@ impl TestEnv {
         let (id, _, _) = db::register_user(&self.pool, display_name)
             .await
             .expect("register user");
-        let session_token = auth_sessions::create_session(&self.pool, id)
+        let (session_token, _) = auth_sessions::create_session(&self.pool, id)
             .await
             .expect("create session");
         TestUser {

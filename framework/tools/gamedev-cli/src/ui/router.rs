@@ -3,6 +3,7 @@
 use ratatui_interact::components::{BreadcrumbItem, BreadcrumbState};
 
 use super::init_wizard::InitWizardState;
+use super::job::JobRun;
 
 #[derive(Clone, Copy)]
 pub enum DraftMenuAction {
@@ -17,8 +18,16 @@ pub enum RouteFrame {
         list: ratatui::widgets::ListState,
     },
     Init(InitWizardState),
+    LoginMode {
+        list: ratatui::widgets::ListState,
+    },
+    LoginBrowser {
+        server: tui_input::Input,
+    },
     Login {
-        user: tui_input::Input,
+        display_name: tui_input::Input,
+        password: tui_input::Input,
+        publish_token: tui_input::Input,
         server: tui_input::Input,
         field: usize,
     },
@@ -28,8 +37,7 @@ pub enum RouteFrame {
     },
     DeployServer {
         server: tui_input::Input,
-        draft_only: bool,
-        auto_publish: bool,
+        publish: bool,
     },
     DraftsMode {
         list: ratatui::widgets::ListState,
@@ -66,6 +74,14 @@ pub enum RouteFrame {
     },
     TestConfirm,
     DoctorConfirm,
+    ValidateConfirm,
+    CodegenConfirm,
+    UpdateConfirm,
+    LogoutConfirm {
+        user_id: String,
+        server_url: String,
+    },
+    JobRun(JobRun),
 }
 
 #[derive(Clone, Copy)]
@@ -79,19 +95,26 @@ impl RouteFrame {
         match self {
             RouteFrame::MainMenu { .. } => "Home",
             RouteFrame::Init(_) => "Init",
-            RouteFrame::Login { .. } => "Login",
+            RouteFrame::LoginMode { .. } => "Login",
+            RouteFrame::LoginBrowser { .. } => "Login - Browser",
+            RouteFrame::Login { .. } => "Login - Password",
             RouteFrame::BuildConfirm => "Build",
             RouteFrame::DeployMode { .. } => "Deploy",
-            RouteFrame::DeployServer { .. } => "Deploy · Server",
+            RouteFrame::DeployServer { .. } => "Deploy - Server",
             RouteFrame::DraftsMode { .. } => "Drafts",
-            RouteFrame::DraftsServer { .. } => "Drafts · Server",
-            RouteFrame::DraftId { .. } => "Drafts · Id",
+            RouteFrame::DraftsServer { .. } => "Drafts - Server",
+            RouteFrame::DraftId { .. } => "Drafts - Id",
             RouteFrame::ManifestMode { .. } => "Manifest",
-            RouteFrame::ManifestServer { .. } => "Manifest · Server",
-            RouteFrame::ManifestDraftId { .. } => "Manifest · Draft",
-            RouteFrame::ManifestEditFields { .. } => "Manifest · Edit",
+            RouteFrame::ManifestServer { .. } => "Manifest - Server",
+            RouteFrame::ManifestDraftId { .. } => "Manifest - Draft",
+            RouteFrame::ManifestEditFields { .. } => "Manifest - Edit",
             RouteFrame::TestConfirm => "Test",
             RouteFrame::DoctorConfirm => "Doctor",
+            RouteFrame::ValidateConfirm => "Validate",
+            RouteFrame::CodegenConfirm => "Codegen",
+            RouteFrame::UpdateConfirm => "Update",
+            RouteFrame::LogoutConfirm { .. } => "Logout",
+            RouteFrame::JobRun(_) => "Output",
         }
     }
 }

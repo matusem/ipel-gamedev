@@ -75,7 +75,7 @@ pub fn check_local_cli_against_manifest(m: &CliRelease) -> Result<()> {
     let latest = semver::Version::parse(&m.version)?;
     if local < min {
         bail!(
-            "CLI {} is below platform minimum {} — download {} from {}/tools/gamedev-cli/manifest.json",
+            "CLI {} is below platform minimum {} - download {} from {}/tools/gamedev-cli/manifest.json",
             local,
             min,
             latest,
@@ -94,7 +94,7 @@ pub fn check_local_toolchain_against_platform(m: &PlatformManifest) -> Result<()
     check_local_cli_against_manifest(&m.cli)?;
     if version::FRAMEWORK_VERSION != m.framework_version {
         bail!(
-            "local framework tooling targets {} but platform runs {} — update gamedev-cli and SDKs",
+            "local framework tooling targets {} but platform runs {} - update gamedev-cli and SDKs",
             version::FRAMEWORK_VERSION,
             m.framework_version
         );
