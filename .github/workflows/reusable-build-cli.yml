@@ -82,7 +82,7 @@ jobs:
             >> ~/.cargo/config.toml
 
       - name: Build gamedev-cli
-        run: cargo build --release -p gamedev-cli --target ${{ matrix.target }}
+        run: cargo build --release -p gamedev-cli --features packaged --target ${{ matrix.target }}
 
       - name: Package (Unix)
         if: ${{ !matrix.is_windows }}
