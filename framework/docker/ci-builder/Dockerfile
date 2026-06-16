@@ -2,6 +2,8 @@
 # Publishes to ghcr.io/<owner>/<repo>-builder:bookworm
 FROM rust:bookworm
 
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm \
     && rm -rf /var/lib/apt/lists/*

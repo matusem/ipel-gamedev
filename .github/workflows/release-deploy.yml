@@ -155,7 +155,7 @@ jobs:
 
   build-image:
     needs: [resolve, package-cli]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     outputs:
       release_tag: ${{ needs.resolve.outputs.release_tag }}
     steps:
@@ -181,9 +181,6 @@ jobs:
           python3 scripts/verify-cli-image-bundle.py \
             --version "${{ needs.resolve.outputs.version }}"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Log in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -199,11 +196,13 @@ jobs:
       - name: Verify prebuilt builder image
         run: |
           set -euo pipefail
-          if ! docker pull --platform linux/arm64 "${{ env.BUILDER_IMAGE }}"; then
+          if ! docker pull "${{ env.BUILDER_IMAGE }}"; then
             echo "::error::Cannot pull ${{ env.BUILDER_IMAGE }}"
             exit 1
           fi
           docker image inspect "${{ env.BUILDER_IMAGE }}" --format 'platform={{.Os}}/{{.Architecture}}'
+          docker run --rm --entrypoint sh "${{ env.BUILDER_IMAGE }}" -c \
+            'command -v cargo-chef && command -v dx && command -v cargo-component'
 
       - name: Docker metadata
         id: meta
@@ -215,29 +214,14 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.resolve.outputs.release_tag }}
             type=raw,value=latest,enable=${{ needs.resolve.outputs.release_tag != '' }}
 
-      - name: Prepare cargo cache directories
-        run: |
-          mkdir -p framework/.docker-cargo-cache/{registry,git,target,lobby-target,install-target}
-
-      - name: Restore cargo Docker cache
-        uses: actions/cache@v4
-        with:
-          path: framework/.docker-cargo-cache
-          key: docker-cargo-arm64-${{ hashFiles('framework/Cargo.lock', 'framework/Dockerfile', 'framework/scripts/docker-cargo-chef-stubs.sh') }}
-          restore-keys: |
-            docker-cargo-arm64-
-
-      - name: Build and push (linux/arm64)
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: framework
           file: framework/Dockerfile
-          platforms: linux/arm64
           push: true
           build-args: |
             BUILDER_IMAGE=${{ env.BUILDER_IMAGE }}
-          build-contexts: |
-            cargo-cache=framework/.docker-cargo-cache
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -249,13 +233,16 @@ jobs:
           VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
-          docker pull --platform linux/arm64 "${IMAGE}"
-          docker run --rm --platform linux/arm64 --entrypoint /bin/sh "${IMAGE}" -c "
+          docker pull "${IMAGE}"
+          docker run --rm --entrypoint /bin/sh "${IMAGE}" -c "
             set -e
             test -f /app/tools/gamedev-cli/manifest.json
             test -f /app/platform/manifest.json
+            ls /app/tools/gamedev-cli/v${VERSION}/gamedev-cli-linux-aarch64.tar.gz
             ls /app/tools/gamedev-cli/v${VERSION}/gamedev-cli-linux-x86_64.tar.gz
             ls /app/tools/gamedev-cli/v${VERSION}/gamedev-cli-windows-x86_64.zip
+            ls /app/tools/gamedev-cli/v${VERSION}/gamedev-cli-macos-x86_64.tar.gz
+            ls /app/tools/gamedev-cli/v${VERSION}/gamedev-cli-macos-aarch64.tar.gz
           "
 
   deploy:

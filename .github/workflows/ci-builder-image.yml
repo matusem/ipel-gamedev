@@ -18,12 +18,9 @@ permissions:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -44,17 +41,24 @@ jobs:
             type=raw,value=bookworm
             type=raw,value=latest
 
-      - name: Build and push CI builder (linux/arm64)
+      - name: Build and push CI builder
         uses: docker/build-push-action@v6
         with:
           context: framework/docker/ci-builder
           file: framework/docker/ci-builder/Dockerfile
-          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify builder tools on PATH
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.BUILDER_IMAGE_NAME }}:bookworm"
+          docker pull "${IMAGE}"
+          docker run --rm --entrypoint sh "${IMAGE}" -c \
+            'cargo-chef --version && dx --version && cargo-component --version'
 
       - name: Image URL
         run: |

@@ -6,17 +6,9 @@ FROM ${BUILDER_IMAGE} AS chef
 ARG BUILDER_IMAGE
 RUN if [ "$BUILDER_IMAGE" = "rust:bookworm" ]; then \
       apt-get update && apt-get install -y --no-install-recommends nodejs npm \
-      && rm -rf /var/lib/apt/lists/*; \
-    fi
-
-RUN --mount=type=bind,from=cargo-cache,source=registry,target=/usr/local/cargo/registry,rw \
-    --mount=type=bind,from=cargo-cache,source=git,target=/usr/local/cargo/git,rw \
-    --mount=type=bind,from=cargo-cache,source=install-target,target=/usr/local/cargo/install-target,rw \
-    if [ "$BUILDER_IMAGE" = "rust:bookworm" ]; then \
-      rustup target add wasm32-unknown-unknown wasm32-wasip1 \
-      && CARGO_TARGET_DIR=/usr/local/cargo/install-target cargo install dioxus-cli cargo-component cargo-chef --locked; \
-    else \
-      if ! command -v cargo-chef >/dev/null 2>&1; then CARGO_TARGET_DIR=/usr/local/cargo/install-target cargo install cargo-chef --locked; fi; \
+      && rm -rf /var/lib/apt/lists/* \
+      && rustup target add wasm32-unknown-unknown wasm32-wasip1 \
+      && cargo install dioxus-cli cargo-component cargo-chef --locked; \
     fi
 
 WORKDIR /app
@@ -51,9 +43,8 @@ RUN chmod +x scripts/docker-cargo-chef-stubs.sh \
     && scripts/docker-cargo-chef-stubs.sh
 
 # Dependency layer: cached when Cargo.lock / recipe.json are unchanged.
-RUN --mount=type=bind,from=cargo-cache,source=registry,target=/usr/local/cargo/registry,rw \
-    --mount=type=bind,from=cargo-cache,source=git,target=/usr/local/cargo/git,rw \
-    --mount=type=bind,from=cargo-cache,source=target,target=/app/target,rw \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo chef cook --release --recipe-path recipe.json -p server
 
 COPY game/ game/
@@ -64,18 +55,16 @@ COPY tools/gamedev-cli/ tools/gamedev-cli/
 COPY sdk/rust/ sdk/rust/
 COPY test.wit ./
 
-RUN --mount=type=bind,from=cargo-cache,source=registry,target=/usr/local/cargo/registry,rw \
-    --mount=type=bind,from=cargo-cache,source=git,target=/usr/local/cargo/git,rw \
-    --mount=type=bind,from=cargo-cache,source=target,target=/app/target,rw \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo build -p server --release \
     && cp target/release/server /app/server-bin
 
 # Ship tic-tac-toe as the default game bundle
 COPY games/tic_tac_toe/manifest.json /app/games-tic-src/
 COPY games/tic_tac_toe/client/ /app/games-tic-src/client/
-RUN --mount=type=bind,from=cargo-cache,source=registry,target=/usr/local/cargo/registry,rw \
-    --mount=type=bind,from=cargo-cache,source=git,target=/usr/local/cargo/git,rw \
-    --mount=type=bind,from=cargo-cache,source=target,target=/app/target,rw \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo component build -p tic_tac_toe_component --release \
     && mkdir -p /app/games-bundle/tic_tac_toe/client \
     && cp /app/games-tic-src/manifest.json /app/games-bundle/tic_tac_toe/ \
@@ -92,9 +81,8 @@ COPY lobby/ lobby/
 WORKDIR /app/lobby
 RUN --mount=type=cache,target=/root/.npm \
     npm ci && npm run build:css
-RUN --mount=type=bind,from=cargo-cache,source=registry,target=/usr/local/cargo/registry,rw \
-    --mount=type=bind,from=cargo-cache,source=git,target=/usr/local/cargo/git,rw \
-    --mount=type=bind,from=cargo-cache,source=lobby-target,target=/app/lobby/target,rw \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     dx build --platform web --release \
     && cp -r target/dx/lobby/release/web/public /app/lobby-dist
 
