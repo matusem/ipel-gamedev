@@ -11,6 +11,9 @@ target_alt/
 # --- Java / Gradle / Maven ---
 **/build/
 build/
+# Rust CLI build module (not Gradle output)
+!tools/gamedev-cli/src/build/
+!tools/gamedev-cli/src/build/**
 **/.gradle/
 .gradle/
 *.class
