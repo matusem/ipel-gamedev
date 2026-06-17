@@ -47,7 +47,7 @@ pub fn GameDetailPage(name: String) -> Element {
                 "query {{ gameTypes {{ {} }} }}",
                 crate::models::GAME_TYPES_GQL_FIELDS
             );
-            match graphql_post::<Data>(q).await {
+            match graphql_post::<Data>(&q).await {
                 Ok(d) => game_types.set(d.game_types),
                 Err(e) => error_msg.set(Some(e)),
             }

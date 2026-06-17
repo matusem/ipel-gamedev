@@ -40,7 +40,7 @@ pub fn LobbiesBrowserPage() -> Element {
                 "query {{ gameTypes {{ {} }} lobbies {{ id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }} }}",
                 crate::models::GAME_TYPES_GQL_FIELDS
             );
-            match graphql_post::<Boot>(q).await {
+            match graphql_post::<Boot>(&q).await {
                 Ok(data) => {
                     game_types.set(data.game_types);
                     lobbies.set(data.lobbies);
