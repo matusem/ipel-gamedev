@@ -13,6 +13,7 @@ pub mod doctor;
 pub mod pack;
 pub mod platform;
 pub mod project;
+pub mod manifest;
 pub mod matrix_test;
 pub mod reporter;
 pub mod scaffold;

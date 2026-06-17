@@ -286,21 +286,35 @@ fn format_command(cmd: &Command) -> String {
     }
 }
 
+fn push_to_sink(sink: &Arc<Mutex<Vec<String>>>, prefix: &'static str, line: &str) {
+    if line.is_empty() {
+        return;
+    }
+    let mut guard = sink.lock().expect("tui log lock");
+    if prefix.is_empty() {
+        guard.push(line.to_string());
+    } else {
+        guard.push(format!("{prefix}{line}"));
+    }
+}
+
 fn drain_stream<R: std::io::Read + Send + 'static>(
     reader: R,
     prefix: &'static str,
     sink: Arc<Mutex<Vec<String>>>,
 ) {
     thread::spawn(move || {
-        for line in BufReader::new(reader).lines() {
-            match line {
-                Ok(l) if l.is_empty() => {}
-                Ok(l) => {
-                    let mut guard = sink.lock().expect("tui log lock");
-                    if prefix.is_empty() {
-                        guard.push(l);
-                    } else {
-                        guard.push(format!("{prefix}{l}"));
+        let mut reader = BufReader::new(reader);
+        let mut byte_buf = Vec::new();
+        loop {
+            byte_buf.clear();
+            match reader.read_until(b'\n', &mut byte_buf) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let text = String::from_utf8_lossy(&byte_buf);
+                    for segment in text.split('\r') {
+                        let line = segment.trim_end_matches(['\n', '\r']);
+                        push_to_sink(&sink, prefix, line);
                     }
                 }
                 Err(_) => break,
@@ -314,6 +328,9 @@ pub fn command_status(cmd: &mut Command) -> Result<ExitStatus> {
     if tui_sink().is_none() {
         return cmd.status().context("failed to run command");
     }
+
+    cmd.env("CARGO_TERM_PROGRESS_WHEN", "never")
+        .env("CARGO_TERM_COLOR", "never");
 
     push_line(format!("$ {}", format_command(cmd)));
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());

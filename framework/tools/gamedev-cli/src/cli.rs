@@ -141,11 +141,18 @@ pub struct ManifestArgs {
 
 #[derive(Subcommand)]
 pub enum ManifestSubcommands {
+    /// Show manifest.json (local project file, or a server draft when `DRAFT_ID` is given).
     Show {
-        draft_id: String,
+        /// Server draft id. Omit to show local manifest.json.
+        draft_id: Option<String>,
+        #[arg(long)]
+        project_dir: Option<std::path::PathBuf>,
     },
     Edit {
-        draft_id: String,
+        /// Server draft id. Omit to edit local manifest.json.
+        draft_id: Option<String>,
+        #[arg(long)]
+        project_dir: Option<std::path::PathBuf>,
         name: String,
         display_name: String,
         version: String,

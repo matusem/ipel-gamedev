@@ -580,7 +580,7 @@
   }
 
   .lobby-config-modal {
-    @apply relative z-10 flex flex-col w-full max-w-2xl max-h-[min(88vh,44rem)]
+    @apply relative z-10 flex flex-col w-full max-w-2xl max-h-[min(92vh,56rem)]
       rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/95 backdrop-blur-xl shadow-2xl;
   }
 

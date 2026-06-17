@@ -64,8 +64,8 @@ pub enum RouteFrame {
         draft_id: tui_input::Input,
     },
     ManifestEditFields {
-        server: String,
-        draft_id: String,
+        server: Option<String>,
+        draft_id: Option<String>,
         name: tui_input::Input,
         display_name: tui_input::Input,
         version: tui_input::Input,
@@ -107,6 +107,9 @@ impl RouteFrame {
             RouteFrame::ManifestMode { .. } => "Manifest",
             RouteFrame::ManifestServer { .. } => "Manifest - Server",
             RouteFrame::ManifestDraftId { .. } => "Manifest - Draft",
+            RouteFrame::ManifestEditFields { draft_id, .. } if draft_id.is_none() => {
+                "Manifest - Edit (local)"
+            }
             RouteFrame::ManifestEditFields { .. } => "Manifest - Edit",
             RouteFrame::TestConfirm => "Test",
             RouteFrame::DoctorConfirm => "Doctor",

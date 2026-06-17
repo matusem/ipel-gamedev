@@ -94,7 +94,7 @@ impl MainMenuAction {
             Self::Build => "Compile logic WASM and package dist/game.zip for upload.",
             Self::Deploy => "Upload your build to the platform as a draft or published game.",
             Self::Drafts => "List, publish, unpublish, or discard server-side game drafts.",
-            Self::Manifest => "Show or edit draft metadata (name, version, description).",
+            Self::Manifest => "Show or edit manifest.json locally, or a server draft.",
             Self::Test => "Run cargo test in the project workspace.",
             Self::Doctor => "Check project layout, client files, and toolchain prerequisites.",
             Self::Validate => "Validate logic.wasm as a WebAssembly component.",
@@ -112,7 +112,7 @@ impl MainMenuAction {
             Self::Build => "gamedev build",
             Self::Deploy => "gamedev deploy --publish",
             Self::Drafts => "gamedev drafts list",
-            Self::Manifest => "gamedev manifest show <draft-id>",
+            Self::Manifest => "gamedev manifest show",
             Self::Test => "gamedev test",
             Self::Doctor => "gamedev doctor",
             Self::Validate => "gamedev validate",
@@ -134,7 +134,7 @@ impl MainMenuAction {
     }
 
     fn requires_auth(self) -> bool {
-        matches!(self, Self::Deploy | Self::Drafts | Self::Manifest)
+        matches!(self, Self::Deploy | Self::Drafts)
     }
 }
 
@@ -672,7 +672,12 @@ fn draw_body(frame: &mut Frame, area: Rect, stack: &mut [RouteFrame], _home: &Ho
             );
         }
         RouteFrame::ManifestMode { list } => {
-            let items = vec![ListItem::new("show"), ListItem::new("edit")];
+            let items = vec![
+                ListItem::new("show local manifest.json"),
+                ListItem::new("edit local manifest.json"),
+                ListItem::new("show server draft"),
+                ListItem::new("edit server draft"),
+            ];
             let list_w = List::new(items)
                 .block(theme::panel_block("Manifest"))
                 .highlight_symbol(theme::tui_list_marker())
@@ -1158,25 +1163,59 @@ fn handle_event(
         }
         RouteFrame::ManifestMode { list } => {
             if nav::is_list_prev(key.code) {
-                nav::cycle_list(list, -1, 2);
+                nav::cycle_list(list, -1, 4);
                 return Ok(None);
             }
             if nav::is_list_next(key.code) {
-                nav::cycle_list(list, 1, 2);
+                nav::cycle_list(list, 1, 4);
                 return Ok(None);
             }
             match key.code {
             KeyCode::Enter => {
-                let next = if list.selected() == Some(0) {
-                    ManifestNext::Show
-                } else {
-                    ManifestNext::Edit
-                };
+                let idx = list.selected().unwrap_or(0);
                 stack.pop();
-                stack.push(RouteFrame::ManifestServer {
-                    server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
-                    next,
-                });
+                match idx {
+                    0 => {
+                        return Ok(Some(SessionAction::Run(UiCommand::Manifest(ManifestArgs {
+                            command: ManifestSubcommands::Show {
+                                draft_id: None,
+                                project_dir: None,
+                            },
+                            server_url: DEFAULT_GRAPHQL_URL.to_string(),
+                            profile: None,
+                        }))));
+                    }
+                    1 => {
+                        let fields = crate::manifest::read_fields(&std::env::current_dir()?)
+                            .unwrap_or(crate::manifest::ManifestFields {
+                                name: String::new(),
+                                display_name: String::new(),
+                                version: String::new(),
+                                description: String::new(),
+                            });
+                        stack.push(RouteFrame::ManifestEditFields {
+                            server: None,
+                            draft_id: None,
+                            name: tui_input::Input::new(fields.name),
+                            display_name: tui_input::Input::new(fields.display_name),
+                            version: tui_input::Input::new(fields.version),
+                            description: tui_input::Input::new(fields.description),
+                            field: 0,
+                        });
+                    }
+                    2 => {
+                        stack.push(RouteFrame::ManifestServer {
+                            server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
+                            next: ManifestNext::Show,
+                        });
+                    }
+                    _ => {
+                        stack.push(RouteFrame::ManifestServer {
+                            server: tui_input::Input::new(DEFAULT_GRAPHQL_URL.to_string()),
+                            next: ManifestNext::Edit,
+                        });
+                    }
+                }
                 Ok(None)
             }
             _ => Ok(None),
@@ -1220,15 +1259,18 @@ fn handle_event(
                 match n {
                     ManifestNext::Show => {
                         return Ok(Some(SessionAction::Run(UiCommand::Manifest(ManifestArgs {
-                            command: ManifestSubcommands::Show { draft_id: id },
+                            command: ManifestSubcommands::Show {
+                                draft_id: Some(id),
+                                project_dir: None,
+                            },
                             server_url: srv,
                             profile: None,
                         }))));
                     }
                     ManifestNext::Edit => {
                         stack.push(RouteFrame::ManifestEditFields {
-                            server: srv,
-                            draft_id: id,
+                            server: Some(srv),
+                            draft_id: Some(id),
                             name: tui_input::Input::default(),
                             display_name: tui_input::Input::default(),
                             version: tui_input::Input::default(),
@@ -1267,12 +1309,15 @@ fn handle_event(
                     if n.is_empty() || d.is_empty() || v.is_empty() || desc.is_empty() {
                         return Ok(None);
                     }
-                    let srv = server.clone();
+                    let srv = server
+                        .clone()
+                        .unwrap_or_else(|| DEFAULT_GRAPHQL_URL.to_string());
                     let did = draft_id.clone();
                     stack.pop();
                     return Ok(Some(SessionAction::Run(UiCommand::Manifest(ManifestArgs {
                         command: ManifestSubcommands::Edit {
                             draft_id: did,
+                            project_dir: None,
                             name: n,
                             display_name: d,
                             version: v,

@@ -10,7 +10,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
 
 use crate::reporter::{self, TuiLogScope};
 use crate::theme;
@@ -29,6 +29,10 @@ pub struct JobRun {
     pub scroll: usize,
     pub auto_scroll: bool,
     pub spinner_frame: usize,
+    /// Visible log lines (inner height of the log panel), updated each frame.
+    log_viewport: usize,
+    /// Wrapped display line count, updated each frame.
+    display_lines: usize,
 }
 
 impl JobRun {
@@ -64,6 +68,8 @@ impl JobRun {
             scroll: 0,
             auto_scroll: true,
             spinner_frame: 0,
+            log_viewport: 1,
+            display_lines: 0,
         }
     }
 
@@ -83,9 +89,6 @@ impl JobRun {
         if !self.is_done() {
             self.spinner_frame = self.spinner_frame.wrapping_add(1);
         }
-        if self.auto_scroll {
-            self.scroll = self.log_lines().len().saturating_sub(1);
-        }
         if self.is_done() {
             if let Some(h) = self.handle.take() {
                 let _ = h.join();
@@ -101,10 +104,63 @@ impl JobRun {
         lines
     }
 
-    pub fn draw(&self, frame: &mut Frame, area: Rect) {
+    fn output_block(title: &str) -> Block<'static> {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Plain)
+            .border_style(theme::tui_header_border())
+            .title(title.to_string())
+            .title_style(
+                Style::default()
+                    .fg(theme::tui_accent())
+                    .add_modifier(Modifier::BOLD),
+            )
+            .padding(Padding::new(1, 1, 0, 0))
+    }
+
+    fn log_block() -> Block<'static> {
+        theme::panel_block(" Log ")
+    }
+
+    fn wrap_log_line(line: &str, width: usize) -> Vec<String> {
+        let width = width.max(8);
+        if line.is_empty() {
+            return vec![String::new()];
+        }
+        let mut out = Vec::new();
+        let mut rest = line.to_string();
+        while !rest.is_empty() {
+            if rest.chars().count() <= width {
+                out.push(rest);
+                break;
+            }
+            let chunk: String = rest.chars().take(width).collect();
+            if let Some(sp) = chunk.rfind(' ') {
+                out.push(rest.chars().take(sp).collect());
+                rest = rest.chars().skip(sp + 1).collect();
+            } else {
+                out.push(chunk);
+                rest = rest.chars().skip(width).collect();
+            }
+        }
+        out
+    }
+
+    fn display_log_lines(raw: &[String], width: usize) -> Vec<Line<'static>> {
+        raw.iter()
+            .flat_map(|l| Self::wrap_log_line(l, width))
+            .map(Line::from)
+            .collect()
+    }
+
+    fn scroll_for_bottom(total_lines: usize, viewport: usize) -> usize {
+        total_lines.saturating_sub(viewport.max(1))
+    }
+
+    pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .constraints([Constraint::Length(4), Constraint::Min(0)])
             .split(area);
 
         let status = if !self.is_done() {
@@ -139,18 +195,26 @@ impl JobRun {
             ]),
         ];
         frame.render_widget(
-            Paragraph::new(header).block(theme::panel_block(" Output ")),
+            Paragraph::new(header).block(Self::output_block(" Output ")),
             chunks[0],
         );
 
+        let log_block = Self::log_block();
+        let log_inner = log_block.inner(chunks[1]);
+        self.log_viewport = log_inner.height.max(1) as usize;
+
         let log_text = self.log_lines();
-        let lines: Vec<Line> = log_text
-            .iter()
-            .map(|l| Line::from(l.as_str()))
-            .collect();
+        let lines = Self::display_log_lines(&log_text, log_inner.width as usize);
+        let total = lines.len();
+        self.display_lines = total;
+        if self.auto_scroll {
+            self.scroll = Self::scroll_for_bottom(total, self.log_viewport);
+        }
+        let scroll = self.scroll.min(Self::scroll_for_bottom(total, self.log_viewport));
+
         let log = Paragraph::new(lines)
-            .block(theme::panel_block(" Log "))
-            .scroll((self.scroll as u16, 0));
+            .block(log_block)
+            .scroll((scroll as u16, 0));
         frame.render_widget(log, chunks[1]);
     }
 
@@ -164,7 +228,8 @@ impl JobRun {
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.auto_scroll = false;
-                    let max = self.log_lines().len().saturating_sub(1);
+                    let max =
+                        Self::scroll_for_bottom(self.display_lines, self.log_viewport);
                     self.scroll = (self.scroll + 1).min(max);
                 }
                 _ => {}

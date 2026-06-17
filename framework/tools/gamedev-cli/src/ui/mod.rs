@@ -176,7 +176,8 @@ fn run_fallback() -> Result<UiCommand> {
         }),
         7 => UiCommand::Manifest(ManifestArgs {
             command: crate::cli::ManifestSubcommands::Show {
-                draft_id: String::new(),
+                draft_id: None,
+                project_dir: None,
             },
             server_url: DEFAULT_GRAPHQL_URL.to_string(),
             profile: None,

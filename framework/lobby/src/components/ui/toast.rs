@@ -35,15 +35,11 @@ pub fn push_toast(mut show: Signal<Vec<ToastMessage>>, text: impl Into<String>, 
         text: text.into(),
         kind,
     };
-    let mut list = show();
-    list.push(msg);
-    show.set(list);
+    show.write().push(msg);
     let mut show = show;
     spawn(async move {
         gloo_timers::future::TimeoutFuture::new(4_000).await;
-        let mut list = show();
-        list.retain(|t| t.id != id);
-        show.set(list);
+        show.write().retain(|t| t.id != id);
     });
 }
 

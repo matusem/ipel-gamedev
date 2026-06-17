@@ -232,61 +232,51 @@ pub fn run_drafts(args: DraftsArgs) -> Result<()> {
 }
 
 pub fn run_manifest(args: ManifestArgs) -> Result<()> {
-    let server_url = config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?;
-    let tok = auth::load_token(&server_url)?;
     match args.command {
-        ManifestSubcommands::Show { draft_id } => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Draft {
-                id: String,
-                game_name: String,
-                display_name: String,
-                version: String,
-                status: String,
-                manifest_json: String,
-            }
-            let q = r#"query($id: ID!) { gameDraft(id: $id) { id gameName displayName version status manifestJson } }"#;
-            let raw = api::gql_raw(&server_url, &tok.token, q, json!({ "id": draft_id }))?;
-            let v: serde_json::Value = serde_json::from_str(&raw)?;
-            let draft: Draft = serde_json::from_value(
-                v.get("data")
-                    .and_then(|d| d.get("gameDraft"))
-                    .cloned()
-                    .context("missing gameDraft")?,
-            )?;
-            reporter::print_table(
-                &["Field", "Value"],
-                vec![
-                    vec!["id".into(), draft.id],
-                    vec!["gameName".into(), draft.game_name],
-                    vec!["displayName".into(), draft.display_name],
-                    vec!["version".into(), draft.version],
-                    vec!["status".into(), draft.status],
-                ],
-            );
-            if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&draft.manifest_json)
-            {
-                reporter::section("manifest.json");
-                if let Some(obj) = manifest.as_object() {
-                    let rows: Vec<Vec<String>> = obj
-                        .iter()
-                        .map(|(k, v)| vec![k.clone(), v.to_string()])
-                        .collect();
-                    reporter::print_table(&["Key", "Value"], rows);
-                } else {
-                    reporter::hint(&draft.manifest_json);
-                }
-            }
-            reporter::status("manifest", &format!("draft {draft_id}"));
+        ManifestSubcommands::Show {
+            draft_id: None,
+            project_dir,
+        } => {
+            let root = project_dir.unwrap_or(std::env::current_dir()?);
+            crate::manifest::show_local(&root)?;
+        }
+        ManifestSubcommands::Show {
+            draft_id: Some(draft_id),
+            project_dir: _,
+        } => {
+            let server_url = config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?;
+            let tok = auth::load_token(&server_url)?;
+            show_draft_manifest(&server_url, &tok.token, &draft_id)?;
         }
         ManifestSubcommands::Edit {
-            draft_id,
+            draft_id: None,
+            project_dir,
             name,
             display_name,
             version,
             description,
         } => {
+            let root = project_dir.unwrap_or(std::env::current_dir()?);
+            crate::manifest::edit_local(
+                &root,
+                &crate::manifest::ManifestFields {
+                    name,
+                    display_name,
+                    version,
+                    description,
+                },
+            )?;
+        }
+        ManifestSubcommands::Edit {
+            draft_id: Some(draft_id),
+            project_dir: _,
+            name,
+            display_name,
+            version,
+            description,
+        } => {
+            let server_url = config::resolve_graphql_url(args.profile.as_deref(), &args.server_url)?;
+            let tok = auth::load_token(&server_url)?;
             let q = r#"mutation($draftId: ID!, $name: String!, $displayName: String!, $version: String!, $description: String!) {
               updateGameDraftManifest(draftId: $draftId, name: $name, displayName: $displayName, version: $version, description: $description) { id gameName version status }
             }"#;
@@ -305,6 +295,52 @@ pub fn run_manifest(args: ManifestArgs) -> Result<()> {
             reporter::hint(&raw);
         }
     }
+    Ok(())
+}
+
+fn show_draft_manifest(server_url: &str, token: &str, draft_id: &str) -> Result<()> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Draft {
+        id: String,
+        game_name: String,
+        display_name: String,
+        version: String,
+        status: String,
+        manifest_json: String,
+    }
+    let q = r#"query($id: ID!) { gameDraft(id: $id) { id gameName displayName version status manifestJson } }"#;
+    let raw = api::gql_raw(server_url, token, q, json!({ "id": draft_id }))?;
+    let v: serde_json::Value = serde_json::from_str(&raw)?;
+    let draft: Draft = serde_json::from_value(
+        v.get("data")
+            .and_then(|d| d.get("gameDraft"))
+            .cloned()
+            .context("missing gameDraft")?,
+    )?;
+    reporter::print_table(
+        &["Field", "Value"],
+        vec![
+            vec!["id".into(), draft.id],
+            vec!["gameName".into(), draft.game_name],
+            vec!["displayName".into(), draft.display_name],
+            vec!["version".into(), draft.version],
+            vec!["status".into(), draft.status],
+        ],
+    );
+    if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&draft.manifest_json) {
+        reporter::section("manifest.json");
+        if let Some(obj) = manifest.as_object() {
+            let rows: Vec<Vec<String>> = obj
+                .iter()
+                .map(|(k, v)| vec![k.clone(), v.to_string()])
+                .collect();
+            reporter::print_table(&["Key", "Value"], rows);
+        } else {
+            reporter::hint(&draft.manifest_json);
+        }
+    }
+    reporter::status("manifest", &format!("draft {draft_id}"));
     Ok(())
 }
 
