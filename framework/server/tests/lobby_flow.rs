@@ -66,6 +66,7 @@ async fn guest_joins_claimed_seat_in_waiting_lobby() {
         owner.id,
         "tic_tac_toe",
         &["p1".into(), "p2".into()],
+        None,
         false,
     )
     .await
@@ -135,6 +136,7 @@ async fn owner_sets_ready_and_start_blocked_without_all_seats() {
         owner.id,
         "tic_tac_toe",
         &["p1".into(), "p2".into()],
+        None,
         false,
     )
     .await
@@ -191,6 +193,7 @@ async fn owner_transfers_lobby_to_seated_guest() {
         owner.id,
         "tic_tac_toe",
         &["p1".into(), "p2".into()],
+        None,
         false,
     )
     .await

@@ -92,6 +92,18 @@ impl GameRegistry {
                 }
             };
 
+            let built_with_errors =
+                crate::platform_manifest::validate_built_with_from_manifest_json(&manifest_path);
+            if let Some(diag) = built_with_errors.iter().find(|d| d.severity == "error") {
+                tracing::warn!(
+                    game_type = %manifest.name,
+                    code = %diag.code,
+                    message = %diag.message,
+                    "skipping game: built_with incompatible"
+                );
+                continue;
+            }
+
             match std::fs::read(&logic_path) {
                 Ok(wasm_bytes) => {
                     match component_db.insert_components_as_wasm_bytes(&manifest.name, &wasm_bytes)
@@ -156,6 +168,7 @@ impl GameRegistry {
     }
 
     pub fn reload(&mut self, games_dir: &Path, component_db: &ComponentDb) {
+        component_db.clear();
         self.game_types = Self::scan_game_types(games_dir, component_db);
         tracing::info!(count = self.game_types.len(), "reloaded game types");
     }

@@ -1,6 +1,6 @@
 {
   "framework_version": "0.1.0",
-  "wit_version": "game-core-v1",
+  "wit_version": "game-core-v2",
   "wasmtime_version": "37.0.2",
   "released_at": "2026-06-13",
   "require_built_with_metadata": false,

@@ -3,8 +3,8 @@ use crate::components::game::{MediaGallery, SteamSection, SteamSectionNav, Store
 use crate::components::ui::*;
 use crate::models::{
     format_estimated_match_time, format_play_time, format_relative_time, AspectRatings,
-    GameComment, GameReview, GameSession, GameStorefront, GameTypeInfo, LeaderboardEntry,
-    PlayTimeEntry,
+    DeploymentRow, GameComment, GameReview, GameSession, GameStorefront, GameTypeInfo,
+    LeaderboardEntry, PlayTimeEntry,
 };
 use crate::LobbyRoute;
 use dioxus::prelude::*;
@@ -17,7 +17,7 @@ pub fn GameDetailPage(name: String) -> Element {
     let mut loading = use_signal(|| true);
     let mut error_msg = use_signal(|| None::<String>);
     let mut active_section = use_signal(|| 0usize);
-    let mut section_open = use_signal(|| [true, true, true, true, true, true]);
+    let mut section_open = use_signal(|| [true, true, true, true, true, true, true]);
     let mut about_full = use_signal(|| false);
     let mut reviews_all = use_signal(|| false);
     let mut comments_all = use_signal(|| false);
@@ -34,6 +34,7 @@ pub fn GameDetailPage(name: String) -> Element {
     let mut storefront: Signal<Option<GameStorefront>> = use_signal(|| None);
     let mut reviews: Signal<Vec<GameReview>> = use_signal(Vec::new);
     let mut comments: Signal<Vec<GameComment>> = use_signal(Vec::new);
+    let mut published_versions: Signal<Vec<DeploymentRow>> = use_signal(Vec::new);
     let toast = use_toast();
     let mut reload_key = use_signal(|| 0u32);
 
@@ -114,6 +115,15 @@ pub fn GameDetailPage(name: String) -> Element {
                 Some(serde_json::json!({ "t": gt })),
             ).await {
                 playtime_lb.set(p.game_play_time_leaderboard);
+            }
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Ver { game_published_versions: Vec<DeploymentRow> }
+            if let Ok(v) = graphql_exec::<Ver>(
+                "query($t: String!) { gamePublishedVersions(gameType: $t) { id gameName displayName version status deployedAt } }",
+                Some(serde_json::json!({ "t": gt })),
+            ).await {
+                published_versions.set(v.game_published_versions);
             }
         });
     });
@@ -205,6 +215,7 @@ pub fn GameDetailPage(name: String) -> Element {
                                 let com_visible = if comments_all() { com_list.len() } else { com_list.len().min(5) };
                                 let sess_list = sessions();
                                 let sess_visible = if history_all() { sess_list.len() } else { sess_list.len().min(8) };
+                                let version_list = published_versions();
                                 rsx! {
                                     SteamSection {
                                         id: "section-about",
@@ -474,15 +485,58 @@ pub fn GameDetailPage(name: String) -> Element {
                                     }
 
                                     SteamSection {
+                                        id: "section-versions",
+                                        title: "Versions",
+                                        expanded: section_open()[4],
+                                        meta: rsx! {
+                                            p { class: "text-body-sm text-on-surface-variant mt-0.5", "{version_list.len()} published" }
+                                        },
+                                        on_toggle: move |_| {
+                                            let mut o = section_open();
+                                            o[4] = !o[4];
+                                            section_open.set(o);
+                                        },
+                                        if version_list.is_empty() {
+                                            EmptyState {
+                                                icon: "deployed_code",
+                                                title: "No version history".to_string(),
+                                                description: "Published versions will appear here.".to_string(),
+                                                cta_label: None,
+                                                on_cta: None,
+                                            }
+                                        } else {
+                                            div { class: "section-card overflow-x-auto p-0",
+                                                table { class: "data-table",
+                                                    thead { tr { th { "Version" } th { "Status" } th { "Published" } } }
+                                                    tbody {
+                                                        for row in version_list {
+                                                            tr {
+                                                                td { class: "font-mono-code text-primary", "v{row.version}" }
+                                                                td {
+                                                                    StatusBadge {
+                                                                        label: row.status.clone(),
+                                                                        variant: if row.status == "Live" { StatusVariant::Online } else { StatusVariant::Waiting },
+                                                                    }
+                                                                }
+                                                                td { class: "text-outline", "{format_relative_time(row.deployed_at)}" }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    SteamSection {
                                         id: "section-leaderboards",
                                         title: "Leaderboards",
-                                        expanded: section_open()[4],
+                                        expanded: section_open()[5],
                                         meta: rsx! {
                                             p { class: "text-body-sm text-on-surface-variant mt-0.5", "Points and play time" }
                                         },
                                         on_toggle: move |_| {
                                             let mut o = section_open();
-                                            o[4] = !o[4];
+                                            o[5] = !o[5];
                                             section_open.set(o);
                                         },
                                         div { class: "space-y-4",
@@ -547,13 +601,13 @@ pub fn GameDetailPage(name: String) -> Element {
                                     SteamSection {
                                         id: "section-match-history",
                                         title: "Match history",
-                                        expanded: section_open()[5],
+                                        expanded: section_open()[6],
                                         meta: rsx! {
                                             p { class: "text-body-sm text-on-surface-variant mt-0.5", "{sess_list.len()} finished games" }
                                         },
                                         on_toggle: move |_| {
                                             let mut o = section_open();
-                                            o[5] = !o[5];
+                                            o[6] = !o[6];
                                             section_open.set(o);
                                         },
                                         if sess_list.is_empty() {

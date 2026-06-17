@@ -252,6 +252,7 @@ pub async fn owner_replace_game_type_and_seats(
     owner: Uuid,
     new_game_type: &str,
     identities: &[String],
+    config: Option<&str>,
     force: bool,
 ) -> Result<(), String> {
     let detail = get_lobby(pool, lobby_id)
@@ -284,9 +285,10 @@ pub async fn owner_replace_game_type_and_seats(
         .await
         .map_err(|e| e.to_string())?;
     sqlx::query(
-        "UPDATE pregame_lobbies SET game_type = ?, status = 'waiting', updated_at = ? WHERE id = ?",
+        "UPDATE pregame_lobbies SET game_type = ?, config = ?, status = 'waiting', updated_at = ? WHERE id = ?",
     )
     .bind(new_game_type)
+    .bind(config)
     .bind(now)
     .bind(lobby_id.to_string())
     .execute(&mut *tx)

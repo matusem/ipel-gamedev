@@ -397,6 +397,7 @@ impl MutationRoot {
         let component_db = ctx.data::<ComponentDb>()?;
         let drafts_dir = &ctx.data::<DraftsDir>()?.0;
         let games_dir = &ctx.data::<GamesDir>()?.0;
+        let registry = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(zip_base64.as_bytes())
             .map_err(|e| Error::new(format!("invalid base64 payload: {e}")))?;
@@ -462,6 +463,29 @@ impl MutationRoot {
                         Error::new(format!("db: {msg}"))
                     }
                 })?;
+
+                let mut publish_warning = None;
+                if let Err(e) = validate_game_folder_name(&ok.manifest.name) {
+                    publish_warning = Some(format!("Auto-publish skipped: {e}"));
+                } else {
+                    match publish_staged_game(&ok.staged_dir, games_dir, &ok.manifest.name) {
+                        Ok(_) => {
+                            if let Err(e) = db::mark_draft_published(pool, draft_id).await {
+                                publish_warning =
+                                    Some(format!("Auto-publish failed (db): {e}"));
+                            } else {
+                                let mut reg = registry
+                                    .write()
+                                    .map_err(|_| Error::new("registry lock poisoned"))?;
+                                reg.reload(games_dir, component_db);
+                            }
+                        }
+                        Err(e) => {
+                            publish_warning = Some(format!("Auto-publish failed: {e}"));
+                        }
+                    }
+                }
+
                 let draft = db::get_game_draft(pool, draft_id)
                     .await
                     .map_err(|e| Error::new(format!("db: {e}")))?
@@ -470,6 +494,7 @@ impl MutationRoot {
                     upload_id: upload_id.to_string().into(),
                     draft,
                     report: map_validation_report(ok.report),
+                    publish_warning,
                 })
             }
             Err(report_err) => {
@@ -501,6 +526,7 @@ impl MutationRoot {
                     upload_id: upload_id.to_string().into(),
                     draft: None,
                     report: map_validation_report(report),
+                    publish_warning: None,
                 })
             }
         }
@@ -792,17 +818,23 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?
             .ok_or_else(|| Error::new("lobby not found"))?;
-        let config_bytes = detail
-            .config
-            .as_deref()
-            .unwrap_or("null")
-            .as_bytes()
-            .to_vec();
+        let config_bytes = game_service::default_config(component_db, &game_type)
+            .await
+            .map_err(Error::new)?;
+        let config_s = String::from_utf8_lossy(&config_bytes).to_string();
         let identities =
             game_service::preview_init_identities(component_db, game_type.clone(), config_bytes)
                 .await
                 .map_err(Error::new)?;
-        lobby_db::owner_replace_game_type_and_seats(pool, lid, uid, &game_type, &identities, force)
+        lobby_db::owner_replace_game_type_and_seats(
+            pool,
+            lid,
+            uid,
+            &game_type,
+            &identities,
+            Some(&config_s),
+            force,
+        )
             .await
             .map_err(Error::new)?;
         notify.ping();
@@ -1038,12 +1070,13 @@ impl MutationRoot {
             .iter()
             .filter_map(|s| s.claimed_by_user_id)
             .collect();
-        let config = detail
-            .config
-            .as_deref()
-            .unwrap_or("null")
-            .as_bytes()
-            .to_vec();
+        let config = game_service::resolve_lobby_config(
+            component_db,
+            &game_type,
+            detail.config.as_deref(),
+        )
+        .await
+        .map_err(Error::new)?;
         let gid = game_service::create_and_spawn_game(
             component_db,
             game_db,

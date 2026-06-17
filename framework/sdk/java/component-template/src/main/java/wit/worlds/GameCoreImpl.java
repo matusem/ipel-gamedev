@@ -48,6 +48,17 @@ public final class GameCoreImpl {
         return serde.deserialize(Config.class, configBytes);
     }
 
+    public static GameCore.Result<byte[], GameCore.GameCoreError> defaultConfig(
+            GameCore.SerializationFormat format) {
+        GameSerde serde = serde(format);
+        try {
+            Config cfg = new Config();
+            return GameCore.Result.ok(serde.serialize(cfg));
+        } catch (GameSerde.SerializationException e) {
+            return GameCore.Result.err(GameCore.GameCoreError.serialize(e.getMessage()));
+        }
+    }
+
     public static GameCore.Result<GameCore.Game, GameCore.GameCoreError> init(
             GameCore.SerializationFormat format, byte[] configBytes) {
         GameSerde serde = serde(format);

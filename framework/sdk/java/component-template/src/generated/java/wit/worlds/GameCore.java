@@ -507,8 +507,130 @@ public final class GameCore{
         
     }
     
+    @Export(name = "default-config")
+    private static int wasmExportDefaultConfig(int p0) {
+        
+        wit.worlds.GameCore.Result<byte[], GameCoreError> result = wit.worlds.GameCoreImpl.defaultConfig(SerializationFormat.values()[p0]);
+        
+        switch ((result).tag) {
+            case 0: {
+                byte[] payload = (result).getOk();
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 0).putByte((byte) (0));
+                
+                org.teavm.interop.Address address = Memory.malloc(1 * (payload).length, 1);
+                Memory.putBytes(address, payload, 0, (payload).length);
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt((payload).length);
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putInt(address.toInt());
+                
+                break;
+            }
+            case 1: {
+                GameCoreError payload2 = (result).getErr();
+                org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 0).putByte((byte) (1));
+                
+                switch ((payload2).tag) {
+                    case 0: {
+                        String payload5 = (payload2).getDeserialize();
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (0));
+                        byte[] bytes = (payload5).getBytes(StandardCharsets.UTF_8);
+                        
+                        org.teavm.interop.Address address6 = Memory.malloc(bytes.length, 1);
+                        Memory.putBytes(address6, bytes, 0, bytes.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address6.toInt());
+                        
+                        break;
+                    }
+                    case 1: {
+                        String payload9 = (payload2).getSerialize();
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (1));
+                        byte[] bytes10 = (payload9).getBytes(StandardCharsets.UTF_8);
+                        
+                        org.teavm.interop.Address address11 = Memory.malloc(bytes10.length, 1);
+                        Memory.putBytes(address11, bytes10, 0, bytes10.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes10.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address11.toInt());
+                        
+                        break;
+                    }
+                    case 2: {
+                        String payload14 = (payload2).getProcessing();
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (2));
+                        byte[] bytes15 = (payload14).getBytes(StandardCharsets.UTF_8);
+                        
+                        org.teavm.interop.Address address16 = Memory.malloc(bytes15.length, 1);
+                        Memory.putBytes(address16, bytes15, 0, bytes15.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt(bytes15.length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address16.toInt());
+                        
+                        break;
+                    }
+                    case 3: {
+                        byte[] payload19 = (payload2).getGameCore();
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 4).putByte((byte) (3));
+                        
+                        org.teavm.interop.Address address20 = Memory.malloc(1 * (payload19).length, 1);
+                        Memory.putBytes(address20, payload19, 0, (payload19).length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 12).putInt((payload19).length);
+                        org.teavm.interop.Address.fromInt((wit.worlds.GameCore.RETURN_AREA) + 8).putInt(address20.toInt());
+                        
+                        break;
+                    }
+                    
+                    default: throw new AssertionError("invalid discriminant: " + (payload2).tag);
+                }
+                
+                break;
+            }
+            
+            default: throw new AssertionError("invalid discriminant: " + (result).tag);
+        }
+        return wit.worlds.GameCore.RETURN_AREA;
+        
+    }
+    
+    @Export(name = "cabi_post_default-config")
+    private static void wasmExportDefaultConfigPostReturn(int p0) {
+        
+        switch ((((int) org.teavm.interop.Address.fromInt((p0) + 0).getByte()) & 0xFF)) {
+            case 0: {
+                Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 4).getInt()), (org.teavm.interop.Address.fromInt((p0) + 8).getInt()) * 1, 1);
+                
+                break;
+            }
+            case 1: {
+                
+                switch ((((int) org.teavm.interop.Address.fromInt((p0) + 4).getByte()) & 0xFF)) {
+                    case 0: {
+                        Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 8).getInt()), org.teavm.interop.Address.fromInt((p0) + 12).getInt(), 1);
+                        
+                        break;
+                    }
+                    case 1: {
+                        Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 8).getInt()), org.teavm.interop.Address.fromInt((p0) + 12).getInt(), 1);
+                        
+                        break;
+                    }
+                    case 2: {
+                        Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 8).getInt()), org.teavm.interop.Address.fromInt((p0) + 12).getInt(), 1);
+                        
+                        break;
+                    }
+                    case 3: {
+                        Memory.free(org.teavm.interop.Address.fromInt(org.teavm.interop.Address.fromInt((p0) + 8).getInt()), (org.teavm.interop.Address.fromInt((p0) + 12).getInt()) * 1, 1);
+                        
+                        break;
+                    }
+                }
+                
+                break;
+            }
+        }
+        
+    }
+    
     @CustomSection(name = "component-type:GameCore")
-    private static final String __WIT_BINDGEN_COMPONENT_TYPE = "0061736d0d0001000019167769742d636f6d706f6e656e742d656e636f64696e67040007a80401410201411a016d02046a736f6e0c6d6573736167652d7061636b03001473657269616c697a6174696f6e2d666f726d617403000001707d0300066275666665720300020171040b646573657269616c697a650173000973657269616c697a650173000a70726f63657373696e670173000967616d652d636f726501030003000f67616d652d636f72652d6572726f72030004030006706c61796572030003016f02060303000d706c617965722d616374696f6e03000701720206706c61796572060573746174650303000c706c617965722d73746174650300090170030172020573746174650a066576656e74730b0300106e65772d706c617965722d737461746503000c01700a0172030a66756c6c2d7374617465030d706c617965722d7374617465730e0f737065637461746f722d73746174650303000467616d6503000f01700d017204136e65772d67616d652d66756c6c2d7374617465030d706c617965722d7374617465731110737065637461746f722d6576656e74730b0f737065637461746f722d73746174650303001274616b652d616374696f6e2d726573756c74030012016a0110010501400206666f726d61740106636f6e666967030014040004696e69740115016a0113010501400306666f726d6174010467616d65100d706c617965722d616374696f6e08001604000b74616b652d616374696f6e01170400206578616d706c653a67616d652d696e746572666163652f67616d652d636f726504000b0f01000967616d652d636f7265030000004d0970726f647563657273010c70726f6365737365642d6279020d7769742d636f6d706f6e656e7407302e3232372e31167769742d62696e6467656e2d746561766d2d6a61766106302e34302e30";
+    private static final String __WIT_BINDGEN_COMPONENT_TYPE = "0061736d0d0001000019167769742d636f6d706f6e656e742d656e636f64696e67040007ce0401410201411d016d02046a736f6e0c6d6573736167652d7061636b03001473657269616c697a6174696f6e2d666f726d617403000001707d0300066275666665720300020171040b646573657269616c697a650173000973657269616c697a650173000a70726f63657373696e670173000967616d652d636f726501030003000f67616d652d636f72652d6572726f72030004030006706c61796572030003016f02060303000d706c617965722d616374696f6e03000701720206706c61796572060573746174650303000c706c617965722d73746174650300090170030172020573746174650a066576656e74730b0300106e65772d706c617965722d737461746503000c01700a0172030a66756c6c2d7374617465030d706c617965722d7374617465730e0f737065637461746f722d73746174650303000467616d6503000f01700d017204136e65772d67616d652d66756c6c2d7374617465030d706c617965722d7374617465731110737065637461746f722d6576656e74730b0f737065637461746f722d73746174650303001274616b652d616374696f6e2d726573756c74030012016a0110010501400206666f726d61740106636f6e666967030014040004696e69740115016a0113010501400306666f726d6174010467616d65100d706c617965722d616374696f6e08001604000b74616b652d616374696f6e0117016a0103010501400106666f726d617401001804000e64656661756c742d636f6e66696701190400206578616d706c653a67616d652d696e746572666163652f67616d652d636f726504000b0f01000967616d652d636f7265030000004d0970726f647563657273010c70726f6365737365642d6279020d7769742d636f6d706f6e656e7407302e3232372e31167769742d62696e6467656e2d746561766d2d6a61766106302e34302e30";
     
     public static final class Tuple2<T0, T1>{
         public final T0 f0;

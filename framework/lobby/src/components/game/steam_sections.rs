@@ -6,6 +6,7 @@ pub const SECTION_IDS: &[(&str, &str)] = &[
     ("section-reviews", "Reviews"),
     ("section-discussions", "Discussions"),
     ("section-patch-notes", "Patch notes"),
+    ("section-versions", "Versions"),
     ("section-leaderboards", "Leaderboards"),
     ("section-match-history", "Match history"),
 ];

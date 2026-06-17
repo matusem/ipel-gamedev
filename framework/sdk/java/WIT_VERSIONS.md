@@ -2,6 +2,18 @@
 
 The game server loads a **WebAssembly component** that implements the `game-core` world from [`../../test.wit`](../../test.wit) (Wasmtime component model).
 
+**Current platform WIT version:** `game-core-v2` (see [`platform/manifest.json`](../../platform/manifest.json)).
+
+## Exports (`game-core-v2`)
+
+| Export | Purpose |
+|--------|---------|
+| `init` | Create initial game state from config bytes |
+| `take-action` | Apply a player action |
+| `default-config` | Return serialized default config (used by lobby when no config is set yet) |
+
+`game-core-v1` components lack `default-config` and must be rebuilt after upgrading the platform.
+
 ## Rust guest (`game-wasm-host`)
 
 - **Crate:** [`game-wasm-host`](../../game-wasm-host/Cargo.toml) uses **`wit-bindgen` 0.46.x** (and `wit-bindgen-rt` as specified in that `Cargo.toml`). This is newer than the TeaVM Java generator line; both target the same [`test.wit`](../../test.wit) world.

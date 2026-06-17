@@ -36,14 +36,14 @@ impl ComponentDb {
 
     pub fn insert_component(&self, name: &str, component: Component) -> Result<(), String> {
         let name = name.to_string();
-
         let mut components = self.components.write().unwrap();
-        if components.contains_key(&name) {
-            Err(format!("Component with name '{}' already exists", name))
-        } else {
-            components.insert(name, component);
-            Ok(())
-        }
+        components.insert(name, component);
+        Ok(())
+    }
+
+    /// Remove all loaded components (e.g. before a full registry rescan).
+    pub fn clear(&self) {
+        self.components.write().unwrap().clear();
     }
 
     pub fn get(&self, name: &str) -> Option<Component> {

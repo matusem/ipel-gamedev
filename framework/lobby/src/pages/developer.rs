@@ -10,6 +10,7 @@ use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use gloo_events::{EventListener, EventListenerOptions};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 fn site_origin() -> String {
@@ -299,14 +300,25 @@ pub fn DeveloperUploadsPage() -> Element {
                                     struct R { upload_game_zip: UploadResp }
                                     #[derive(Deserialize)]
                                     #[serde(rename_all = "camelCase")]
-                                    struct UploadResp { report: UploadReport }
-                                    let q = "mutation Upload($f: String!, $z: String!) { uploadGameZip(filename: $f, zipBase64: $z) { report { ok errors warnings infos requiredIndexHtml requiredConfigHtml requiredResultHtml requiredAboutHtml diagnostics { severity code message path hint } } } }";
+                                    struct UploadResp {
+                                        report: UploadReport,
+                                        publish_warning: Option<String>,
+                                    }
+                                    let q = "mutation Upload($f: String!, $z: String!) { uploadGameZip(filename: $f, zipBase64: $z) { publishWarning report { ok errors warnings infos requiredIndexHtml requiredConfigHtml requiredResultHtml requiredAboutHtml diagnostics { severity code message path hint } } } }";
                                     let vars = serde_json::json!({ "f": n, "z": payload.trim() });
                                     match graphql_exec::<R>(q, Some(vars)).await {
                                         Ok(v) => {
-                                            report.set(Some(v.upload_game_zip.report));
+                                            let upload = v.upload_game_zip;
+                                            let report_ok = upload.report.ok;
+                                            report.set(Some(upload.report));
                                             report_open.set(true);
-                                            push_toast(toast.show, "Validation complete", ToastKind::Info);
+                                            if let Some(warn) = upload.publish_warning {
+                                                push_toast(toast.show, warn, ToastKind::Error);
+                                            } else if report_ok {
+                                                push_toast(toast.show, "Uploaded and published", ToastKind::Success);
+                                            } else {
+                                                push_toast(toast.show, "Validation complete", ToastKind::Info);
+                                            }
                                         }
                                         Err(e) => {
                                             err.set(Some(e.clone()));
@@ -510,13 +522,50 @@ pub fn DeveloperUploadsPage() -> Element {
                             on_cta: None,
                         }
                     } else {
-                        div { class: "space-y-3",
-                            for d in drafts() {
-                                DeveloperDraftRow {
-                                    key: "{d.id}",
-                                    draft: d.clone(),
-                                    err,
-                                    on_refresh: move |_| refresh_drafts(),
+                        {
+                            let grouped: BTreeMap<String, Vec<GameDraftShort>> = drafts()
+                                .into_iter()
+                                .fold(BTreeMap::new(), |mut acc, d| {
+                                    acc.entry(d.game_name.clone()).or_default().push(d);
+                                    acc
+                                });
+                            rsx! {
+                                div { class: "space-y-4",
+                                    for (game_name, mut versions) in grouped {
+                                        {
+                                            versions.sort_by(|a, b| {
+                                                b.created_at
+                                                    .cmp(&a.created_at)
+                                                    .then_with(|| b.version.cmp(&a.version))
+                                            });
+                                            let display = versions
+                                                .first()
+                                                .map(|d| d.display_name.clone())
+                                                .unwrap_or_else(|| game_name.clone());
+                                            rsx! {
+                                                div { class: "section-card space-y-3",
+                                                    key: "{game_name}",
+                                                    div { class: "flex flex-wrap items-baseline justify-between gap-2 border-b border-outline-variant/30 pb-3",
+                                                        div {
+                                                            h3 { class: "font-manrope font-semibold text-on-surface", "{display}" }
+                                                            p { class: "font-mono-code text-body-sm text-outline mt-0.5", "{game_name}" }
+                                                        }
+                                                        p { class: "text-label-caps text-outline uppercase text-[10px]", "{versions.len()} version(s)" }
+                                                    }
+                                                    div { class: "space-y-3 pl-1",
+                                                        for d in versions {
+                                                            DeveloperDraftRow {
+                                                                key: "{d.id}",
+                                                                draft: d.clone(),
+                                                                err,
+                                                                on_refresh: move |_| refresh_drafts(),
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

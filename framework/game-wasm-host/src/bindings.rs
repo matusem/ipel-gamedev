@@ -9,30 +9,28 @@ pub enum SerializationFormat {
 impl ::core::fmt::Debug for SerializationFormat {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         match self {
-            SerializationFormat::Json => f.debug_tuple("SerializationFormat::Json").finish(),
+            SerializationFormat::Json => {
+                f.debug_tuple("SerializationFormat::Json").finish()
+            }
             SerializationFormat::MessagePack => {
                 f.debug_tuple("SerializationFormat::MessagePack").finish()
             }
         }
     }
 }
-
 impl SerializationFormat {
     #[doc(hidden)]
     pub unsafe fn _lift(val: u8) -> SerializationFormat {
         if !cfg!(debug_assertions) {
             return ::core::mem::transmute(val);
         }
-
         match val {
             0 => SerializationFormat::Json,
             1 => SerializationFormat::MessagePack,
-
             _ => panic!("invalid enum discriminant"),
         }
     }
 }
-
 pub type Buffer = _rt::Vec<u8>;
 #[derive(Clone)]
 pub enum GameCoreError {
@@ -44,10 +42,9 @@ pub enum GameCoreError {
 impl ::core::fmt::Debug for GameCoreError {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         match self {
-            GameCoreError::Deserialize(e) => f
-                .debug_tuple("GameCoreError::Deserialize")
-                .field(e)
-                .finish(),
+            GameCoreError::Deserialize(e) => {
+                f.debug_tuple("GameCoreError::Deserialize").field(e).finish()
+            }
             GameCoreError::Serialize(e) => {
                 f.debug_tuple("GameCoreError::Serialize").field(e).finish()
             }
@@ -65,7 +62,6 @@ impl ::core::fmt::Display for GameCoreError {
         write!(f, "{:?}", self)
     }
 }
-
 impl std::error::Error for GameCoreError {}
 pub type Player = Buffer;
 pub type PlayerAction = (Player, Buffer);
@@ -129,9 +125,12 @@ impl ::core::fmt::Debug for TakeActionResult {
 }
 #[doc(hidden)]
 #[allow(non_snake_case)]
-pub unsafe fn _export_init_cabi<T: Guest>(arg0: i32, arg1: *mut u8, arg2: usize) -> *mut u8 {
-    #[cfg(target_arch = "wasm32")]
-    _rt::run_ctors_once();
+pub unsafe fn _export_init_cabi<T: Guest>(
+    arg0: i32,
+    arg1: *mut u8,
+    arg2: usize,
+) -> *mut u8 {
+    #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
     let len0 = arg2;
     let result1 = T::init(
         SerializationFormat::_lift(arg0 as u8),
@@ -154,7 +153,10 @@ pub unsafe fn _export_init_cabi<T: Guest>(arg0: i32, arg1: *mut u8, arg2: usize)
             *ptr2.add(4).cast::<*mut u8>() = ptr4.cast_mut();
             let vec8 = player_states3;
             let len8 = vec8.len();
-            let layout8 = _rt::alloc::Layout::from_size_align_unchecked(vec8.len() * 16, 4);
+            let layout8 = _rt::alloc::Layout::from_size_align_unchecked(
+                vec8.len() * 16,
+                4,
+            );
             let result8 = if layout8.size() != 0 {
                 let ptr = _rt::alloc::alloc(layout8).cast::<u8>();
                 if ptr.is_null() {
@@ -167,10 +169,7 @@ pub unsafe fn _export_init_cabi<T: Guest>(arg0: i32, arg1: *mut u8, arg2: usize)
             for (i, e) in vec8.into_iter().enumerate() {
                 let base = result8.add(i * 16);
                 {
-                    let PlayerState {
-                        player: player5,
-                        state: state5,
-                    } = e;
+                    let PlayerState { player: player5, state: state5 } = e;
                     let vec6 = (player5).into_boxed_slice();
                     let ptr6 = vec6.as_ptr().cast::<u8>();
                     let len6 = vec6.len();
@@ -319,8 +318,7 @@ pub unsafe fn _export_take_action_cabi<T: Guest>(
     arg9: *mut u8,
     arg10: usize,
 ) -> *mut u8 {
-    #[cfg(target_arch = "wasm32")]
-    _rt::run_ctors_once();
+    #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
     let len0 = arg2;
     let base7 = arg3;
     let len7 = arg4;
@@ -334,7 +332,6 @@ pub unsafe fn _export_take_action_cabi<T: Guest>(
             let l4 = *base.add(8).cast::<*mut u8>();
             let l5 = *base.add(12).cast::<usize>();
             let len6 = l5;
-
             PlayerState {
                 player: _rt::Vec::from_raw_parts(l1.cast(), len3, len3),
                 state: _rt::Vec::from_raw_parts(l4.cast(), len6, len6),
@@ -376,7 +373,10 @@ pub unsafe fn _export_take_action_cabi<T: Guest>(
             *ptr12.add(4).cast::<*mut u8>() = ptr14.cast_mut();
             let vec21 = player_states13;
             let len21 = vec21.len();
-            let layout21 = _rt::alloc::Layout::from_size_align_unchecked(vec21.len() * 24, 4);
+            let layout21 = _rt::alloc::Layout::from_size_align_unchecked(
+                vec21.len() * 24,
+                4,
+            );
             let result21 = if layout21.size() != 0 {
                 let ptr = _rt::alloc::alloc(layout21).cast::<u8>();
                 if ptr.is_null() {
@@ -389,14 +389,8 @@ pub unsafe fn _export_take_action_cabi<T: Guest>(
             for (i, e) in vec21.into_iter().enumerate() {
                 let base = result21.add(i * 24);
                 {
-                    let NewPlayerState {
-                        state: state15,
-                        events: events15,
-                    } = e;
-                    let PlayerState {
-                        player: player16,
-                        state: state16,
-                    } = state15;
+                    let NewPlayerState { state: state15, events: events15 } = e;
+                    let PlayerState { player: player16, state: state16 } = state15;
                     let vec17 = (player16).into_boxed_slice();
                     let ptr17 = vec17.as_ptr().cast::<u8>();
                     let len17 = vec17.len();
@@ -411,8 +405,10 @@ pub unsafe fn _export_take_action_cabi<T: Guest>(
                     *base.add(8).cast::<*mut u8>() = ptr18.cast_mut();
                     let vec20 = events15;
                     let len20 = vec20.len();
-                    let layout20 =
-                        _rt::alloc::Layout::from_size_align_unchecked(vec20.len() * 8, 4);
+                    let layout20 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec20.len() * 8,
+                        4,
+                    );
                     let result20 = if layout20.size() != 0 {
                         let ptr = _rt::alloc::alloc(layout20).cast::<u8>();
                         if ptr.is_null() {
@@ -441,7 +437,10 @@ pub unsafe fn _export_take_action_cabi<T: Guest>(
             *ptr12.add(12).cast::<*mut u8>() = result21;
             let vec23 = spectator_events13;
             let len23 = vec23.len();
-            let layout23 = _rt::alloc::Layout::from_size_align_unchecked(vec23.len() * 8, 4);
+            let layout23 = _rt::alloc::Layout::from_size_align_unchecked(
+                vec23.len() * 8,
+                4,
+            );
             let result23 = if layout23.size() != 0 {
                 let ptr = _rt::alloc::alloc(layout23).cast::<u8>();
                 if ptr.is_null() {
@@ -611,6 +610,107 @@ pub unsafe fn __post_return_take_action<T: Guest>(arg0: *mut u8) {
         }
     }
 }
+#[doc(hidden)]
+#[allow(non_snake_case)]
+pub unsafe fn _export_default_config_cabi<T: Guest>(arg0: i32) -> *mut u8 {
+    #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
+    let result0 = T::default_config(SerializationFormat::_lift(arg0 as u8));
+    let ptr1 = _RET_AREA.0.as_mut_ptr().cast::<u8>();
+    match result0 {
+        Ok(e) => {
+            *ptr1.add(0).cast::<u8>() = (0i32) as u8;
+            let vec2 = (e).into_boxed_slice();
+            let ptr2 = vec2.as_ptr().cast::<u8>();
+            let len2 = vec2.len();
+            ::core::mem::forget(vec2);
+            *ptr1.add(8).cast::<usize>() = len2;
+            *ptr1.add(4).cast::<*mut u8>() = ptr2.cast_mut();
+        }
+        Err(e) => {
+            *ptr1.add(0).cast::<u8>() = (1i32) as u8;
+            match e {
+                GameCoreError::Deserialize(e) => {
+                    *ptr1.add(4).cast::<u8>() = (0i32) as u8;
+                    let vec3 = (e.into_bytes()).into_boxed_slice();
+                    let ptr3 = vec3.as_ptr().cast::<u8>();
+                    let len3 = vec3.len();
+                    ::core::mem::forget(vec3);
+                    *ptr1.add(12).cast::<usize>() = len3;
+                    *ptr1.add(8).cast::<*mut u8>() = ptr3.cast_mut();
+                }
+                GameCoreError::Serialize(e) => {
+                    *ptr1.add(4).cast::<u8>() = (1i32) as u8;
+                    let vec4 = (e.into_bytes()).into_boxed_slice();
+                    let ptr4 = vec4.as_ptr().cast::<u8>();
+                    let len4 = vec4.len();
+                    ::core::mem::forget(vec4);
+                    *ptr1.add(12).cast::<usize>() = len4;
+                    *ptr1.add(8).cast::<*mut u8>() = ptr4.cast_mut();
+                }
+                GameCoreError::Processing(e) => {
+                    *ptr1.add(4).cast::<u8>() = (2i32) as u8;
+                    let vec5 = (e.into_bytes()).into_boxed_slice();
+                    let ptr5 = vec5.as_ptr().cast::<u8>();
+                    let len5 = vec5.len();
+                    ::core::mem::forget(vec5);
+                    *ptr1.add(12).cast::<usize>() = len5;
+                    *ptr1.add(8).cast::<*mut u8>() = ptr5.cast_mut();
+                }
+                GameCoreError::GameCore(e) => {
+                    *ptr1.add(4).cast::<u8>() = (3i32) as u8;
+                    let vec6 = (e).into_boxed_slice();
+                    let ptr6 = vec6.as_ptr().cast::<u8>();
+                    let len6 = vec6.len();
+                    ::core::mem::forget(vec6);
+                    *ptr1.add(12).cast::<usize>() = len6;
+                    *ptr1.add(8).cast::<*mut u8>() = ptr6.cast_mut();
+                }
+            }
+        }
+    };
+    ptr1
+}
+#[doc(hidden)]
+#[allow(non_snake_case)]
+pub unsafe fn __post_return_default_config<T: Guest>(arg0: *mut u8) {
+    let l0 = i32::from(*arg0.add(0).cast::<u8>());
+    match l0 {
+        0 => {
+            let l1 = *arg0.add(4).cast::<*mut u8>();
+            let l2 = *arg0.add(8).cast::<usize>();
+            let base3 = l1;
+            let len3 = l2;
+            _rt::cabi_dealloc(base3, len3 * 1, 1);
+        }
+        _ => {
+            let l4 = i32::from(*arg0.add(4).cast::<u8>());
+            match l4 {
+                0 => {
+                    let l5 = *arg0.add(8).cast::<*mut u8>();
+                    let l6 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l5, l6, 1);
+                }
+                1 => {
+                    let l7 = *arg0.add(8).cast::<*mut u8>();
+                    let l8 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l7, l8, 1);
+                }
+                2 => {
+                    let l9 = *arg0.add(8).cast::<*mut u8>();
+                    let l10 = *arg0.add(12).cast::<usize>();
+                    _rt::cabi_dealloc(l9, l10, 1);
+                }
+                _ => {
+                    let l11 = *arg0.add(8).cast::<*mut u8>();
+                    let l12 = *arg0.add(12).cast::<usize>();
+                    let base13 = l11;
+                    let len13 = l12;
+                    _rt::cabi_dealloc(base13, len13 * 1, 1);
+                }
+            }
+        }
+    }
+}
 pub trait Guest {
     fn init(format: SerializationFormat, config: Buffer) -> Result<Game, GameCoreError>;
     fn take_action(
@@ -618,40 +718,42 @@ pub trait Guest {
         game: Game,
         player_action: PlayerAction,
     ) -> Result<TakeActionResult, GameCoreError>;
+    fn default_config(format: SerializationFormat) -> Result<Buffer, GameCoreError>;
 }
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __export_world_game_core_cabi{
-  ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
-
-    #[unsafe(export_name = "init")]
-    unsafe extern "C" fn export_init(arg0: i32,arg1: *mut u8,arg2: usize,) -> *mut u8 {
-      $($path_to_types)*::_export_init_cabi::<$ty>(arg0, arg1, arg2)
-    }
-    #[unsafe(export_name = "cabi_post_init")]
-    unsafe extern "C" fn _post_return_init(arg0: *mut u8,) {
-      $($path_to_types)*::__post_return_init::<$ty>(arg0)
-    }
-    #[unsafe(export_name = "take-action")]
-    unsafe extern "C" fn export_take_action(arg0: i32,arg1: *mut u8,arg2: usize,arg3: *mut u8,arg4: usize,arg5: *mut u8,arg6: usize,arg7: *mut u8,arg8: usize,arg9: *mut u8,arg10: usize,) -> *mut u8 {
-      $($path_to_types)*::_export_take_action_cabi::<$ty>(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10)
-    }
-    #[unsafe(export_name = "cabi_post_take-action")]
-    unsafe extern "C" fn _post_return_take_action(arg0: *mut u8,) {
-      $($path_to_types)*::__post_return_take_action::<$ty>(arg0)
-    }
-  };);
+macro_rules! __export_world_game_core_cabi {
+    ($ty:ident with_types_in $($path_to_types:tt)*) => {
+        const _ : () = { #[unsafe (export_name = "init")] unsafe extern "C" fn
+        export_init(arg0 : i32, arg1 : * mut u8, arg2 : usize,) -> * mut u8 {
+        $($path_to_types)*:: _export_init_cabi::<$ty > (arg0, arg1, arg2) } #[unsafe
+        (export_name = "cabi_post_init")] unsafe extern "C" fn _post_return_init(arg0 : *
+        mut u8,) { $($path_to_types)*:: __post_return_init::<$ty > (arg0) } #[unsafe
+        (export_name = "take-action")] unsafe extern "C" fn export_take_action(arg0 :
+        i32, arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize, arg5 : * mut
+        u8, arg6 : usize, arg7 : * mut u8, arg8 : usize, arg9 : * mut u8, arg10 : usize,)
+        -> * mut u8 { $($path_to_types)*:: _export_take_action_cabi::<$ty > (arg0, arg1,
+        arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10) } #[unsafe (export_name =
+        "cabi_post_take-action")] unsafe extern "C" fn _post_return_take_action(arg0 : *
+        mut u8,) { $($path_to_types)*:: __post_return_take_action::<$ty > (arg0) }
+        #[unsafe (export_name = "default-config")] unsafe extern "C" fn
+        export_default_config(arg0 : i32,) -> * mut u8 { $($path_to_types)*::
+        _export_default_config_cabi::<$ty > (arg0) } #[unsafe (export_name =
+        "cabi_post_default-config")] unsafe extern "C" fn
+        _post_return_default_config(arg0 : * mut u8,) { $($path_to_types)*::
+        __post_return_default_config::<$ty > (arg0) } };
+    };
 }
 #[doc(hidden)]
 pub(crate) use __export_world_game_core_cabi;
 #[repr(align(4))]
 struct _RetArea([::core::mem::MaybeUninit<u8>; 36]);
 static mut _RET_AREA: _RetArea = _RetArea([::core::mem::MaybeUninit::uninit(); 36]);
+#[rustfmt::skip]
 mod _rt {
     #![allow(dead_code, clippy::all)]
-    pub use alloc_crate::string::String;
     pub use alloc_crate::vec::Vec;
-
+    pub use alloc_crate::string::String;
     #[cfg(target_arch = "wasm32")]
     pub fn run_ctors_once() {
         wit_bindgen::rt::run_ctors_once();
@@ -666,7 +768,6 @@ mod _rt {
     }
     extern crate alloc as alloc_crate;
 }
-
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
 /// the root implementation of all generated traits.
 ///
@@ -685,23 +786,26 @@ mod _rt {
 /// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
-
 macro_rules! __export_game_core_impl {
-  ($ty:ident) => (self::export!($ty with_types_in self););
-  ($ty:ident with_types_in $($path_to_types_root:tt)*) => (
-  $($path_to_types_root)*::__export_world_game_core_cabi!($ty with_types_in $($path_to_types_root)*);
-  )
+    ($ty:ident) => {
+        self::export!($ty with_types_in self);
+    };
+    ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
+        $($path_to_types_root)*:: __export_world_game_core_cabi!($ty with_types_in
+        $($path_to_types_root)*);
+    };
 }
-#[doc(hidden)]
+#[doc(inline)]
 pub(crate) use __export_game_core_impl as export;
-
 #[cfg(target_arch = "wasm32")]
-#[unsafe(link_section = "component-type:wit-bindgen:0.40.0:example:game-interface:game-core:encoded world")]
+#[unsafe(
+    link_section = "component-type:wit-bindgen:0.40.0:example:game-interface:game-core:encoded world"
+)]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 680] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa8\x04\x01A\x02\x01\
-A\x1a\x01m\x02\x04json\x0cmessage-pack\x03\0\x14serialization-format\x03\0\0\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 718] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xce\x04\x01A\x02\x01\
+A\x1d\x01m\x02\x04json\x0cmessage-pack\x03\0\x14serialization-format\x03\0\0\x01\
 p}\x03\0\x06buffer\x03\0\x02\x01q\x04\x0bdeserialize\x01s\0\x09serialize\x01s\0\x0a\
 processing\x01s\0\x09game-core\x01\x03\0\x03\0\x0fgame-core-error\x03\0\x04\x03\0\
 \x06player\x03\0\x03\x01o\x02\x06\x03\x03\0\x0dplayer-action\x03\0\x07\x01r\x02\x06\
@@ -712,10 +816,10 @@ ll-state\x03\x0dplayer-states\x0e\x0fspectator-state\x03\x03\0\x04game\x03\0\x0f
 events\x0b\x0fspectator-state\x03\x03\0\x12take-action-result\x03\0\x12\x01j\x01\
 \x10\x01\x05\x01@\x02\x06format\x01\x06config\x03\0\x14\x04\0\x04init\x01\x15\x01\
 j\x01\x13\x01\x05\x01@\x03\x06format\x01\x04game\x10\x0dplayer-action\x08\0\x16\x04\
-\0\x0btake-action\x01\x17\x04\0\x20example:game-interface/game-core\x04\0\x0b\x0f\
+\0\x0btake-action\x01\x17\x01j\x01\x03\x01\x05\x01@\x01\x06format\x01\0\x18\x04\0\
+\x0edefault-config\x01\x19\x04\0\x20example:game-interface/game-core\x04\0\x0b\x0f\
 \x01\0\x09game-core\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-compo\
 nent\x070.227.1\x10wit-bindgen-rust\x060.40.0";
-
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

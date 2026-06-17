@@ -1,5 +1,7 @@
 package example:game-interface;
 
+/// game-core WIT world (v2): init, take-action, default-config.
+
 world game-core {
   enum serialization-format {
     json,
@@ -43,4 +45,5 @@ world game-core {
 
   export init: func(format: serialization-format, config: buffer) -> result<game, game-core-error>;
   export take-action: func(format: serialization-format, game: game, player-action: player-action) -> result<take-action-result, game-core-error>;
+  export default-config: func(format: serialization-format) -> result<buffer, game-core-error>;
 }

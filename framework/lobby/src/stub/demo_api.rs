@@ -864,7 +864,7 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         } else if q.contains("createPublishToken") {
             json!({ "createPublishToken": { "token": "gdd_demo_key_do_not_share", "expiresAt": ago_days(-90) } })
         } else if q.contains("uploadGameZip") {
-            json!({ "uploadGameZip": { "report": { "ok": true, "errors": 0, "warnings": 1, "infos": 2, "requiredIndexHtml": true, "requiredConfigHtml": true, "requiredResultHtml": true, "requiredAboutHtml": true, "diagnostics": [
+            json!({ "uploadGameZip": { "publishWarning": null, "report": { "ok": true, "errors": 0, "warnings": 1, "infos": 2, "requiredIndexHtml": true, "requiredConfigHtml": true, "requiredResultHtml": true, "requiredAboutHtml": true, "diagnostics": [
                 { "severity": "info", "code": "DEMO", "message": "Demo mode — upload simulated", "path": null, "hint": null }
             ] } } })
         } else if q.contains("publishGameDraft") {
@@ -929,6 +929,25 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         json!({ "myGameDrafts": my_drafts() })
     } else if q.contains("publishedDeployments") {
         json!({ "publishedDeployments": deployments() })
+    } else if q.contains("gamePublishedVersions") {
+        let game_type = variables
+            .as_ref()
+            .and_then(|v| v.get("gameType").and_then(|x| x.as_str()))
+            .unwrap_or("tic_tac_toe");
+        let rows: Vec<Value> = deployments()
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter(|d| {
+                        d.get("gameName")
+                            .and_then(|v| v.as_str())
+                            == Some(game_type)
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        json!({ "gamePublishedVersions": rows })
     } else if q.contains("lobby(") || q.contains("lobby ") {
         let id = variables
             .as_ref()

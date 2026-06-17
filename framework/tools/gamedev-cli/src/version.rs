@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 pub const FRAMEWORK_VERSION: &str = "0.1.0";
-pub const WIT_VERSION: &str = "game-core-v1";
+pub const WIT_VERSION: &str = "game-core-v2";
 
 pub fn cli_version() -> &'static str {
     env!("CARGO_PKG_VERSION")

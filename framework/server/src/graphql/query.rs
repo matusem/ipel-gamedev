@@ -374,6 +374,48 @@ impl QueryRoot {
             .collect())
     }
 
+    async fn game_published_versions(
+        &self,
+        ctx: &Context<'_>,
+        game_type: String,
+    ) -> Result<Vec<DeploymentGql>> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let reg = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
+        let rows = db::list_published_versions_for_game(pool, &game_type)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let live_versions: std::collections::HashMap<String, String> = reg
+            .read()
+            .map_err(|_| Error::new("registry lock poisoned"))?
+            .game_types()
+            .iter()
+            .map(|gt| (gt.manifest.name.clone(), gt.manifest.version.clone()))
+            .collect();
+        Ok(rows
+            .into_iter()
+            .filter_map(|d| {
+                let deployed_at = d.published_at?;
+                let status = if live_versions
+                    .get(&d.game_name)
+                    .is_some_and(|v| v == &d.version)
+                {
+                    "Live".into()
+                } else {
+                    "Archived".into()
+                };
+                Some(DeploymentGql {
+                    id: d.id.to_string().into(),
+                    game_name: d.game_name,
+                    display_name: d.display_name,
+                    version: d.version,
+                    status,
+                    deployed_at,
+                })
+            })
+            .collect())
+    }
+
     /// Full platform release manifest (versions, SDK matrix, CLI requirements).
     async fn platform_manifest(&self) -> Result<PlatformManifestGql> {
         let m = crate::platform_manifest::load_manifest();

@@ -38,6 +38,31 @@ pub async fn preview_init_identities(
     Ok(player_identities_from_game(&game))
 }
 
+/// Fetch the game's default config bytes (JSON) from the WASM component.
+pub async fn default_config(component_db: &ComponentDb, game_type: &str) -> Result<Vec<u8>, String> {
+    let (game_core, mut store) = component_db
+        .create_game_core(game_type)
+        .await
+        .map_err(|e| e.to_string())?;
+    game_core
+        .call_default_config(&mut store, game_core::SerializationFormat::Json)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("default config: {:?}", e))
+}
+
+/// Resolve lobby config bytes: use stored config when present, otherwise fetch default from WASM.
+pub async fn resolve_lobby_config(
+    component_db: &ComponentDb,
+    game_type: &str,
+    stored_config: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    if let Some(cfg) = stored_config.map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(cfg.as_bytes().to_vec());
+    }
+    default_config(component_db, game_type).await
+}
+
 pub async fn create_and_spawn_game(
     component_db: &ComponentDb,
     game_db: &GameDb,

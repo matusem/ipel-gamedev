@@ -334,6 +334,8 @@ pub struct UploadGameZipResultGql {
     pub upload_id: async_graphql::types::ID,
     pub draft: Option<GameDraftGql>,
     pub report: ValidationReportGql,
+    /// Set when validation succeeded but auto-publish failed; draft remains `ready`.
+    pub publish_warning: Option<String>,
 }
 
 #[derive(SimpleObject, Clone)]

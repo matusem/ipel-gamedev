@@ -116,6 +116,7 @@ fn extract_quoted_from_imports(html: &str) -> Vec<String> {
             continue;
         };
         let path = part[..end].trim();
+        let path = path.split('?').next().unwrap_or(path);
         if path.starts_with("./") {
             out.push(path.trim_start_matches("./").to_string());
         }
@@ -125,6 +126,7 @@ fn extract_quoted_from_imports(html: &str) -> Vec<String> {
             continue;
         };
         let path = part[..end].trim();
+        let path = path.split('?').next().unwrap_or(path);
         if path.starts_with("./") {
             out.push(path.trim_start_matches("./").to_string());
         }

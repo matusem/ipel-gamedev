@@ -262,6 +262,19 @@ pub async fn list_published_deployments(
     Ok(rows.into_iter().filter_map(map_draft_row).collect())
 }
 
+pub async fn list_published_versions_for_game(
+    pool: &SqlitePool,
+    game_name: &str,
+) -> Result<Vec<GameDraftRow>, sqlx::Error> {
+    let rows = sqlx::query(
+        "SELECT id, upload_id, owner_user_id, game_name, display_name, version, status, manifest_json, report_json, storage_path, created_at, updated_at, published_at FROM game_drafts WHERE game_name = ? AND status = 'published' ORDER BY published_at DESC",
+    )
+    .bind(game_name)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().filter_map(map_draft_row).collect())
+}
+
 pub async fn count_published_drafts_for_user(
     pool: &SqlitePool,
     user_id: Uuid,

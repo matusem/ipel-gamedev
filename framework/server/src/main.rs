@@ -353,10 +353,10 @@ async fn graphql_ws(
 }
 
 async fn game_asset(
-    _req: HttpRequest,
+    req: HttpRequest,
     path: web::Path<(String, String)>,
     registry: web::Data<Arc<RwLock<GameRegistry>>>,
-) -> Result<NamedFile, Error> {
+) -> Result<HttpResponse, Error> {
     let (game_name, tail) = path.into_inner();
     let tail = if tail.is_empty() {
         "index.html".to_string()
@@ -377,9 +377,17 @@ async fn game_asset(
     if !full.is_file() {
         return Err(actix_web::error::ErrorNotFound("asset not found"));
     }
-    NamedFile::open_async(full)
+    let file = NamedFile::open_async(full)
         .await
-        .map_err(|_| actix_web::error::ErrorNotFound("asset not found"))
+        .map_err(|_| actix_web::error::ErrorNotFound("asset not found"))?;
+    let mut res = file.into_response(&req);
+    if tail.ends_with(".html") {
+        res.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-cache"),
+        );
+    }
+    Ok(res)
 }
 
 /// Create parent dirs for file-backed SQLite so `sqlite:///abs/path.db` works in Docker.

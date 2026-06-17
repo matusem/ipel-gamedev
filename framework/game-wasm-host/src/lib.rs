@@ -26,6 +26,14 @@ pub struct MyHost<GameCoreT: GameCore> {
 }
 
 impl<GameCoreT: GameCore> Guest for MyHost<GameCoreT> {
+    fn default_config(format: SerializationFormat) -> Result<Buffer, GameCoreError> {
+        let config = <GameCoreT::Config as Default>::default();
+        se(format)(&config).map_err(|error| {
+            println!("Failed to serialize default config: {}", error);
+            GameCoreError::Serialize(error)
+        })
+    }
+
     fn init(format: SerializationFormat, config: Buffer) -> Result<Game, GameCoreError> {
         let config: GameCoreT::Config = de(format)(&config).map_err(|error| {
             println!("Failed to initialize game with provided config: {}", error);

@@ -8,5 +8,19 @@
   "config_schema": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "oneOf": [{ "type": "null" }, { "type": "object", "additionalProperties": false }]
+  },
+  "built_with": {
+    "cli_version": "0.1.0",
+    "framework_version": "0.1.0",
+    "wit_version": "game-core-v2",
+    "sdk_versions": {
+      "upjs-gdd-shared-types": "0.1.0",
+      "upjs-gdd-rust-shared": "0.1.0",
+      "upjs-gdd-bevy": "0.1.0",
+      "upjs-gdd-dioxus": "0.1.0",
+      "@upjs-gdd/game-sdk": "0.1.0",
+      "@upjs-gdd/sdk-js": "0.1.0",
+      "sk.upjs.gdd:game": "0.1.0"
+    }
   }
 }

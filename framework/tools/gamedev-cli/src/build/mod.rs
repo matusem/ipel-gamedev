@@ -18,6 +18,7 @@ use crate::project::{
     load_config, read_package_name, resolve_bevy_dir, resolve_component_dir, resolve_dioxus_dir,
     resolve_java_backend_dir,
 };
+use crate::reporter::{self, LoggedCommand};
 
 pub use validate::{
     REQUIRED_CLIENT_HTML, validate_logic_component_file, validate_logic_wasm_file,
@@ -48,7 +49,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
         BackendKind::Rust => {
             let cargo_ok = game_cargo_command()
                 .arg("--version")
-                .status()
+                .status_logged()
                 .map(|s| s.success())
                 .unwrap_or(false);
             if !cargo_ok {
@@ -60,7 +61,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
                 .arg("build")
                 .arg("--release")
                 .current_dir(&component_dir)
-                .status()
+                .status_logged()
                 .context("failed to execute `cargo component build --release`")?;
             if !status.success() {
                 bail!(
@@ -102,7 +103,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
             let status = cmd
                 .arg(export_task)
                 .args(["--no-daemon", "-q"])
-                .status()
+                .status_logged()
                 .context("failed to run Gradle for Java logic.wasm; install JDK 21+ and Gradle (see sdk/java/README.md)")?;
             if !status.success() {
                 bail!("Java Gradle build failed (`{export_task}`); ensure wasm-tools is on PATH");
@@ -157,7 +158,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
         fs::create_dir_all(p)?;
     }
     create_zip(stage.path(), &out)?;
-    println!("Built package: {}", out.display());
+    reporter::status("build", &format!("Built package: {}", out.display()));
     Ok(())
 }
 
@@ -197,7 +198,7 @@ fn build_wasm_bindgen_frontend(
         .arg("-p")
         .arg(&pkg)
         .current_dir(root)
-        .status()
+        .status_logged()
         .with_context(|| format!("failed to spawn `cargo build` for {label} wasm"))?;
     if !status.success() {
         bail!(
@@ -228,7 +229,7 @@ fn build_wasm_bindgen_frontend(
         .arg("--target")
         .arg("web")
         .arg("--no-typescript")
-        .status()
+        .status_logged()
         .map(|s| s.success())
         .unwrap_or(false);
     if !wg_ok {
@@ -237,6 +238,59 @@ fn build_wasm_bindgen_frontend(
         );
     }
 
+    stamp_wasm_bindgen_cache_bust(client_dir, &stem, root)?;
+
+    Ok(())
+}
+
+fn stamp_wasm_bindgen_cache_bust(client_dir: &Path, stem: &str, root: &Path) -> Result<()> {
+    let index_path = client_dir.join("index.html");
+    let wasm_path = client_dir.join(format!("{stem}_bg.wasm"));
+    if !index_path.is_file() || !wasm_path.is_file() {
+        return Ok(());
+    }
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join("manifest.json"))?)
+            .context("read manifest.json for cache-bust stamp")?;
+    let version = manifest
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.0.0");
+
+    let wasm_bytes = fs::read(&wasm_path)?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::{Hash, Hasher};
+    wasm_bytes.hash(&mut hasher);
+    let hash8 = format!("{:x}", hasher.finish());
+    let hash8 = &hash8[..8.min(hash8.len())];
+    let bust = format!("{version}-{hash8}");
+
+    let js_name = format!("{stem}.js");
+    let mut html = fs::read_to_string(&index_path).context("read client/index.html")?;
+    let busted = format!("from \"./{js_name}?v={bust}\"");
+    let busted_sq = format!("from './{js_name}?v={bust}'");
+    let needle = format!("from \"./{js_name}");
+    let needle_sq = format!("from './{js_name}");
+
+    if let Some(idx) = html.find(&needle) {
+        let rest = &html[idx + needle.len()..];
+        let close = rest.find('"').map(|i| i + 1).unwrap_or(0);
+        let old = &html[idx..idx + needle.len() + close];
+        html = html.replacen(old, &busted, 1);
+    } else if let Some(idx) = html.find(&needle_sq) {
+        let rest = &html[idx + needle_sq.len()..];
+        let close = rest.find('\'').map(|i| i + 1).unwrap_or(0);
+        let old = &html[idx..idx + needle_sq.len() + close];
+        html = html.replacen(old, &busted_sq, 1);
+    } else {
+        bail!(
+            "client/index.html must import \"./{js_name}\" so gamedev build can stamp a cache-bust query"
+        );
+    }
+
+    fs::write(&index_path, html).context("write cache-busted client/index.html")?;
+    reporter::hint(&format!("stamped client/index.html with ?v={bust}"));
     Ok(())
 }
 
@@ -251,14 +305,14 @@ fn ensure_wasm_browser_tooling(root: &Path) -> Result<()> {
             include_str!("../../templates/misc/dot_cargo_config_wasm.toml"),
         )
         .with_context(|| format!("write {}", cfg_path.display()))?;
-        println!(
-            "note: wrote {} (needed for getrandom on wasm32-unknown-unknown)",
+        reporter::hint(&format!(
+            "wrote {} (needed for getrandom on wasm32-unknown-unknown)",
             cfg_path.display()
-        );
+        ));
     }
     let _ = Command::new("rustup")
         .args(["target", "add", "wasm32-unknown-unknown"])
-        .status();
+        .status_logged();
     Ok(())
 }
 
@@ -275,7 +329,7 @@ fn merge_frontend_web_build_into_client(
     let npm_ok = Command::new("npm")
         .arg("--version")
         .current_dir(&web_dir)
-        .status()
+        .status_logged()
         .map(|s| s.success())
         .unwrap_or(false);
 
@@ -284,7 +338,7 @@ fn merge_frontend_web_build_into_client(
         let install_status = Command::new("npm")
             .arg("install")
             .current_dir(&web_dir)
-            .status();
+            .status_logged();
         if install_status
             .as_ref()
             .map(|s| !s.success())
@@ -293,19 +347,23 @@ fn merge_frontend_web_build_into_client(
             if strict {
                 bail!("npm install failed in frontend/web");
             }
-            println!("warning: npm install failed, falling back to static frontend/web merge");
+            reporter::warn(
+                "frontend",
+                "npm install failed, falling back to static frontend/web merge",
+            );
         } else {
             let build_status = Command::new("npm")
                 .arg("run")
                 .arg("build")
                 .current_dir(&web_dir)
-                .status();
+                .status_logged();
             if build_status.as_ref().map(|s| !s.success()).unwrap_or(true) {
                 if strict {
                     bail!("npm run build failed in frontend/web");
                 }
-                println!(
-                    "warning: npm run build failed, falling back to static frontend/web merge"
+                reporter::warn(
+                    "frontend",
+                    "npm run build failed, falling back to static frontend/web merge",
                 );
             } else {
                 let dist_dir = web_dir.join("dist");
@@ -313,8 +371,9 @@ fn merge_frontend_web_build_into_client(
                     copy_dir_recursive(&dist_dir, &stage_root.join("client"))?;
                     dist_ready = true;
                 } else {
-                    println!(
-                        "warning: frontend/web has no dist/ after build (plain-static script?), falling back to static merge"
+                    reporter::warn(
+                        "frontend",
+                        "frontend/web has no dist/ after build (plain-static script?), falling back to static merge",
                     );
                 }
             }
@@ -322,7 +381,10 @@ fn merge_frontend_web_build_into_client(
     } else if strict {
         bail!("npm not available but frontend/web requires a build");
     } else {
-        println!("warning: npm not available, merging frontend/web/src into packaged client/");
+        reporter::warn(
+            "frontend",
+            "npm not available, merging frontend/web/src into packaged client/",
+        );
     }
 
     if !dist_ready {
@@ -340,8 +402,9 @@ fn merge_frontend_web_build_into_client(
 fn merge_frontend_web_static_into_staged_client(root: &Path, stage_root: &Path) -> Result<()> {
     let main_src = root.join("frontend/web/src/main.js");
     if !main_src.is_file() {
-        println!(
-            "warning: missing frontend/web/src/main.js; add it or install Node and run npm run build in frontend/web"
+        reporter::warn(
+            "frontend",
+            "missing frontend/web/src/main.js; add it or install Node and run npm run build in frontend/web",
         );
         return Ok(());
     }
@@ -377,7 +440,7 @@ fn merge_bevy_build_into_client(root: &Path, stage_root: &Path) -> Result<()> {
     ];
 
     let Some(dist_dir) = candidates.iter().find(|d| d.exists()) else {
-        println!("warning: bevy dist/ missing, keeping static client html");
+        reporter::warn("bevy", "bevy dist/ missing, keeping static client html");
         return Ok(());
     };
 

@@ -290,21 +290,19 @@ pub fn run_manifest(args: ManifestArgs) -> Result<()> {
             let q = r#"mutation($draftId: ID!, $name: String!, $displayName: String!, $version: String!, $description: String!) {
               updateGameDraftManifest(draftId: $draftId, name: $name, displayName: $displayName, version: $version, description: $description) { id gameName version status }
             }"#;
-            println!(
-                "{}",
-                api::gql_raw(
-                    &server_url,
-                    &tok.token,
-                    q,
-                    json!({
-                        "draftId": draft_id,
-                        "name": name,
-                        "displayName": display_name,
-                        "version": version,
-                        "description": description
-                    })
-                )?
-            );
+            let raw = api::gql_raw(
+                &server_url,
+                &tok.token,
+                q,
+                json!({
+                    "draftId": draft_id,
+                    "name": name,
+                    "displayName": display_name,
+                    "version": version,
+                    "description": description
+                }),
+            )?;
+            reporter::hint(&raw);
         }
     }
     Ok(())
