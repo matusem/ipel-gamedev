@@ -913,6 +913,34 @@ pub async fn demo_graphql<T: DeserializeOwned>(
         json!({ "myBadges": my_badges() })
     } else if q.contains("myNotifications") {
         json!({ "myNotifications": my_notifications() })
+    } else if q.contains("myFriends") || q.contains("pendingFriendRequests") {
+        json!({
+            "myFriends": [],
+            "pendingFriendRequests": [],
+            "sentFriendRequests": [],
+            "pendingFriendRequestCount": 0,
+            "lobbies": lobbies()
+        })
+    } else if q.contains("pendingFriendRequestCount") {
+        json!({ "pendingFriendRequestCount": 0 })
+    } else if q.contains("searchUsers") {
+        json!({ "searchUsers": [] })
+    } else if q.contains("friendActivityFeed") {
+        json!({ "friendActivityFeed": [] })
+    } else if q.contains("sendFriendRequest") {
+        json!({ "sendFriendRequest": true })
+    } else if q.contains("acceptFriendRequest") {
+        json!({ "acceptFriendRequest": true })
+    } else if q.contains("declineFriendRequest") {
+        json!({ "declineFriendRequest": true })
+    } else if q.contains("cancelFriendRequest") {
+        json!({ "cancelFriendRequest": true })
+    } else if q.contains("removeFriend") {
+        json!({ "removeFriend": true })
+    } else if q.contains("blockUser") {
+        json!({ "blockUser": true })
+    } else if q.contains("inviteFriendToLobby") {
+        json!({ "inviteFriendToLobby": true })
     } else if q.contains("unreadNotificationCount") {
         json!({ "unreadNotificationCount": 2 })
     } else if q.contains("markAllNotificationsRead") {

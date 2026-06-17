@@ -4,6 +4,7 @@ mod chip;
 mod confirm_modal;
 mod empty_state;
 mod forms;
+mod friend_activity_feed;
 mod icons;
 mod json_console;
 mod kpi_card;
@@ -18,6 +19,7 @@ mod toast;
 use dioxus::prelude::*;
 
 pub use activity_feed::ActivityFeed;
+pub use friend_activity_feed::FriendActivityFeed;
 pub use avatar::{avatar_color, avatar_initial, Avatar, AvatarSize};
 pub use chip::Chip;
 pub use empty_state::EmptyState;

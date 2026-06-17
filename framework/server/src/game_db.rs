@@ -1,4 +1,5 @@
 use crate::db::GameInstanceStore;
+use crate::friends;
 use crate::game_core::{self, Buffer, Game, GameCore, NewPlayerState, Player, TakeActionResult};
 use crate::lobby_db::{self, LobbyListNotify};
 use actix_web::ResponseError;
@@ -387,6 +388,31 @@ impl GameInstance {
                             if let Some(lid) = p.lobby_id {
                                 let _ = lobby_db::mark_lobby_finished(&p.pool, lid).await;
                                 p.lobby_notify.ping();
+                                if let Ok(Some(detail)) = lobby_db::get_lobby(&p.pool, lid).await {
+                                    let game_id_str = p.game_id.to_string();
+                                    for seat in &detail.seats {
+                                        if let Some(uid) = seat.claimed_by_user_id {
+                                            let ident = seat.player_identity.clone();
+                                            let kind = outcomes
+                                                .get(&ident)
+                                                .map(|o| {
+                                                    if o == "Win" {
+                                                        "game_won"
+                                                    } else {
+                                                        "game_finished"
+                                                    }
+                                                })
+                                                .unwrap_or("game_finished");
+                                            let _ = friends::insert_friend_activity(
+                                                &p.pool,
+                                                uid,
+                                                kind,
+                                                &game_id_str,
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                }
                             }
                             p.game_db.remove_game(p.game_id);
                             p.game_db.notify_game_list_changed();

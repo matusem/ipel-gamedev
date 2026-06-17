@@ -12,6 +12,7 @@ use server::game_core::Buffer;
 use server::game_db::GameDb;
 use server::game_registry::GameRegistry;
 use server::graphql::{AppSchema, DraftsDir, GamesDir, RequestUser};
+use server::friends::{FriendsListNotify, OnlineTracker};
 use server::lobby_db::LobbyListNotify;
 use server::{component_db::ComponentDb, db};
 use sqlx::SqlitePool;
@@ -304,6 +305,8 @@ async fn graphql_post(
     component_db: web::Data<ComponentDb>,
     game_store: web::Data<Arc<db::GameInstanceStore>>,
     lobby_notify: web::Data<LobbyListNotify>,
+    friends_notify: web::Data<FriendsListNotify>,
+    online_tracker: web::Data<OnlineTracker>,
     games_dir: web::Data<GamesDir>,
     drafts_dir: web::Data<DraftsDir>,
     req: GraphQLRequest,
@@ -317,6 +320,8 @@ async fn graphql_post(
         .data(component_db.get_ref().clone())
         .data(game_store.get_ref().clone())
         .data(lobby_notify.get_ref().clone())
+        .data(friends_notify.get_ref().clone())
+        .data(online_tracker.get_ref().clone())
         .data(games_dir.get_ref().clone())
         .data(drafts_dir.get_ref().clone())
         .data(auth);
@@ -331,6 +336,8 @@ async fn graphql_ws(
     component_db: web::Data<ComponentDb>,
     game_store: web::Data<Arc<db::GameInstanceStore>>,
     lobby_notify: web::Data<LobbyListNotify>,
+    friends_notify: web::Data<FriendsListNotify>,
+    online_tracker: web::Data<OnlineTracker>,
     games_dir: web::Data<GamesDir>,
     drafts_dir: web::Data<DraftsDir>,
     req: HttpRequest,
@@ -343,6 +350,8 @@ async fn graphql_ws(
     data.insert(component_db.get_ref().clone());
     data.insert(game_store.get_ref().clone());
     data.insert(lobby_notify.get_ref().clone());
+    data.insert(friends_notify.get_ref().clone());
+    data.insert(online_tracker.get_ref().clone());
     data.insert(games_dir.get_ref().clone());
     data.insert(drafts_dir.get_ref().clone());
     data.insert(extract_request_user_for_ws(&req));
@@ -477,6 +486,9 @@ async fn main() -> std::io::Result<()> {
     let game_db = web::Data::new(GameDb::new(Some(list_tx)));
     let (lobby_tx, _lobby_rx) = broadcast::channel::<()>(256);
     let lobby_notify = web::Data::new(LobbyListNotify { tx: lobby_tx });
+    let (friends_tx, _friends_rx) = broadcast::channel::<()>(256);
+    let friends_notify = web::Data::new(FriendsListNotify { tx: friends_tx });
+    let online_tracker = web::Data::new(OnlineTracker::default());
     let game_store = web::Data::new(Arc::new(db::GameInstanceStore::new(pool.clone())));
 
     let component_db = ComponentDb::new();
@@ -502,6 +514,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(drafts_dir_data.clone())
             .app_data(game_store.clone())
             .app_data(lobby_notify.clone())
+            .app_data(friends_notify.clone())
+            .app_data(online_tracker.clone())
             .app_data(schema.clone())
             .route("/health", web::get().to(health))
             .route(

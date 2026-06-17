@@ -144,6 +144,46 @@ pub struct NotificationGql {
 }
 
 #[derive(SimpleObject, Clone)]
+pub struct FriendGql {
+    pub user_id: async_graphql::types::ID,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub online: bool,
+    pub since: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct FriendRequestGql {
+    pub user_id: async_graphql::types::ID,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct FriendActivityGql {
+    pub actor_id: String,
+    pub actor_name: String,
+    pub actor_avatar_url: Option<String>,
+    pub kind: String,
+    pub target: String,
+    pub timestamp: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct UserSearchResultGql {
+    pub id: async_graphql::types::ID,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub friendship_status: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct FriendEventGql {
+    pub kind: String,
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct GameScreenshotGql {
     pub id: String,
     pub caption: String,

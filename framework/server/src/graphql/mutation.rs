@@ -18,6 +18,7 @@ use crate::game_upload::{
     ValidationReport, publish_staged_game, remove_published_game_dir, validate_and_stage_zip_bytes,
     validate_game_folder_name, write_manifest_to_staged_dir,
 };
+use crate::friends::{self, FriendsListNotify};
 use crate::lobby_db::{self, LobbyListNotify};
 use crate::user_engagement;
 
@@ -1093,6 +1094,7 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         let _ = user_engagement::notify_lobby_started(pool, &seated_users, &game_type).await;
+        let _ = friends::insert_friend_activity(pool, uid, "lobby_created", &lid.to_string()).await;
         notify.ping();
         Ok(gid.to_string().into())
     }
@@ -1468,5 +1470,128 @@ impl MutationRoot {
         game_storefront::delete_comment(pool, cid)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn send_friend_request(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<FriendsListNotify>()?;
+        let target =
+            Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        friends::send_friend_request(pool, uid, target)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        notify.ping();
+        Ok(true)
+    }
+
+    async fn accept_friend_request(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<FriendsListNotify>()?;
+        let from =
+            Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        friends::accept_friend_request(pool, uid, from)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        notify.ping();
+        Ok(true)
+    }
+
+    async fn decline_friend_request(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<FriendsListNotify>()?;
+        let from =
+            Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        friends::decline_friend_request(pool, uid, from)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        notify.ping();
+        Ok(true)
+    }
+
+    async fn cancel_friend_request(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<FriendsListNotify>()?;
+        let to = Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        friends::cancel_friend_request(pool, uid, to)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        notify.ping();
+        Ok(true)
+    }
+
+    async fn remove_friend(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<FriendsListNotify>()?;
+        let friend =
+            Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        friends::remove_friend(pool, uid, friend)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        notify.ping();
+        Ok(true)
+    }
+
+    async fn block_user(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "userId")] user_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<FriendsListNotify>()?;
+        let target =
+            Uuid::parse_str(user_id.as_str()).map_err(|_| Error::new("invalid user id"))?;
+        friends::block_user(pool, uid, target)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        notify.ping();
+        Ok(true)
+    }
+
+    async fn invite_friend_to_lobby(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "friendUserId")] friend_user_id: async_graphql::types::ID,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let friend = Uuid::parse_str(friend_user_id.as_str())
+            .map_err(|_| Error::new("invalid friend user id"))?;
+        let lid =
+            Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        friends::invite_friend_to_lobby(pool, uid, friend, lid)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        Ok(true)
     }
 }

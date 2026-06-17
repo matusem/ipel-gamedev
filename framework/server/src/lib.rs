@@ -4,6 +4,7 @@ pub mod auth_sessions;
 pub mod google_oauth;
 pub mod component_db;
 pub mod db;
+pub mod friends;
 pub mod game_db;
 pub mod game_registry;
 pub mod game_service;

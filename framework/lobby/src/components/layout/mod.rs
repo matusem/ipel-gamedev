@@ -1,11 +1,11 @@
-use crate::api::{create_lobby_with_game, stored_user_id};
+use crate::api::{create_lobby_with_game, graphql_exec, graphql_post, stored_user_id};
 use crate::components::ui::{push_toast, Avatar, AvatarSize, Icon, SearchInput, ToastKind, use_toast};
-use crate::api::graphql_post;
 use crate::models::{format_relative_time, NotificationGql, PlatformStats};
 use crate::stub::demo_mode;
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
+use serde_json::json;
 
 #[derive(Clone, Copy)]
 pub struct SearchContext {
@@ -17,6 +17,7 @@ pub enum NavTab {
     Discover,
     Games,
     Lobbies,
+    Friends,
     Developer,
     Admin,
     Profile,
@@ -30,6 +31,7 @@ impl NavTab {
             LobbyRoute::LobbiesBrowser {}
             | LobbyRoute::Lobby { .. }
             | LobbyRoute::GameResult { .. } => NavTab::Lobbies,
+            LobbyRoute::Friends { .. } => NavTab::Friends,
             LobbyRoute::DeveloperUploads {} => NavTab::Developer,
             LobbyRoute::Admin {} => NavTab::Admin,
             LobbyRoute::Profile {} | LobbyRoute::Settings {} => NavTab::Profile,
@@ -52,6 +54,7 @@ pub fn AppShell(children: Element) -> Element {
     let mut ping_ms = use_signal(|| 18u32);
     let mut notifications = use_signal(Vec::<NotificationGql>::new);
     let mut unread_count = use_signal(|| 0i32);
+    let mut pending_friend_count = use_signal(|| 0i32);
     let mut is_superadmin = use_signal(|| false);
 
     let reload_notifications = move || {
@@ -101,6 +104,12 @@ pub fn AppShell(children: Element) -> Element {
                 }
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
+                struct Pc { pending_friend_request_count: i32 }
+                if let Ok(pc) = graphql_post::<Pc>("query { pendingFriendRequestCount }").await {
+                    pending_friend_count.set(pc.pending_friend_request_count);
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
                 struct Sa { is_superadmin: bool }
                 if let Ok(sa) = graphql_post::<Sa>("query { isSuperadmin }").await {
                     is_superadmin.set(sa.is_superadmin);
@@ -119,6 +128,7 @@ pub fn AppShell(children: Element) -> Element {
         });
     });
     let unread = unread_count() as usize;
+    let friend_pending = pending_friend_count() as usize;
     let user_id = stored_user_id().unwrap_or_else(|| "Player".into());
     let show_fab = active == NavTab::Discover;
     let lobby_room = matches!(route, LobbyRoute::Lobby { .. });
@@ -173,6 +183,21 @@ pub fn AppShell(children: Element) -> Element {
                     div { class: "relative shrink-0",
                         button {
                             class: "{HEADER_ICON_BTN}",
+                            aria_label: "Friends",
+                            title: "Friends",
+                            onclick: move |_| {
+                            let tab = if friend_pending > 0 { Some("requests".to_string()) } else { None };
+                            nav.push(LobbyRoute::Friends { tab });
+                        },
+                            Icon { name: "group", filled: false }
+                        }
+                        if friend_pending > 0 {
+                            span { class: "absolute top-1 right-1 block h-2 w-2 rounded-full bg-secondary-container ring-2 ring-surface-container-lowest" }
+                        }
+                    }
+                    div { class: "relative shrink-0",
+                        button {
+                            class: "{HEADER_ICON_BTN}",
                             aria_label: "Notifications",
                             onclick: move |_| {
                                 let open = !notif_open();
@@ -216,16 +241,86 @@ pub fn AppShell(children: Element) -> Element {
                                     p { class: "px-4 py-6 text-body-sm text-outline text-center", "No notifications yet." }
                                 }
                                 for item in notifications() {
-                                    div {
-                                        class: if item.unread {
-                                            "px-4 py-3 border-b border-outline-variant/20 bg-primary-container/5"
-                                        } else {
-                                            "px-4 py-3 border-b border-outline-variant/20"
-                                        },
-                                        p { class: "text-body-sm font-medium text-on-surface", "{item.title}" }
-                                        p { class: "text-body-sm text-on-surface-variant mt-0.5", "{item.body}" }
-                                        p { class: "text-label-caps font-label-caps text-outline mt-1",
-                                            "{format_relative_time(item.created_at)}"
+                                    {
+                                        let kind = item.kind.clone();
+                                        let body = item.body.clone();
+                                        let title = item.title.clone();
+                                        let unread_item = item.unread;
+                                        let created = item.created_at;
+                                        rsx! {
+                                            div {
+                                                class: if unread_item {
+                                                    "px-4 py-3 border-b border-outline-variant/20 bg-primary-container/5"
+                                                } else {
+                                                    "px-4 py-3 border-b border-outline-variant/20"
+                                                },
+                                                p { class: "text-body-sm font-medium text-on-surface", "{title}" }
+                                                if kind != "friend_request" && kind != "lobby_invite" {
+                                                    p { class: "text-body-sm text-on-surface-variant mt-0.5", "{body}" }
+                                                }
+                                                if kind == "friend_request" {
+                                                    div { class: "flex gap-2 mt-2",
+                                                        button {
+                                                            class: "text-label-caps font-label-caps text-primary hover:text-on-surface",
+                                                            onclick: {
+                                                                let uid = body.clone();
+                                                                let toast = toast;
+                                                                let reload_notifications = reload_notifications;
+                                                                move |_| {
+                                                                    let uid = uid.clone();
+                                                                    spawn(async move {
+                                                                        let q = "mutation A($id: ID!) { acceptFriendRequest(userId: $id) }";
+                                                                        let vars = json!({ "id": uid });
+                                                                        match graphql_exec::<serde_json::Value>(q, Some(vars)).await {
+                                                                            Ok(_) => push_toast(toast.show, "Friend request accepted", ToastKind::Success),
+                                                                            Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                                                        }
+                                                                        reload_notifications();
+                                                                    });
+                                                                }
+                                                            },
+                                                            "Accept"
+                                                        }
+                                                        button {
+                                                            class: "text-label-caps font-label-caps text-outline hover:text-on-surface",
+                                                            onclick: {
+                                                                let uid = body.clone();
+                                                                let toast = toast;
+                                                                let reload_notifications = reload_notifications;
+                                                                move |_| {
+                                                                    let uid = uid.clone();
+                                                                    spawn(async move {
+                                                                        let q = "mutation D($id: ID!) { declineFriendRequest(userId: $id) }";
+                                                                        let vars = json!({ "id": uid });
+                                                                        match graphql_exec::<serde_json::Value>(q, Some(vars)).await {
+                                                                            Ok(_) => push_toast(toast.show, "Request declined", ToastKind::Info),
+                                                                            Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                                                        }
+                                                                        reload_notifications();
+                                                                    });
+                                                                }
+                                                            },
+                                                            "Decline"
+                                                        }
+                                                    }
+                                                }
+                                                if kind == "lobby_invite" {
+                                                    button {
+                                                        class: "text-label-caps font-label-caps text-primary hover:text-on-surface mt-2",
+                                                        onclick: {
+                                                            let lid = body.clone();
+                                                            let nav = nav;
+                                                            move |_| {
+                                                                nav.push(LobbyRoute::Lobby { id: lid.clone() });
+                                                            }
+                                                        },
+                                                        "Join lobby"
+                                                    }
+                                                }
+                                                p { class: "text-label-caps font-label-caps text-outline mt-1",
+                                                    "{format_relative_time(created)}"
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -266,6 +361,7 @@ pub fn AppShell(children: Element) -> Element {
                     SidebarLink { label: "Discover", icon: "explore", active: active == NavTab::Discover, onclick: move |_| { nav.push(LobbyRoute::Home {}); } }
                     SidebarLink { label: "Games", icon: "sports_esports", active: active == NavTab::Games, onclick: move |_| { nav.push(LobbyRoute::GamesList {}); } }
                     SidebarLink { label: "Lobbies", icon: "groups", active: active == NavTab::Lobbies, onclick: move |_| { nav.push(LobbyRoute::LobbiesBrowser {}); } }
+                    SidebarLink { label: "Friends", icon: "group", active: active == NavTab::Friends, onclick: move |_| { nav.push(LobbyRoute::Friends { tab: None }); } }
                     SidebarLink { label: "Developer Hub", icon: "terminal", active: active == NavTab::Developer, onclick: move |_| { nav.push(LobbyRoute::DeveloperUploads {}); } }
                     if is_superadmin() {
                         SidebarLink { label: "Admin", icon: "admin_panel_settings", active: active == NavTab::Admin, onclick: move |_| { nav.push(LobbyRoute::Admin {}); } }

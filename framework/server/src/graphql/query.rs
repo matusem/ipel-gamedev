@@ -8,17 +8,19 @@ use crate::db::{self, GameInstanceStore};
 use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
 use crate::game_storefront;
+use crate::friends::{self, OnlineTracker};
 use crate::lobby_db;
 use crate::platform_stats;
 use crate::user_engagement;
 
 use super::{
     ActivityEventGql, AdminCommentGql, AdminPlatformOverviewGql, AdminReviewGql, AdminUserGql,
-    BadgeGql, CliReleaseGql, DeploymentGql, FinishedGameGql, GameCommentGql,
+    BadgeGql, CliReleaseGql, DeploymentGql, FinishedGameGql, FriendActivityGql, FriendGql,
+    FriendRequestGql, GameCommentGql,
     GameDraftGql, GameInstanceGql, GamePatchNoteGql, GameReviewGql, GameScreenshotGql,
     GameSessionGql, GameStorefrontGql, GameTypeGql, LeaderboardEntryGql, LobbyGql, LobbySummaryGql,
     NotificationGql, PlatformManifestGql, PlatformStatsGql, PlayTimeLeaderboardEntryGql,
-    PublishTokenSummaryGql, UserGql, UserProfileGql, lobby_to_gql, map_aspect_ratings, map_draft,
+    PublishTokenSummaryGql, UserGql, UserProfileGql, UserSearchResultGql, lobby_to_gql, map_aspect_ratings, map_draft,
     map_finished_row, map_game_entries,     map_summary, require_developer_user,
     require_registered_user, require_superadmin_user, is_superadmin,
 };
@@ -860,6 +862,123 @@ impl QueryRoot {
                 display_name: c.display_name,
                 body: c.body,
                 created_at: c.created_at,
+            })
+            .collect())
+    }
+
+    async fn my_friends(&self, ctx: &Context<'_>) -> Result<Vec<FriendGql>> {
+        let uid = require_registered_user(ctx).await?;
+        friends::touch_presence(ctx, uid);
+        let pool = ctx.data::<SqlitePool>()?;
+        let tracker = ctx.data::<OnlineTracker>().ok();
+        let rows = friends::list_friends(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|f| FriendGql {
+                user_id: f.user_id.to_string().into(),
+                display_name: f.display_name,
+                avatar_url: f.avatar_url,
+                online: tracker
+                    .map(|t| t.is_online(f.user_id))
+                    .unwrap_or(false),
+                since: f.since,
+            })
+            .collect())
+    }
+
+    async fn pending_friend_requests(&self, ctx: &Context<'_>) -> Result<Vec<FriendRequestGql>> {
+        let uid = require_registered_user(ctx).await?;
+        friends::touch_presence(ctx, uid);
+        let pool = ctx.data::<SqlitePool>()?;
+        let rows = friends::list_pending_requests(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| FriendRequestGql {
+                user_id: r.user_id.to_string().into(),
+                display_name: r.display_name,
+                avatar_url: r.avatar_url,
+                created_at: r.created_at,
+            })
+            .collect())
+    }
+
+    async fn sent_friend_requests(&self, ctx: &Context<'_>) -> Result<Vec<FriendRequestGql>> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rows = friends::list_sent_requests(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| FriendRequestGql {
+                user_id: r.user_id.to_string().into(),
+                display_name: r.display_name,
+                avatar_url: r.avatar_url,
+                created_at: r.created_at,
+            })
+            .collect())
+    }
+
+    async fn pending_friend_request_count(&self, ctx: &Context<'_>) -> Result<i32> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        friends::pending_friend_request_count(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn search_users(
+        &self,
+        ctx: &Context<'_>,
+        query: String,
+        limit: Option<i32>,
+    ) -> Result<Vec<UserSearchResultGql>> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let lim = limit.unwrap_or(20).clamp(1, 50) as i64;
+        let rows = friends::search_users_for_friends(pool, uid, q, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|u| UserSearchResultGql {
+                id: u.id.to_string().into(),
+                display_name: u.display_name,
+                avatar_url: u.avatar_url,
+                friendship_status: u.friendship_status,
+            })
+            .collect())
+    }
+
+    async fn friend_activity_feed(
+        &self,
+        ctx: &Context<'_>,
+        limit: Option<i32>,
+    ) -> Result<Vec<FriendActivityGql>> {
+        let uid = require_registered_user(ctx).await?;
+        friends::touch_presence(ctx, uid);
+        let pool = ctx.data::<SqlitePool>()?;
+        let lim = limit.unwrap_or(20).clamp(1, 50) as usize;
+        let rows = friends::friend_activity_feed(pool, uid, lim)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|a| FriendActivityGql {
+                actor_id: a.actor_id.to_string(),
+                actor_name: a.actor_name,
+                actor_avatar_url: a.actor_avatar_url,
+                kind: a.kind,
+                target: a.target,
+                timestamp: a.timestamp,
             })
             .collect())
     }

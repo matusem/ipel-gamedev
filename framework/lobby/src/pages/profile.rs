@@ -1,6 +1,6 @@
 use crate::api::{clear_auth_session, graphql_post, stored_user_id};
 use crate::components::ui::*;
-use crate::models::{ActivityEventGql, BadgeGql, UserProfile};
+use crate::models::{ActivityEventGql, BadgeGql, FriendActivityGql, UserProfile};
 use crate::LobbyRoute;
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -12,6 +12,7 @@ pub fn ProfilePage() -> Element {
     let user_id = stored_user_id().unwrap_or_else(|| "guest".into());
     let mut profile: Signal<Option<UserProfile>> = use_signal(|| None);
     let mut activity: Signal<Vec<ActivityEventGql>> = use_signal(Vec::new);
+    let mut friend_activity: Signal<Vec<FriendActivityGql>> = use_signal(Vec::new);
     let mut badges: Signal<Vec<BadgeGql>> = use_signal(Vec::new);
 
     use_hook(move || {
@@ -45,6 +46,16 @@ pub fn ProfilePage() -> Element {
             .await
             {
                 badges.set(b.my_badges);
+            }
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Fa { friend_activity_feed: Vec<FriendActivityGql> }
+            if let Ok(fa) = graphql_post::<Fa>(
+                "query { friendActivityFeed(limit: 6) { actorId actorName actorAvatarUrl kind target timestamp } }",
+            )
+            .await
+            {
+                friend_activity.set(fa.friend_activity_feed);
             }
         });
     });
@@ -84,6 +95,10 @@ pub fn ProfilePage() -> Element {
                     p { class: "text-body-sm text-outline mt-1", "{rank_progress}% to next rank" }
                 }
                 div { class: "flex flex-col gap-2 shrink-0",
+                    GhostButton {
+                        label: "Friends".to_string(),
+                        onclick: move |_| { nav.push(LobbyRoute::Friends { tab: None }); },
+                    }
                     GhostButton {
                         label: "Settings".to_string(),
                         onclick: move |_| { nav.push(LobbyRoute::Settings {}); },
@@ -142,6 +157,11 @@ pub fn ProfilePage() -> Element {
                         }
                     }
                 }
+            }
+
+            section { class: "section-card",
+                h2 { class: "font-manrope text-h2 text-xl mb-4", "Friend activity" }
+                FriendActivityFeed { events: friend_activity() }
             }
 
             section { class: "section-card",

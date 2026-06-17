@@ -1,4 +1,4 @@
-use crate::models::{GamesListData, LobbiesData, LobbyDetail, LOBBIES_QUERY, SESSION_TOKEN_KEY, USER_ID_KEY};
+use crate::models::{GamesListData, LobbiesData, LobbyDetail, LOBBIES_QUERY, ACTIVE_GAME_KEY, PlayOverlay, SESSION_TOKEN_KEY, USER_ID_KEY};
 use dioxus::prelude::*;
 use gloo_net::http::{Request, Response};
 use serde::de::DeserializeOwned;
@@ -274,6 +274,38 @@ pub fn stored_user_id() -> Option<String> {
         .and_then(|s| s.get_item(USER_ID_KEY).ok().flatten())
         .filter(|x| !x.is_empty())
 }
+
+pub fn session_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.session_storage().ok()?
+}
+
+pub fn store_active_overlay(overlay: &PlayOverlay) {
+    if let Ok(json) = serde_json::to_string(overlay) {
+        if let Some(st) = session_storage() {
+            let _ = st.set_item(ACTIVE_GAME_KEY, &json);
+        }
+    }
+}
+
+pub fn stored_active_overlay() -> Option<PlayOverlay> {
+    session_storage()
+        .and_then(|s| s.get_item(ACTIVE_GAME_KEY).ok().flatten())
+        .and_then(|json| serde_json::from_str(&json).ok())
+}
+
+pub fn clear_active_overlay() {
+    if let Some(st) = session_storage() {
+        let _ = st.remove_item(ACTIVE_GAME_KEY);
+    }
+}
+
+pub const FRIENDS_PAGE_QUERY: &str = r#"query {
+    myFriends { userId displayName avatarUrl online since }
+    pendingFriendRequests { userId displayName avatarUrl createdAt }
+    sentFriendRequests { userId displayName avatarUrl createdAt }
+    pendingFriendRequestCount
+    lobbies { id gameType status ownerDisplayName seatsFilled seatsTotal }
+}"#;
 
 pub async fn graphql_exec_anonymous<T: DeserializeOwned>(
     query: &str,

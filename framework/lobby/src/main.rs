@@ -10,7 +10,7 @@ use components::{AppShell, ConfirmProvider, LoadingState, ToastProvider};
 use dioxus::prelude::*;
 use models::*;
 use pages::{
-    AuthGate, AdminPage, CliAuthPage, DeveloperUploadsPage, GameDetailPage, GameResultPage, GamesListPage, HomePage,
+    AuthGate, AdminPage, CliAuthPage, DeveloperUploadsPage, FriendsPage, GameDetailPage, GameResultPage, GamesListPage, HomePage,
     LobbiesBrowserPage, LobbyRoomPage, ProfilePage, SettingsPage,
 };
 use pages::cli_auth::{is_cli_auth_location, read_cli_auth_params_from_location};
@@ -48,6 +48,8 @@ pub enum LobbyRoute {
     Settings {},
     #[route("/profile", ProfileRoute)]
     Profile {},
+    #[route("/friends?:tab", FriendsRoute)]
+    Friends { tab: Option<String> },
     #[route("/lobby/:id", LobbyRoomRoute)]
     Lobby { id: String },
     #[route("/game/:id", GameResultRoute)]
@@ -98,6 +100,11 @@ fn SettingsRoute() -> Element {
 #[component]
 fn ProfileRoute() -> Element {
     rsx! { ProfilePage {} }
+}
+
+#[component]
+fn FriendsRoute(tab: Option<String>) -> Element {
+    rsx! { FriendsPage { initial_tab: tab } }
 }
 
 #[component]
@@ -190,8 +197,15 @@ fn App() -> Element {
     let on_cli_auth = is_cli_auth_location();
     let mut session_ok: Signal<bool> = use_signal(|| false);
     let mut session_checked: Signal<bool> = use_signal(|| on_cli_auth);
-    let mut playing: Signal<Option<PlayOverlay>> = use_signal(|| None);
+    let mut playing: Signal<Option<PlayOverlay>> = use_signal(stored_active_overlay);
     let error_msg: Signal<Option<String>> = use_signal(|| None);
+
+    use_effect(move || {
+        match playing() {
+            Some(ref overlay) => store_active_overlay(overlay),
+            None => clear_active_overlay(),
+        }
+    });
 
     use_effect(move || {
         if is_cli_auth_location() {

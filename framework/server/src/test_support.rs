@@ -12,6 +12,7 @@ use crate::component_db::ComponentDb;
 use crate::db::{self, GameInstanceStore};
 use crate::game_db::GameDb;
 use crate::game_registry::GameRegistry;
+use crate::friends::{FriendsListNotify, OnlineTracker};
 use crate::graphql::{AppSchema, DraftsDir, GamesDir, RequestUser, build_schema};
 use crate::lobby_db::LobbyListNotify;
 
@@ -29,6 +30,8 @@ pub struct TestEnv {
     pub registry: Arc<RwLock<GameRegistry>>,
     pub game_store: Arc<GameInstanceStore>,
     pub lobby_notify: LobbyListNotify,
+    pub friends_notify: FriendsListNotify,
+    pub online_tracker: OnlineTracker,
     pub games_dir: PathBuf,
     pub drafts_dir: PathBuf,
 }
@@ -42,6 +45,9 @@ impl TestEnv {
         let game_db = GameDb::new(Some(list_tx));
         let (lobby_tx, _lobby_rx) = broadcast::channel::<()>(16);
         let lobby_notify = LobbyListNotify { tx: lobby_tx };
+        let (friends_tx, _friends_rx) = broadcast::channel::<()>(16);
+        let friends_notify = FriendsListNotify { tx: friends_tx };
+        let online_tracker = OnlineTracker::default();
         let game_store = Arc::new(GameInstanceStore::new(pool.clone()));
         let component_db = ComponentDb::new();
         let games_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/games");
@@ -57,6 +63,8 @@ impl TestEnv {
             registry,
             game_store,
             lobby_notify,
+            friends_notify,
+            online_tracker,
             games_dir,
             drafts_dir,
         }
@@ -95,6 +103,8 @@ impl TestEnv {
             .data(self.component_db.clone())
             .data(self.game_store.clone())
             .data(self.lobby_notify.clone())
+            .data(self.friends_notify.clone())
+            .data(self.online_tracker.clone())
             .data(GamesDir(self.games_dir.clone()))
             .data(DraftsDir(self.drafts_dir.clone()))
             .data(auth);

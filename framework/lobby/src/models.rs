@@ -6,6 +6,7 @@ pub const CONFIG_SCHEMA_SOURCE: &str = "upjs-gdd-game-config-schema";
 pub const CONFIG_STATE_SOURCE: &str = "upjs-gdd-game-config-state";
 pub const USER_ID_KEY: &str = "upjs_gdd_user_id";
 pub const SESSION_TOKEN_KEY: &str = "upjs_gdd_session_token";
+pub const ACTIVE_GAME_KEY: &str = "upjs_gdd_active_game";
 
 pub const LOBBIES_QUERY: &str =
     r#"query { lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt } }"#;
@@ -323,7 +324,7 @@ pub struct LobbyDetail {
     pub messages: Vec<LobbyMessage>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlayOverlay {
     pub game_type: String,
     pub game_id: String,
@@ -588,6 +589,50 @@ pub struct NotificationGql {
     pub kind: String,
     pub unread: bool,
     pub created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendGql {
+    pub user_id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    pub online: bool,
+    pub since: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendRequestGql {
+    pub user_id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendActivityGql {
+    pub actor_id: String,
+    pub actor_name: String,
+    #[serde(default)]
+    pub actor_avatar_url: Option<String>,
+    pub kind: String,
+    pub target: String,
+    pub timestamp: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSearchResultGql {
+    pub id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub friendship_status: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
