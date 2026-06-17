@@ -73,7 +73,7 @@ pub fn AdminPage() -> Element {
                 admin_game_drafts: Vec<AdminDraftRow>,
             }
             if let Ok(w) = graphql_post::<W>(
-                "query { adminGameDrafts(limit: 100) { id ownerUserId gameName displayName version status createdAt publishedAt } }",
+                "query { adminGameDrafts(limit: 100) { id ownerUserId slug gameName displayName version status createdAt publishedAt } }",
             )
             .await
             {
@@ -370,14 +370,14 @@ pub fn AdminPage() -> Element {
                         for d in drafts() {
                             div { class: "section-card",
                                 p { class: "font-medium", "{d.display_name}" }
-                                p { class: "text-body-sm text-on-surface-variant", "{d.game_name} v{d.version} · {d.status}" }
+                                p { class: "text-body-sm text-on-surface-variant", "{d.game_name} · slug {d.slug} · v{d.version} · {d.status}" }
                                 p { class: "text-xs font-mono-code text-outline break-all", "Owner {d.owner_user_id}" }
                                 div { class: "flex flex-wrap gap-1.5 mt-3",
                                     button {
                                         class: "btn-ghost btn-sm",
                                         onclick: {
-                                            let name = d.game_name.clone();
-                                            move |_| { nav.push(LobbyRoute::GameDetail { name: name.clone() }); }
+                                            let slug = if d.slug.is_empty() { d.game_name.clone() } else { d.slug.clone() };
+                                            move |_| { nav.push(LobbyRoute::GameDetail { name: slug.clone() }); }
                                         },
                                         "Store page"
                                     }

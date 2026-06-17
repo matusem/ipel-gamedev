@@ -122,9 +122,9 @@ fn screenshots_need_refresh(shots: &[Screenshot]) -> bool {
     })
 }
 
-fn merge_default_screenshots(game_name: &str, shots: &mut Vec<Screenshot>) {
+fn merge_default_screenshots(slug: &str, shots: &mut Vec<Screenshot>) {
     if screenshots_need_refresh(shots) {
-        *shots = default_storefront(game_name).screenshots;
+        *shots = default_storefront(slug).screenshots;
     }
 }
 
@@ -160,7 +160,7 @@ impl Default for AspectRatings {
 
 #[derive(Debug, Clone)]
 pub struct StorefrontRow {
-    pub game_name: String,
+    pub slug: String,
     pub owner_user_id: Option<Uuid>,
     pub short_tagline: Option<String>,
     pub long_description: String,
@@ -176,7 +176,7 @@ pub struct StorefrontRow {
 #[derive(Debug, Clone)]
 pub struct ReviewRow {
     pub id: Uuid,
-    pub game_name: String,
+    pub slug: String,
     pub user_id: Uuid,
     pub display_name: String,
     pub body: String,
@@ -188,7 +188,7 @@ pub struct ReviewRow {
 #[derive(Debug, Clone)]
 pub struct CommentRow {
     pub id: Uuid,
-    pub game_name: String,
+    pub slug: String,
     pub user_id: Uuid,
     pub display_name: String,
     pub body: String,
@@ -202,17 +202,17 @@ pub struct PlayTimeEntry {
     pub sessions: u32,
 }
 
-pub fn default_cover_image(game_name: &str) -> Option<String> {
-    default_storefront(game_name)
+pub fn default_cover_image(slug: &str) -> Option<String> {
+    default_storefront(slug)
         .screenshots
         .first()
         .and_then(|s| s.image_url.clone())
 }
 
-fn default_storefront(game_name: &str) -> StorefrontRow {
-    match game_name {
+fn default_storefront(slug: &str) -> StorefrontRow {
+    match slug {
         "tic_tac_toe" => StorefrontRow {
-            game_name: game_name.into(),
+            slug: slug.into(),
             owner_user_id: None,
             short_tagline: Some("Classic strategy — configurable board.".into()),
             long_description: "Classic N×N tic-tac-toe with configurable board size and win length. Claim a seat in a lobby, tune the rules, and challenge friends in real time. Built with WASM logic and a polished web UI.".into(),
@@ -228,7 +228,7 @@ fn default_storefront(game_name: &str) -> StorefrontRow {
             updated_at: GameInstanceStore::now_secs(),
         },
         "checkers" => StorefrontRow {
-            game_name: game_name.into(),
+            slug: slug.into(),
             owner_user_id: None,
             short_tagline: Some("Head-to-head board combat.".into()),
             long_description: "Traditional checkers with WASM-powered move validation. Supports lobby staging, seat claims, and live chat while you wait for your opponent.".into(),
@@ -243,10 +243,10 @@ fn default_storefront(game_name: &str) -> StorefrontRow {
             updated_at: GameInstanceStore::now_secs(),
         },
         _ => StorefrontRow {
-            game_name: game_name.into(),
+            slug: slug.into(),
             owner_user_id: None,
             short_tagline: None,
-            long_description: format!("Community game `{game_name}` on UPJŠ GDD Platform. Open a lobby to play with friends."),
+            long_description: format!("Community game `{slug}` on UPJŠ GDD Platform. Open a lobby to play with friends."),
             screenshots: vec![],
             patch_notes: vec![],
             tags: vec!["Multiplayer".into()],
@@ -260,15 +260,15 @@ fn default_storefront(game_name: &str) -> StorefrontRow {
 
 pub async fn ensure_storefront(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
 ) -> Result<StorefrontRow, sqlx::Error> {
-    if let Some(row) = get_storefront(pool, game_name).await? {
+    if let Some(row) = get_storefront(pool, slug).await? {
         return Ok(row);
     }
-    let def = default_storefront(game_name);
+    let def = default_storefront(slug);
     insert_storefront(pool, &def).await?;
     if demo_seed_enabled() {
-        seed_reviews_and_comments(pool, game_name).await?;
+        seed_reviews_and_comments(pool, slug).await?;
     }
     Ok(def)
 }
@@ -281,10 +281,10 @@ pub fn demo_seed_enabled() -> bool {
 
 pub async fn seed_demo_storefront_content(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
 ) -> Result<(), sqlx::Error> {
-    let _ = ensure_storefront(pool, game_name).await?;
-    seed_reviews_and_comments(pool, game_name).await
+    let _ = ensure_storefront(pool, slug).await?;
+    seed_reviews_and_comments(pool, slug).await
 }
 
 async fn insert_storefront(pool: &SqlitePool, s: &StorefrontRow) -> Result<(), sqlx::Error> {
@@ -292,9 +292,9 @@ async fn insert_storefront(pool: &SqlitePool, s: &StorefrontRow) -> Result<(), s
     let patches = serde_json::to_string(&s.patch_notes).unwrap_or_else(|_| "[]".into());
     let tags = serde_json::to_string(&s.tags).unwrap_or_else(|_| "[]".into());
     sqlx::query(
-        "INSERT INTO game_storefront (game_name, owner_user_id, short_tagline, long_description, screenshots_json, patch_notes_json, tags_json, avg_session_mins, featured, creator_display_name, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO game_storefront (slug, owner_user_id, short_tagline, long_description, screenshots_json, patch_notes_json, tags_json, avg_session_mins, featured, creator_display_name, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .bind(&s.game_name)
+    .bind(&s.slug)
     .bind(s.owner_user_id.map(|u| u.to_string()))
     .bind(&s.short_tagline)
     .bind(&s.long_description)
@@ -312,12 +312,12 @@ async fn insert_storefront(pool: &SqlitePool, s: &StorefrontRow) -> Result<(), s
 
 pub async fn get_storefront(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
 ) -> Result<Option<StorefrontRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT game_name, owner_user_id, short_tagline, long_description, screenshots_json, patch_notes_json, tags_json, avg_session_mins, featured, creator_display_name, updated_at FROM game_storefront WHERE game_name = ?",
+        "SELECT slug, owner_user_id, short_tagline, long_description, screenshots_json, patch_notes_json, tags_json, avg_session_mins, featured, creator_display_name, updated_at FROM game_storefront WHERE slug = ?",
     )
-    .bind(game_name)
+    .bind(slug)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| {
@@ -325,11 +325,11 @@ pub async fn get_storefront(
         let shots: String = r.get(4);
         let patches: String = r.get(5);
         let tags: String = r.get(6);
-        let game_name: String = r.get(0);
+        let slug: String = r.get(0);
         let mut screenshots: Vec<Screenshot> = serde_json::from_str(&shots).unwrap_or_default();
-        merge_default_screenshots(&game_name, &mut screenshots);
+        merge_default_screenshots(&slug, &mut screenshots);
         StorefrontRow {
-            game_name,
+            slug,
             owner_user_id: owner.and_then(|s| Uuid::parse_str(&s).ok()),
             short_tagline: r.get(2),
             long_description: r.get(3),
@@ -346,7 +346,7 @@ pub async fn get_storefront(
 
 pub async fn update_storefront(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
     short_tagline: Option<String>,
     long_description: String,
     screenshots_json: &str,
@@ -356,7 +356,7 @@ pub async fn update_storefront(
 ) -> Result<bool, sqlx::Error> {
     let now = GameInstanceStore::now_secs();
     let res = sqlx::query(
-        "UPDATE game_storefront SET short_tagline = ?, long_description = ?, screenshots_json = ?, patch_notes_json = ?, tags_json = ?, avg_session_mins = ?, updated_at = ? WHERE game_name = ?",
+        "UPDATE game_storefront SET short_tagline = ?, long_description = ?, screenshots_json = ?, patch_notes_json = ?, tags_json = ?, avg_session_mins = ?, updated_at = ? WHERE slug = ?",
     )
     .bind(short_tagline)
     .bind(long_description)
@@ -365,7 +365,7 @@ pub async fn update_storefront(
     .bind(tags_json)
     .bind(avg_session_mins)
     .bind(now)
-    .bind(game_name)
+    .bind(slug)
     .execute(pool)
     .await?;
     Ok(res.rows_affected() > 0)
@@ -374,21 +374,14 @@ pub async fn update_storefront(
 pub async fn user_can_edit_storefront(
     pool: &SqlitePool,
     user_id: Uuid,
-    game_name: &str,
+    slug: &str,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM game_drafts WHERE owner_user_id = ? AND game_name = ? AND status IN ('ready', 'published')",
-    )
-    .bind(user_id.to_string())
-    .bind(game_name)
-    .fetch_one(pool)
-    .await?;
-    Ok(row > 0)
+    crate::db::game_owner_matches_slug(pool, slug, user_id).await
 }
 
-async fn seed_reviews_and_comments(pool: &SqlitePool, game_name: &str) -> Result<(), sqlx::Error> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM game_reviews WHERE game_name = ?")
-        .bind(game_name)
+async fn seed_reviews_and_comments(pool: &SqlitePool, slug: &str) -> Result<(), sqlx::Error> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM game_reviews WHERE slug = ?")
+        .bind(slug)
         .fetch_one(pool)
         .await?;
     if count > 0 {
@@ -433,10 +426,10 @@ async fn seed_reviews_and_comments(pool: &SqlitePool, game_name: &str) -> Result
     for (i, (name, body, aspects)) in reviews.iter().enumerate() {
         let aspects_json = serde_json::to_string(aspects).unwrap_or_default();
         sqlx::query(
-            "INSERT INTO game_reviews (id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO game_reviews (id, slug, user_id, display_name, body, aspects_json, helpful_votes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4().to_string())
-        .bind(game_name)
+        .bind(slug)
         .bind(Uuid::new_v4().to_string())
         .bind(*name)
         .bind(*body)
@@ -456,10 +449,10 @@ async fn seed_reviews_and_comments(pool: &SqlitePool, game_name: &str) -> Result
     ];
     for (i, (name, body)) in comments.iter().enumerate() {
         sqlx::query(
-            "INSERT INTO game_comments (id, game_name, user_id, display_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO game_comments (id, slug, user_id, display_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4().to_string())
-        .bind(game_name)
+        .bind(slug)
         .bind(Uuid::new_v4().to_string())
         .bind(*name)
         .bind(*body)
@@ -472,14 +465,14 @@ async fn seed_reviews_and_comments(pool: &SqlitePool, game_name: &str) -> Result
 
 pub async fn list_reviews(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
     limit: i64,
 ) -> Result<Vec<ReviewRow>, sqlx::Error> {
-    let _ = ensure_storefront(pool, game_name).await?;
+    let _ = ensure_storefront(pool, slug).await?;
     let rows = sqlx::query(
-        "SELECT id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, slug, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE slug = ? ORDER BY created_at DESC LIMIT ?",
     )
-    .bind(game_name)
+    .bind(slug)
     .bind(limit)
     .fetch_all(pool)
     .await?;
@@ -492,7 +485,7 @@ fn map_review(r: sqlx::sqlite::SqliteRow) -> Option<ReviewRow> {
     let aspects: String = r.get(5);
     Some(ReviewRow {
         id: Uuid::parse_str(&id_s).ok()?,
-        game_name: r.get(1),
+        slug: r.get(1),
         user_id: Uuid::parse_str(&uid_s).ok()?,
         display_name: r.get(3),
         body: r.get(4),
@@ -504,14 +497,14 @@ fn map_review(r: sqlx::sqlite::SqliteRow) -> Option<ReviewRow> {
 
 pub async fn list_comments(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
     limit: i64,
 ) -> Result<Vec<CommentRow>, sqlx::Error> {
-    let _ = ensure_storefront(pool, game_name).await?;
+    let _ = ensure_storefront(pool, slug).await?;
     let rows = sqlx::query(
-        "SELECT id, game_name, user_id, display_name, body, created_at FROM game_comments WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, slug, user_id, display_name, body, created_at FROM game_comments WHERE slug = ? ORDER BY created_at DESC LIMIT ?",
     )
-    .bind(game_name)
+    .bind(slug)
     .bind(limit)
     .fetch_all(pool)
     .await?;
@@ -520,7 +513,7 @@ pub async fn list_comments(
         .filter_map(|r| {
             Some(CommentRow {
                 id: Uuid::parse_str(&r.get::<String, _>(0)).ok()?,
-                game_name: r.get(1),
+                slug: r.get(1),
                 user_id: Uuid::parse_str(&r.get::<String, _>(2)).ok()?,
                 display_name: r.get(3),
                 body: r.get(4),
@@ -532,9 +525,9 @@ pub async fn list_comments(
 
 pub async fn aggregate_aspect_ratings(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
 ) -> Result<AspectRatings, sqlx::Error> {
-    let reviews = list_reviews(pool, game_name, 100).await?;
+    let reviews = list_reviews(pool, slug, 100).await?;
     if reviews.is_empty() {
         return Ok(AspectRatings::default());
     }
@@ -558,21 +551,21 @@ pub async fn aggregate_aspect_ratings(
 
 pub async fn submit_review(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
     user_id: Uuid,
     display_name: &str,
     body: &str,
     aspects: &AspectRatings,
 ) -> Result<ReviewRow, sqlx::Error> {
-    let _ = ensure_storefront(pool, game_name).await?;
+    let _ = ensure_storefront(pool, slug).await?;
     let id = Uuid::new_v4();
     let now = GameInstanceStore::now_secs();
     let aspects_json = serde_json::to_string(aspects).unwrap_or_default();
     sqlx::query(
-        "INSERT INTO game_reviews (id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+        "INSERT INTO game_reviews (id, slug, user_id, display_name, body, aspects_json, helpful_votes, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
     )
     .bind(id.to_string())
-    .bind(game_name)
+    .bind(slug)
     .bind(user_id.to_string())
     .bind(display_name)
     .bind(body)
@@ -582,7 +575,7 @@ pub async fn submit_review(
     .await?;
     Ok(ReviewRow {
         id,
-        game_name: game_name.into(),
+        slug: slug.into(),
         user_id,
         display_name: display_name.into(),
         body: body.into(),
@@ -594,19 +587,19 @@ pub async fn submit_review(
 
 pub async fn submit_comment(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
     user_id: Uuid,
     display_name: &str,
     body: &str,
 ) -> Result<CommentRow, sqlx::Error> {
-    let _ = ensure_storefront(pool, game_name).await?;
+    let _ = ensure_storefront(pool, slug).await?;
     let id = Uuid::new_v4();
     let now = GameInstanceStore::now_secs();
     sqlx::query(
-        "INSERT INTO game_comments (id, game_name, user_id, display_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO game_comments (id, slug, user_id, display_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
-    .bind(game_name)
+    .bind(slug)
     .bind(user_id.to_string())
     .bind(display_name)
     .bind(body)
@@ -615,7 +608,7 @@ pub async fn submit_comment(
     .await?;
     Ok(CommentRow {
         id,
-        game_name: game_name.into(),
+        slug: slug.into(),
         user_id,
         display_name: display_name.into(),
         body: body.into(),
@@ -665,7 +658,7 @@ pub async fn list_all_reviews(
 ) -> Result<Vec<ReviewRow>, sqlx::Error> {
     let rows = if let Some(gt) = game_type {
         sqlx::query(
-            "SELECT id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, slug, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE slug = ? ORDER BY created_at DESC LIMIT ?",
         )
         .bind(gt)
         .bind(limit)
@@ -673,7 +666,7 @@ pub async fn list_all_reviews(
         .await?
     } else {
         sqlx::query(
-            "SELECT id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, slug, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews ORDER BY created_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(pool)
@@ -689,7 +682,7 @@ pub async fn list_all_comments(
 ) -> Result<Vec<CommentRow>, sqlx::Error> {
     let rows = if let Some(gt) = game_type {
         sqlx::query(
-            "SELECT id, game_name, user_id, display_name, body, created_at FROM game_comments WHERE game_name = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, slug, user_id, display_name, body, created_at FROM game_comments WHERE slug = ? ORDER BY created_at DESC LIMIT ?",
         )
         .bind(gt)
         .bind(limit)
@@ -697,7 +690,7 @@ pub async fn list_all_comments(
         .await?
     } else {
         sqlx::query(
-            "SELECT id, game_name, user_id, display_name, body, created_at FROM game_comments ORDER BY created_at DESC LIMIT ?",
+            "SELECT id, slug, user_id, display_name, body, created_at FROM game_comments ORDER BY created_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(pool)
@@ -708,7 +701,7 @@ pub async fn list_all_comments(
         .filter_map(|r| {
             Some(CommentRow {
                 id: Uuid::parse_str(&r.get::<String, _>(0)).ok()?,
-                game_name: r.get(1),
+                slug: r.get(1),
                 user_id: Uuid::parse_str(&r.get::<String, _>(2)).ok()?,
                 display_name: r.get(3),
                 body: r.get(4),
@@ -739,7 +732,7 @@ pub async fn mark_review_helpful(
             .await?;
     }
     let row = sqlx::query(
-        "SELECT id, game_name, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE id = ?",
+        "SELECT id, slug, user_id, display_name, body, aspects_json, helpful_votes, created_at FROM game_reviews WHERE id = ?",
     )
     .bind(review_id.to_string())
     .fetch_optional(pool)
@@ -748,9 +741,9 @@ pub async fn mark_review_helpful(
         .ok_or_else(|| sqlx::Error::RowNotFound)
 }
 
-pub async fn list_featured_game_names(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+pub async fn list_featured_slugs(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
     let rows = sqlx::query_scalar::<_, String>(
-        "SELECT game_name FROM game_storefront WHERE featured = 1 ORDER BY updated_at DESC",
+        "SELECT slug FROM game_storefront WHERE featured = 1 ORDER BY updated_at DESC",
     )
     .fetch_all(pool)
     .await?;
@@ -759,9 +752,9 @@ pub async fn list_featured_game_names(pool: &SqlitePool) -> Result<Vec<String>, 
 
 pub async fn catalog_meta_for_game(
     pool: &SqlitePool,
-    game_name: &str,
+    slug: &str,
 ) -> Result<(bool, Option<String>, Vec<String>, i32), sqlx::Error> {
-    if let Some(sf) = get_storefront(pool, game_name).await? {
+    if let Some(sf) = get_storefront(pool, slug).await? {
         return Ok((
             sf.featured,
             sf.creator_display_name,
@@ -769,7 +762,7 @@ pub async fn catalog_meta_for_game(
             sf.avg_session_mins,
         ));
     }
-    let def = default_storefront(game_name);
+    let def = default_storefront(slug);
     Ok((
         def.featured,
         def.creator_display_name,

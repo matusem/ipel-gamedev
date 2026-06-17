@@ -32,14 +32,10 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
                 game_types: Vec<GameTypeInfo>,
                 lobbies: Vec<LobbySummary>,
             }
-            let q = r#"query {
-                gameTypes {
-                    name displayName version minPlayers maxPlayers description
-                    configUiPath aboutUiPath configSchemaJson coverImageUrl
-                    activePlayers featured tags creatorDisplayName avgSessionMins
-                }
-                lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }
-            }"#;
+            let q = format!(
+                "query {{ gameTypes {{ {} }} lobbies {{ id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }} }}",
+                crate::models::GAME_TYPES_GQL_FIELDS
+            );
             match graphql_post::<Boot>(q).await {
                 Ok(data) => {
                     game_types.set(data.game_types);
@@ -103,7 +99,7 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
             } else {
                 if let Some(feat) = featured {
                     {
-                        let fname = feat.name.clone();
+                        let fname = feat.slug.clone();
                         let display = feat.display_name.clone();
                         let desc = feat.description.clone();
                         let long_desc = if desc.is_empty() {
@@ -112,7 +108,7 @@ pub fn HomePage(playing: Signal<Option<PlayOverlay>>, mut error_msg: Signal<Opti
                             desc.clone()
                         };
                         let cover = feat.cover_image_url.clone()
-                            .or_else(|| cover_image_url(&feat.name).map(str::to_string))
+                            .or_else(|| cover_image_url(&feat.slug).map(str::to_string))
                             .unwrap_or_default();
                         rsx! {
                             section { class: "col-span-12 page-hero group",

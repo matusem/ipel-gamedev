@@ -139,6 +139,7 @@ pub async fn validate_and_stage_zip_bytes(
     component_db: &ComponentDb,
     drafts_root: &Path,
     games_dir_for_collision_check: Option<&Path>,
+    collision_slug: Option<&str>,
 ) -> Result<UploadValidationResult, String> {
     let mut diagnostics = Vec::new();
     if zip_bytes.is_empty() {
@@ -420,7 +421,7 @@ pub async fn validate_and_stage_zip_bytes(
         }
     }
 
-    let Some(manifest_ref) = manifest.as_ref() else {
+    let Some(_manifest_ref) = manifest.as_ref() else {
         let report = summarize(diagnostics, has_index, has_config, has_result, has_about);
         if !report.ok {
             return Err(serde_json::to_string(&report)
@@ -432,17 +433,17 @@ pub async fn validate_and_stage_zip_bytes(
         );
     };
 
-    if let Some(gdir) = games_dir_for_collision_check {
-        if live_game_folder_exists(gdir, &manifest_ref.name) {
+    if let (Some(gdir), Some(slug)) = (games_dir_for_collision_check, collision_slug) {
+        if live_game_folder_exists(gdir, slug) {
             diagnostics.push(diag(
                 "warning",
-                "W_GAME_NAME_COLLISION",
+                "W_GAME_SLUG_LIVE",
                 format!(
-                    "a published game already exists at '{}/' — publishing this draft will replace it",
-                    manifest_ref.name.trim()
+                    "a published game already exists at '{}/' — publishing will update the live version",
+                    slug.trim()
                 ),
                 Some("manifest.json"),
-                Some("Change manifest name before publishing if you want a separate game entry."),
+                Some("This is expected when publishing a new version of your game."),
             ));
         }
     }
@@ -480,10 +481,10 @@ pub fn write_manifest_to_staged_dir(
     fs::write(&path, s).map_err(|e| format!("write '{}': {e}", path.display()))
 }
 
-/// Removes `GAMES_DIR/{game_name}` if present (live published game folder).
-pub fn remove_published_game_dir(games_dir: &Path, game_name: &str) -> Result<(), String> {
-    validate_game_folder_name(game_name)?;
-    let live = games_dir.join(game_name.trim());
+/// Removes `GAMES_DIR/{slug}` if present (live published game folder).
+pub fn remove_published_game_dir(games_dir: &Path, slug: &str) -> Result<(), String> {
+    validate_game_folder_name(slug)?;
+    let live = games_dir.join(slug.trim());
     if live.is_dir() {
         fs::remove_dir_all(&live)
             .map_err(|e| format!("remove live game dir '{}': {e}", live.display()))?;
@@ -494,9 +495,10 @@ pub fn remove_published_game_dir(games_dir: &Path, game_name: &str) -> Result<()
 pub fn publish_staged_game(
     staged_dir: &Path,
     games_dir: &Path,
-    game_name: &str,
+    slug: &str,
 ) -> Result<PathBuf, String> {
-    let live_dir = games_dir.join(game_name);
+    validate_game_folder_name(slug)?;
+    let live_dir = games_dir.join(slug);
     let tmp_live = games_dir.join(format!(".tmp_publish_{}", Uuid::new_v4()));
     if tmp_live.exists() {
         fs::remove_dir_all(&tmp_live).map_err(|e| e.to_string())?;

@@ -43,7 +43,10 @@ pub fn GameDetailPage(name: String) -> Element {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Data { game_types: Vec<GameTypeInfo> }
-            let q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson activePlayers featured tags creatorDisplayName avgSessionMins coverImageUrl } }"#;
+            let q = format!(
+                "query {{ gameTypes {{ {} }} }}",
+                crate::models::GAME_TYPES_GQL_FIELDS
+            );
             match graphql_post::<Data>(q).await {
                 Ok(d) => game_types.set(d.game_types),
                 Err(e) => error_msg.set(Some(e)),
@@ -62,7 +65,7 @@ pub fn GameDetailPage(name: String) -> Element {
             struct Sf { game_storefront: GameStorefront }
             if let Ok(s) = graphql_exec::<Sf>(
                 r#"query($t: String!) { gameStorefront(gameType: $t) {
-                    gameName shortTagline longDescription screenshots { id caption gradient imageUrl }
+                    slug gameName shortTagline longDescription screenshots { id caption gradient imageUrl }
                     patchNotes { version date title body tags } tags avgSessionMins
                     aspectRatings { gameplay balance visuals social depth }
                     reviewCount canEdit updatedAt
@@ -127,7 +130,7 @@ pub fn GameDetailPage(name: String) -> Element {
             }
         });
     });
-    let gt = game_types().into_iter().find(|g| g.name == name);
+    let gt = game_types().into_iter().find(|g| g.slug == name);
     let sf = storefront();
     let creator_label = sf
         .as_ref()

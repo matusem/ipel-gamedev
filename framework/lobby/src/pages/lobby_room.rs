@@ -35,7 +35,10 @@ pub fn LobbyRoomPage(
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Gt { game_types: Vec<GameTypeInfo> }
-            let gt_q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson coverImageUrl activePlayers featured tags creatorDisplayName avgSessionMins } }"#;
+            let gt_q = format!(
+                "query {{ gameTypes {{ {} }} }}",
+                crate::models::GAME_TYPES_GQL_FIELDS
+            );
             if let Ok(g) = graphql_post::<Gt>(gt_q).await {
                 game_types_f.set(g.game_types);
             }

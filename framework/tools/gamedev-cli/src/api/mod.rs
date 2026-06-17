@@ -64,6 +64,8 @@ pub struct UploadGameZip {
 #[derive(Debug, Deserialize)]
 pub struct DraftLite {
     pub id: String,
+    #[serde(default)]
+    pub slug: String,
     #[serde(rename = "gameName")]
     pub game_name: String,
     pub version: String,
@@ -166,7 +168,7 @@ pub fn gql_upload_game_zip(server_url: &str, token: &str, zip: &Path) -> Result<
       uploadGameZip(filename: $filename, zipBase64: $zipBase64) {
         uploadId
         report { ok errors warnings infos diagnostics { severity code message } }
-        draft { id gameName version status }
+        draft { id slug gameName version status }
       }
     }"#;
     let raw = gql_raw(

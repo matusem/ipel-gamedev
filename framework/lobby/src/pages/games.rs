@@ -24,7 +24,10 @@ pub fn GamesListPage() -> Element {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Data { game_types: Vec<GameTypeInfo> }
-            let q = r#"query { gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson coverImageUrl } }"#;
+            let q = format!(
+                "query {{ gameTypes {{ {} }} }}",
+                crate::models::GAME_TYPES_GQL_FIELDS
+            );
             match graphql_post::<Data>(q).await {
                 Ok(d) => game_types.set(d.game_types),
                 Err(e) => error_msg.set(Some(e)),

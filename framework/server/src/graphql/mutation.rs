@@ -29,6 +29,15 @@ use super::{
     require_registered_user, require_superadmin_user, is_superadmin,
 };
 
+fn draft_slug(draft: &db::GameDraftRow) -> Result<String, Error> {
+    if draft.slug.trim().is_empty() {
+        return Err(Error::new(
+            "draft has no slug; re-upload the game zip to assign a catalog slug",
+        ));
+    }
+    Ok(draft.slug.clone())
+}
+
 async fn issue_auth_session(pool: &SqlitePool, user: UserGql) -> Result<AuthSessionGql> {
     let uid = Uuid::parse_str(user.id.as_str()).map_err(|_| Error::new("invalid user id"))?;
     let (token, expires_at) = auth_sessions::create_session(pool, uid)
@@ -407,14 +416,25 @@ impl MutationRoot {
             &bytes,
             component_db,
             drafts_dir,
-            Some(games_dir.as_path()),
+            None,
+            None,
         )
         .await;
         match validation {
             Ok(ok) => {
+                let game = db::get_or_create_game(
+                    pool,
+                    uid,
+                    &ok.manifest.name,
+                    &ok.manifest.display_name,
+                    games_dir.as_path(),
+                )
+                .await
+                .map_err(|e| Error::new(format!("db: {e}")))?;
                 tracing::info!(
                     user_id = %uid,
-                    game_type = %ok.manifest.name,
+                    manifest_name = %ok.manifest.name,
+                    slug = %game.slug,
                     version = %ok.manifest.version,
                     "upload game zip validated"
                 );
@@ -425,8 +445,9 @@ impl MutationRoot {
                     .map_err(|e| Error::new(format!("db: {e}")))?;
                 let manifest_json = serde_json::to_string(&ok.manifest)
                     .map_err(|e| Error::new(format!("serialize manifest: {e}")))?;
-                let taken = db::count_game_drafts_name_version_active(
+                let taken = db::count_game_drafts_owner_name_version_active(
                     pool,
+                    uid,
                     &ok.manifest.name,
                     &ok.manifest.version,
                     None,
@@ -435,7 +456,7 @@ impl MutationRoot {
                 .map_err(|e| Error::new(format!("db: {e}")))?;
                 if taken > 0 {
                     return Err(Error::new(format!(
-                        "Game name {:?} with version {:?} is already used by another draft or published record. Change the manifest (or edit the draft after upload) and try again.",
+                        "You already have a draft or published record for game {:?} version {:?}. Bump the version in manifest.json and try again.",
                         ok.manifest.name, ok.manifest.version
                     )));
                 }
@@ -447,6 +468,7 @@ impl MutationRoot {
                         game_name: &ok.manifest.name,
                         display_name: &ok.manifest.display_name,
                         version: &ok.manifest.version,
+                        slug: &game.slug,
                         status: "ready",
                         manifest_json: &manifest_json,
                         report_json: &report_json,
@@ -458,7 +480,7 @@ impl MutationRoot {
                     let msg = e.to_string();
                     if msg.contains("UNIQUE") {
                         Error::new(
-                            "A draft or published record already uses this game name and version.",
+                            "A draft or published record already uses this game name and version for your account.",
                         )
                     } else {
                         Error::new(format!("db: {msg}"))
@@ -466,14 +488,29 @@ impl MutationRoot {
                 })?;
 
                 let mut publish_warning = None;
-                if let Err(e) = validate_game_folder_name(&ok.manifest.name) {
+                if let Err(e) = validate_game_folder_name(&game.slug) {
                     publish_warning = Some(format!("Auto-publish skipped: {e}"));
+                } else if !db::game_owner_matches_slug(pool, &game.slug, uid)
+                    .await
+                    .unwrap_or(false)
+                {
+                    publish_warning =
+                        Some("Auto-publish skipped: slug ownership mismatch.".to_string());
                 } else {
-                    match publish_staged_game(&ok.staged_dir, games_dir, &ok.manifest.name) {
+                    match publish_staged_game(&ok.staged_dir, games_dir, &game.slug) {
                         Ok(_) => {
                             if let Err(e) = db::mark_draft_published(pool, draft_id).await {
                                 publish_warning =
                                     Some(format!("Auto-publish failed (db): {e}"));
+                            } else if let Err(e) = db::update_game_current_version(
+                                pool,
+                                &game.slug,
+                                &ok.manifest.version,
+                            )
+                            .await
+                            {
+                                publish_warning =
+                                    Some(format!("Auto-publish failed (version): {e}"));
                             } else {
                                 let mut reg = registry
                                     .write()
@@ -557,10 +594,20 @@ impl MutationRoot {
         if draft.status != "ready" {
             return Err(Error::new("draft is not publishable"));
         }
-        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
+        let slug = draft_slug(&draft)?;
+        if !db::game_owner_matches_slug(pool, &slug, draft.owner_user_id)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+        {
+            return Err(Error::new("you do not own this game slug"));
+        }
+        validate_game_folder_name(&slug).map_err(|m| Error::new(m.to_string()))?;
         let staged = PathBuf::from(&draft.storage_path);
-        publish_staged_game(&staged, games_dir, &draft.game_name).map_err(Error::new)?;
+        publish_staged_game(&staged, games_dir, &slug).map_err(Error::new)?;
         db::mark_draft_published(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        db::update_game_current_version(pool, &slug, &draft.version)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         {
@@ -603,17 +650,18 @@ impl MutationRoot {
         if draft.status != "published" {
             return Err(Error::new("draft is not published"));
         }
-        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
+        let slug = draft_slug(&draft)?;
+        validate_game_folder_name(&slug).map_err(|m| Error::new(m.to_string()))?;
 
-        let max_pa = db::max_published_at_for_game_name(pool, &draft.game_name)
+        let max_pa = db::max_published_at_for_slug(pool, &slug)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         let my_pa = draft.published_at;
         let this_is_latest_published = matches!((my_pa, max_pa), (Some(t), Some(m)) if t == m);
 
         if this_is_latest_published {
-            remove_published_game_dir(games_dir, &draft.game_name).map_err(Error::new)?;
-            db::demote_all_published_for_game_name(pool, &draft.game_name)
+            remove_published_game_dir(games_dir, &slug).map_err(Error::new)?;
+            db::demote_all_published_for_slug(pool, &slug)
                 .await
                 .map_err(|e| Error::new(format!("db: {e}")))?;
         } else {
@@ -648,6 +696,7 @@ impl MutationRoot {
     ) -> Result<GameDraftGql> {
         let uid = require_developer_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
         let did = Uuid::parse_str(draft_id.as_str()).map_err(|_| Error::new("invalid draft id"))?;
         let draft = db::get_game_draft(pool, did)
             .await
@@ -679,8 +728,11 @@ impl MutationRoot {
         manifest.description = description;
         let manifest_json = serde_json::to_string(&manifest)
             .map_err(|e| Error::new(format!("serialize manifest: {e}")))?;
-        let clash = db::count_game_drafts_name_version_active(
+        let is_sa = is_superadmin(pool, uid).await.unwrap_or(false);
+        let owner_for_sql = if is_sa { draft.owner_user_id } else { uid };
+        let clash = db::count_game_drafts_owner_name_version_active(
             pool,
+            owner_for_sql,
             &manifest.name,
             &manifest.version,
             Some(did),
@@ -689,16 +741,23 @@ impl MutationRoot {
         .map_err(|e| Error::new(format!("db: {e}")))?;
         if clash > 0 {
             return Err(Error::new(
-                "Another draft or published record already uses this name and version. Pick a different combination.",
+                "Another draft or published record already uses this name and version for this account. Pick a different combination.",
             ));
         }
+        let game = db::get_or_create_game(
+            pool,
+            owner_for_sql,
+            &manifest.name,
+            &manifest.display_name,
+            games_dir.as_path(),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
         let staged = PathBuf::from(&draft.storage_path);
         if !staged.is_dir() {
             return Err(Error::new("draft storage is missing on disk"));
         }
         write_manifest_to_staged_dir(&staged, &manifest).map_err(Error::new)?;
-        let is_sa = is_superadmin(pool, uid).await.unwrap_or(false);
-        let owner_for_sql = if is_sa { draft.owner_user_id } else { uid };
         let updated = db::update_game_draft_manifest_columns(
             pool,
             did,
@@ -706,6 +765,7 @@ impl MutationRoot {
             &manifest.name,
             &manifest.display_name,
             &manifest.version,
+            &game.slug,
             &manifest_json,
         )
         .await
@@ -1352,10 +1412,14 @@ impl MutationRoot {
         if draft.status != "ready" {
             return Err(Error::new("draft is not publishable"));
         }
-        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
+        let slug = draft_slug(&draft)?;
+        validate_game_folder_name(&slug).map_err(|m| Error::new(m.to_string()))?;
         let staged = PathBuf::from(&draft.storage_path);
-        publish_staged_game(&staged, games_dir, &draft.game_name).map_err(Error::new)?;
+        publish_staged_game(&staged, games_dir, &slug).map_err(Error::new)?;
         db::mark_draft_published(pool, did)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        db::update_game_current_version(pool, &slug, &draft.version)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         {
@@ -1389,15 +1453,16 @@ impl MutationRoot {
         if draft.status != "published" {
             return Err(Error::new("draft is not published"));
         }
-        validate_game_folder_name(&draft.game_name).map_err(|m| Error::new(m.to_string()))?;
-        let max_pa = db::max_published_at_for_game_name(pool, &draft.game_name)
+        let slug = draft_slug(&draft)?;
+        validate_game_folder_name(&slug).map_err(|m| Error::new(m.to_string()))?;
+        let max_pa = db::max_published_at_for_slug(pool, &slug)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         let my_pa = draft.published_at;
         let this_is_latest_published = matches!((my_pa, max_pa), (Some(t), Some(m)) if t == m);
         if this_is_latest_published {
-            remove_published_game_dir(games_dir, &draft.game_name).map_err(Error::new)?;
-            db::demote_all_published_for_game_name(pool, &draft.game_name)
+            remove_published_game_dir(games_dir, &slug).map_err(Error::new)?;
+            db::demote_all_published_for_slug(pool, &slug)
                 .await
                 .map_err(|e| Error::new(format!("db: {e}")))?;
         } else {

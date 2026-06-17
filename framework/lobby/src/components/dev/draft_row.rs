@@ -46,6 +46,9 @@ pub fn DeveloperDraftRow(
                         }
                         span { class: "text-on-surface font-semibold", "{draft.display_name}" }
                         span { class: "text-outline text-sm", "({draft.game_name})" }
+                        if !draft.slug.is_empty() {
+                            span { class: "text-outline text-xs font-mono-code", "slug: {draft.slug}" }
+                        }
                         span { class: "text-primary text-sm font-mono-code", "v{draft.version}" }
                     }
                     p { class: "text-xs text-outline font-mono-code",
@@ -57,15 +60,11 @@ pub fn DeveloperDraftRow(
                 }
                 if status == "ready" {
                     p { class: "text-xs text-on-surface-variant",
-                        "Adjust how the game appears in the lobby, then save before publishing. Folder name uses "
-                        span { class: "font-mono-code text-primary", "name" }
-                        " (letters, digits, "
-                        span { class: "font-mono", "_ -" }
-                        " only)."
+                        "Adjust manifest fields, then save before publishing. The live catalog slug is assigned by the server (shown above)."
                     }
                     div { class: "grid sm:grid-cols-2 gap-3",
                         label { class: "block space-y-1",
-                            span { class: "text-label-caps font-label-caps text-outline uppercase", "name (folder id)" }
+                            span { class: "text-label-caps font-label-caps text-outline uppercase", "manifest name" }
                             input {
                                 class: "input-field font-mono-code",
                                 value: "{publish_name()}",

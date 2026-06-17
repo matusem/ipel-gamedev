@@ -126,7 +126,7 @@ pub fn DeveloperUploadsPage() -> Element {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 struct Wrap { my_game_drafts: Vec<GameDraftShort> }
-                let q = "query { myGameDrafts { id gameName displayName version status manifestJson createdAt publishedAt } }";
+                let q = "query { myGameDrafts { id slug gameName displayName version status manifestJson createdAt publishedAt } }";
                 match graphql_post::<Wrap>(q).await {
                     Ok(v) => drafts.set(v.my_game_drafts),
                     Err(e) => err.set(Some(e)),

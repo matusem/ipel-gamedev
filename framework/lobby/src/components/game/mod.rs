@@ -15,7 +15,7 @@ use dioxus::prelude::*;
 fn resolve_cover(gt: &GameTypeInfo) -> String {
     gt.cover_image_url
         .clone()
-        .or_else(|| cover_image_url(&gt.name).map(str::to_string))
+        .or_else(|| cover_image_url(&gt.slug).map(str::to_string))
         .unwrap_or_default()
 }
 
@@ -74,7 +74,7 @@ pub fn GameCard(
 #[component]
 pub fn TrendingGameCard(gt: GameTypeInfo) -> Element {
     let nav = use_navigator();
-    let name = gt.name.clone();
+    let slug = gt.slug.clone();
     let cover = resolve_cover(&gt);
     let active = gt.active_players;
     let active_dot = if active > 0 {
@@ -82,11 +82,12 @@ pub fn TrendingGameCard(gt: GameTypeInfo) -> Element {
     } else {
         "status-dot-full"
     };
+    let owner_hint = gt.owner_name.clone();
     rsx! {
         div {
             class: "trending-card group",
             onclick: move |_| {
-                nav.push(LobbyRoute::GameDetail { name: name.clone() });
+                nav.push(LobbyRoute::GameDetail { name: slug.clone() });
             },
             div { class: "aspect-video relative overflow-hidden bg-surface-container-high",
                 if !cover.is_empty() {
@@ -110,7 +111,12 @@ pub fn TrendingGameCard(gt: GameTypeInfo) -> Element {
             }
             div { class: "p-4 space-y-3",
                 div { class: "flex justify-between items-start",
-                    h3 { class: "font-manrope text-lg font-semibold text-on-surface", "{gt.display_name}" }
+                    div { class: "min-w-0",
+                        h3 { class: "font-manrope text-lg font-semibold text-on-surface", "{gt.display_name}" }
+                        if let Some(ref owner) = owner_hint {
+                            p { class: "text-xs text-outline truncate", "by {owner}" }
+                        }
+                    }
                     if gt.avg_session_mins > 0 {
                         span { class: "text-xs font-mono-code text-outline", "~{gt.avg_session_mins} min" }
                     }
@@ -130,13 +136,14 @@ pub fn GameTypeCatalogCard(gt: GameTypeInfo) -> Element {
     let nav = use_navigator();
     let desc = gt.description.trim();
     let about_url = game_type_about_url(&gt);
-    let name = gt.name.clone();
+    let slug = gt.slug.clone();
     let cover = resolve_cover(&gt);
+    let owner_hint = gt.owner_name.clone();
     rsx! {
         div {
             class: "game-catalog-card p-4 flex flex-col gap-3 cursor-pointer group",
             onclick: move |_| {
-                nav.push(LobbyRoute::GameDetail { name: name.clone() });
+                nav.push(LobbyRoute::GameDetail { name: slug.clone() });
             },
             div { class: "aspect-video rounded-lg bg-surface-container-high relative overflow-hidden border border-outline-variant/30",
                 if !cover.is_empty() {
@@ -154,6 +161,9 @@ pub fn GameTypeCatalogCard(gt: GameTypeInfo) -> Element {
             }
             div { class: "min-w-0 flex-1",
                 p { class: "font-manrope font-semibold text-on-surface", "{gt.display_name}" }
+                if let Some(ref owner) = owner_hint {
+                    p { class: "text-xs text-outline", "by {owner}" }
+                }
                 p { class: "text-mono-code font-mono-code text-outline mt-0.5", "{gt.name} · v{gt.version}" }
                 p { class: "text-label-caps font-label-caps text-secondary mt-1 uppercase", "{gt.min_players}–{gt.max_players} players" }
                 if !desc.is_empty() {

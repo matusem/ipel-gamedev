@@ -25,7 +25,7 @@ pub fn LobbyActiveGame(
     } else {
         gt_list
             .iter()
-            .find(|g| g.name == selected_game_type)
+            .find(|g| g.slug == selected_game_type)
             .and_then(game_type_cover_url)
     };
 
@@ -193,11 +193,11 @@ pub fn LobbyGameModal(
                     div { class: "lobby-game-modal-list",
                         for gt in gt_list.iter().cloned() {
                             {
-                                let active = !no_game_yet && gt.name == selected_game_type;
-                                let media = game_media(&gt.name);
+                                let active = !no_game_yet && gt.slug == selected_game_type;
+                                let media = game_media(&gt.slug);
                                 let cover = game_type_cover_url(&gt);
                                 let lid = lobby_id.clone();
-                                let gtn = gt.name.clone();
+                                let gtn = gt.slug.clone();
                                 let desc = gt.description.trim();
                                 let on_close = on_close;
                                 let on_detail_updated = on_detail_updated;

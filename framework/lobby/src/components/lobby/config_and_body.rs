@@ -394,12 +394,12 @@ pub fn LobbyRoomBody(
     let no_game_yet = lobby_for_cols.game_type.trim().is_empty();
     let selected_gt = gt_list
         .iter()
-        .find(|g| g.name == lobby_for_cols.game_type)
+        .find(|g| g.slug == lobby_for_cols.game_type)
         .cloned();
     let iframe_src = selected_gt.as_ref().and_then(|g| {
         g.config_ui_path
             .as_ref()
-            .map(|p| format!("/games/{}/{}", g.name, p))
+            .map(|p| format!("/games/{}/{}", g.slug, p))
     });
     let schema_json = selected_gt
         .as_ref()

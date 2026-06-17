@@ -29,7 +29,7 @@ pub fn LobbyRoomHeader(
     } else {
         gt_list
             .iter()
-            .find(|g| g.name == game_type)
+            .find(|g| g.slug == game_type)
             .and_then(game_type_cover_url)
     };
 

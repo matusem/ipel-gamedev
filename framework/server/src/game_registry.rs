@@ -35,13 +35,15 @@ fn default_supports_spectators() -> bool {
 
 #[derive(Debug, Clone)]
 pub struct GameType {
+    /// Live catalog key (folder name under `GAMES_DIR`).
+    pub slug: String,
     pub manifest: GameManifest,
     pub client_dir: PathBuf,
-    /// Relative path under `client/` served at `/games/{name}/{path}` when present.
+    /// Relative path under `client/` served at `/games/{slug}/{path}` when present.
     pub config_ui_path: Option<String>,
-    /// Relative path under `client/` for `/games/{name}/{path}` result screen iframe when present.
+    /// Relative path under `client/` for `/games/{slug}/{path}` result screen iframe when present.
     pub result_ui_path: Option<String>,
-    /// Relative path under `client/` for `/games/{name}/{path}` about/info screen when present.
+    /// Relative path under `client/` for `/games/{slug}/{path}` about/info screen when present.
     pub about_ui_path: Option<String>,
 }
 
@@ -71,6 +73,15 @@ impl GameRegistry {
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
+                continue;
+            }
+
+            let folder_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            if folder_name.is_empty() || folder_name.starts_with('.') {
                 continue;
             }
 
@@ -104,17 +115,19 @@ impl GameRegistry {
                 continue;
             }
 
+            let slug = folder_name.clone();
             match std::fs::read(&logic_path) {
                 Ok(wasm_bytes) => {
-                    match component_db.insert_components_as_wasm_bytes(&manifest.name, &wasm_bytes)
+                    match component_db.insert_components_as_wasm_bytes(&slug, &wasm_bytes)
                     {
                         Ok(_) => tracing::info!(
                             display_name = %manifest.display_name,
-                            game_type = %manifest.name,
+                            slug = %slug,
+                            manifest_name = %manifest.name,
                             "loaded game component"
                         ),
                         Err(e) => {
-                            tracing::warn!(game_type = %manifest.name, error = %e, "failed to load game wasm");
+                            tracing::warn!(slug = %slug, error = %e, "failed to load game wasm");
                             continue;
                         }
                     }
@@ -156,6 +169,7 @@ impl GameRegistry {
             };
 
             game_types.push(GameType {
+                slug,
                 manifest,
                 client_dir,
                 config_ui_path,
@@ -177,10 +191,10 @@ impl GameRegistry {
         &self.game_types
     }
 
-    pub fn get_client_dir(&self, name: &str) -> Option<&Path> {
+    pub fn get_client_dir(&self, slug: &str) -> Option<&Path> {
         self.game_types
             .iter()
-            .find(|gt| gt.manifest.name == name)
+            .find(|gt| gt.slug == slug)
             .map(|gt| gt.client_dir.as_path())
     }
 }

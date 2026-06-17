@@ -49,6 +49,7 @@ fn game_type_entry(
 ) -> Value {
     use crate::stub::demo_images::cover_image_url;
     json!({
+        "slug": name,
         "name": name,
         "displayName": display_name,
         "version": version,
@@ -664,10 +665,10 @@ fn my_tokens() -> Value {
 
 fn my_drafts() -> Value {
     json!([
-        { "id": "draft-1", "gameName": "tic_tac_toe", "displayName": "Tic Tac Toe", "version": "1.1.0", "status": "validated", "manifestJson": r#"{"description":"Next minor with UX polish"}"#, "createdAt": ago_days(3), "publishedAt": null },
-        { "id": "draft-2", "gameName": "chess", "displayName": "Chess", "version": "0.5.0", "status": "draft", "manifestJson": r#"{"description":"Fischer random experiment"}"#, "createdAt": ago_days(7), "publishedAt": null },
-        { "id": "draft-3", "gameName": "tic_tac_toe", "displayName": "Tic Tac Toe", "version": "1.0.0", "status": "published", "manifestJson": r#"{"description":"Live on platform"}"#, "createdAt": ago_days(90), "publishedAt": ago_days(30) },
-        { "id": "draft-4", "gameName": "go", "displayName": "Go", "version": "0.2.1", "status": "validated", "manifestJson": r#"{"description":"Byo-yomi timer polish"}"#, "createdAt": ago_days(5), "publishedAt": null }
+        { "id": "draft-1", "slug": "tic_tac_toe", "gameName": "tic_tac_toe", "displayName": "Tic Tac Toe", "version": "1.1.0", "status": "validated", "manifestJson": r#"{"description":"Next minor with UX polish"}"#, "createdAt": ago_days(3), "publishedAt": null },
+        { "id": "draft-2", "slug": "chess", "gameName": "chess", "displayName": "Chess", "version": "0.5.0", "status": "draft", "manifestJson": r#"{"description":"Fischer random experiment"}"#, "createdAt": ago_days(7), "publishedAt": null },
+        { "id": "draft-3", "slug": "tic_tac_toe", "gameName": "tic_tac_toe", "displayName": "Tic Tac Toe", "version": "1.0.0", "status": "published", "manifestJson": r#"{"description":"Live on platform"}"#, "createdAt": ago_days(90), "publishedAt": ago_days(30) },
+        { "id": "draft-4", "slug": "go", "gameName": "go", "displayName": "Go", "version": "0.2.1", "status": "validated", "manifestJson": r#"{"description":"Byo-yomi timer polish"}"#, "createdAt": ago_days(5), "publishedAt": null }
     ])
 }
 

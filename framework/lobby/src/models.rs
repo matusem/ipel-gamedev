@@ -11,10 +11,19 @@ pub const ACTIVE_GAME_KEY: &str = "upjs_gdd_active_game";
 pub const LOBBIES_QUERY: &str =
     r#"query { lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt } }"#;
 
+/// GraphQL field list for `gameTypes` catalog queries.
+pub const GAME_TYPES_GQL_FIELDS: &str =
+    "slug name displayName ownerName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson coverImageUrl activePlayers featured tags creatorDisplayName avgSessionMins";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameTypeInfo {
+    /// Live catalog key (URL segment, lobby `gameType`).
+    pub slug: String,
+    /// Manifest `name` (per-owner logical name).
     pub name: String,
+    #[serde(default)]
+    pub owner_name: Option<String>,
     pub display_name: String,
     pub version: String,
     pub min_players: u32,
@@ -417,6 +426,7 @@ pub struct UploadReport {
 #[serde(rename_all = "camelCase")]
 pub struct GameDraftShort {
     pub id: String,
+    pub slug: String,
     pub game_name: String,
     pub display_name: String,
     pub version: String,
@@ -426,24 +436,30 @@ pub struct GameDraftShort {
     pub published_at: Option<i64>,
 }
 
-pub fn game_type_display_title(types: &[GameTypeInfo], stored_name: &str) -> String {
-    let t = stored_name.trim();
+pub fn game_type_display_title(types: &[GameTypeInfo], stored_slug: &str) -> String {
+    let t = stored_slug.trim();
     if t.is_empty() {
         return "No game selected yet".to_string();
     }
     types
         .iter()
-        .find(|g| g.name == t)
-        .map(|g| g.display_name.clone())
+        .find(|g| g.slug == t)
+        .map(|g| {
+            if let Some(ref owner) = g.owner_name {
+                format!("{} · {}", g.display_name, owner)
+            } else {
+                g.display_name.clone()
+            }
+        })
         .unwrap_or_else(|| t.to_string())
 }
 
-pub fn game_type_description(types: &[GameTypeInfo], stored_name: &str) -> Option<String> {
-    let t = stored_name.trim();
+pub fn game_type_description(types: &[GameTypeInfo], stored_slug: &str) -> Option<String> {
+    let t = stored_slug.trim();
     if t.is_empty() {
         return None;
     }
-    types.iter().find(|g| g.name == t).and_then(|g| {
+    types.iter().find(|g| g.slug == t).and_then(|g| {
         let d = g.description.trim();
         if d.is_empty() {
             None
@@ -456,7 +472,7 @@ pub fn game_type_description(types: &[GameTypeInfo], stored_name: &str) -> Optio
 pub fn game_type_cover_url(gt: &GameTypeInfo) -> Option<String> {
     gt.cover_image_url
         .clone()
-        .or_else(|| crate::stub::demo_images::cover_image_url(&gt.name).map(str::to_string))
+        .or_else(|| crate::stub::demo_images::cover_image_url(&gt.slug).map(str::to_string))
 }
 
 /// Link to the published game's `about.html` (served by the Actix backend).
@@ -467,7 +483,7 @@ pub fn game_type_about_url(gt: &GameTypeInfo) -> Option<String> {
     }
     gt.about_ui_path
         .as_ref()
-        .map(|path| format!("/games/{}/{}", gt.name, path))
+        .map(|path| format!("/games/{}/{}", gt.slug, path))
 }
 
 pub fn lobby_status_dot_class(status: &str, seats_filled: i32, seats_total: i32) -> &'static str {
@@ -668,6 +684,7 @@ pub struct AspectRatings {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameStorefront {
+    pub slug: String,
     pub game_name: String,
     pub short_tagline: Option<String>,
     pub long_description: String,
@@ -789,6 +806,7 @@ pub struct AdminUserRow {
 pub struct AdminDraftRow {
     pub id: String,
     pub owner_user_id: String,
+    pub slug: String,
     pub game_name: String,
     pub display_name: String,
     pub version: String,

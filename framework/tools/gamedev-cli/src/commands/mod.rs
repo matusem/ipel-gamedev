@@ -159,10 +159,16 @@ pub fn run_deploy(args: DeployArgs) -> Result<()> {
     reporter::status(
         "draft",
         &format!(
-            "{} {} {} {}",
-            draft.id, draft.game_name, draft.version, draft.status
+            "{} slug={} name={} {} {}",
+            draft.id, draft.slug, draft.game_name, draft.version, draft.status
         ),
     );
+    if !draft.slug.is_empty() {
+        reporter::hint(&format!(
+            "Live catalog URL path: /games/{}/",
+            draft.slug
+        ));
+    }
     let should_publish = (args.publish || args.auto_publish) && !args.draft_only;
     if should_publish {
         api::gql_simple_mutation(&server_url, &tok.token, "publishGameDraft", &draft.id)?;
@@ -182,11 +188,12 @@ pub fn run_drafts(args: DraftsArgs) -> Result<()> {
             #[serde(rename_all = "camelCase")]
             struct Draft {
                 id: String,
+                slug: String,
                 game_name: String,
                 version: String,
                 status: String,
             }
-            let q = r#"query { myGameDrafts { id gameName version status } }"#;
+            let q = r#"query { myGameDrafts { id slug gameName version status } }"#;
             let raw = api::gql_raw(&server_url, &tok.token, q, json!({}))?;
             let v: serde_json::Value = serde_json::from_str(&raw)?;
             let drafts: Vec<Draft> = serde_json::from_value(
@@ -199,12 +206,13 @@ pub fn run_drafts(args: DraftsArgs) -> Result<()> {
                 reporter::hint("no drafts found");
             } else {
                 reporter::print_table(
-                    &["ID", "Game", "Version", "Status"],
+                    &["ID", "Slug", "Name", "Version", "Status"],
                     drafts
                         .iter()
                         .map(|d| {
                             vec![
                                 d.id.clone(),
+                                d.slug.clone(),
                                 d.game_name.clone(),
                                 d.version.clone(),
                                 d.status.clone(),
@@ -304,12 +312,13 @@ fn show_draft_manifest(server_url: &str, token: &str, draft_id: &str) -> Result<
     struct Draft {
         id: String,
         game_name: String,
+        slug: String,
         display_name: String,
         version: String,
         status: String,
         manifest_json: String,
     }
-    let q = r#"query($id: ID!) { gameDraft(id: $id) { id gameName displayName version status manifestJson } }"#;
+    let q = r#"query($id: ID!) { gameDraft(id: $id) { id slug gameName displayName version status manifestJson } }"#;
     let raw = api::gql_raw(server_url, token, q, json!({ "id": draft_id }))?;
     let v: serde_json::Value = serde_json::from_str(&raw)?;
     let draft: Draft = serde_json::from_value(
@@ -322,6 +331,7 @@ fn show_draft_manifest(server_url: &str, token: &str, draft_id: &str) -> Result<
         &["Field", "Value"],
         vec![
             vec!["id".into(), draft.id],
+            vec!["slug".into(), draft.slug],
             vec!["gameName".into(), draft.game_name],
             vec!["displayName".into(), draft.display_name],
             vec!["version".into(), draft.version],

@@ -46,19 +46,29 @@ impl QueryRoot {
         }
         let mut out = Vec::new();
         for gt in game_types {
+            let slug = gt.slug.clone();
             let name = gt.manifest.name.clone();
+            let owner_name = match db::game_by_slug(pool, &slug).await {
+                Ok(Some(g)) => db::get_user_display_name(pool, g.owner_user_id)
+                    .await
+                    .ok()
+                    .flatten(),
+                _ => None,
+            };
             let (featured, creator, tags, avg_mins) =
-                game_storefront::catalog_meta_for_game(pool, &name)
+                game_storefront::catalog_meta_for_game(pool, &slug)
                     .await
                     .unwrap_or((false, None, vec![], 10));
-            let cover = game_storefront::get_storefront(pool, &name)
+            let cover = game_storefront::get_storefront(pool, &slug)
                 .await
                 .ok()
                 .flatten()
                 .and_then(|sf| sf.screenshots.first().and_then(|s| s.image_url.clone()))
-                .or_else(|| game_storefront::default_cover_image(&name));
+                .or_else(|| game_storefront::default_cover_image(&slug));
             out.push(GameTypeGql {
+                slug: slug.clone(),
                 name: name.clone(),
+                owner_name,
                 display_name: gt.manifest.display_name.clone(),
                 version: gt.manifest.version.clone(),
                 min_players: gt.manifest.min_players,
@@ -73,7 +83,7 @@ impl QueryRoot {
                     .as_ref()
                     .and_then(|v| serde_json::to_string(v).ok()),
                 cover_image_url: cover,
-                active_players: *live_players.get(&name).unwrap_or(&0),
+                active_players: *live_players.get(&slug).unwrap_or(&0),
                 featured,
                 tags,
                 creator_display_name: creator,
@@ -350,14 +360,19 @@ impl QueryRoot {
             .map_err(|_| Error::new("registry lock poisoned"))?
             .game_types()
             .iter()
-            .map(|gt| (gt.manifest.name.clone(), gt.manifest.version.clone()))
+            .map(|gt| (gt.slug.clone(), gt.manifest.version.clone()))
             .collect();
         Ok(rows
             .into_iter()
             .filter_map(|d| {
                 let deployed_at = d.published_at?;
+                let slug = if d.slug.is_empty() {
+                    d.game_name.clone()
+                } else {
+                    d.slug.clone()
+                };
                 let status = if live_versions
-                    .get(&d.game_name)
+                    .get(&slug)
                     .is_some_and(|v| v == &d.version)
                 {
                     "Live".into()
@@ -366,7 +381,7 @@ impl QueryRoot {
                 };
                 Some(DeploymentGql {
                     id: d.id.to_string().into(),
-                    game_name: d.game_name,
+                    game_name: slug,
                     display_name: d.display_name,
                     version: d.version,
                     status,
@@ -384,7 +399,7 @@ impl QueryRoot {
         let _uid = require_registered_user(ctx).await?;
         let pool = ctx.data::<SqlitePool>()?;
         let reg = ctx.data::<Arc<RwLock<GameRegistry>>>()?;
-        let rows = db::list_published_versions_for_game(pool, &game_type)
+        let rows = db::list_published_versions_for_slug(pool, &game_type)
             .await
             .map_err(|e| Error::new(format!("db: {e}")))?;
         let live_versions: std::collections::HashMap<String, String> = reg
@@ -392,14 +407,19 @@ impl QueryRoot {
             .map_err(|_| Error::new("registry lock poisoned"))?
             .game_types()
             .iter()
-            .map(|gt| (gt.manifest.name.clone(), gt.manifest.version.clone()))
+            .map(|gt| (gt.slug.clone(), gt.manifest.version.clone()))
             .collect();
         Ok(rows
             .into_iter()
             .filter_map(|d| {
                 let deployed_at = d.published_at?;
+                let slug = if d.slug.is_empty() {
+                    d.game_name.clone()
+                } else {
+                    d.slug.clone()
+                };
                 let status = if live_versions
-                    .get(&d.game_name)
+                    .get(&slug)
                     .is_some_and(|v| v == &d.version)
                 {
                     "Live".into()
@@ -408,7 +428,7 @@ impl QueryRoot {
                 };
                 Some(DeploymentGql {
                     id: d.id.to_string().into(),
-                    game_name: d.game_name,
+                    game_name: slug,
                     display_name: d.display_name,
                     version: d.version,
                     status,
@@ -572,8 +592,15 @@ impl QueryRoot {
             .map_err(|e| Error::new(format!("db: {e}")))?
             .len() as i32;
         let _ = reviews;
+        let manifest_name = db::game_by_slug(pool, &game_type)
+            .await
+            .ok()
+            .flatten()
+            .map(|g| g.name)
+            .unwrap_or_else(|| sf.slug.clone());
         Ok(GameStorefrontGql {
-            game_name: sf.game_name,
+            slug: sf.slug.clone(),
+            game_name: manifest_name,
             short_tagline: sf.short_tagline,
             long_description: sf.long_description,
             screenshots: sf
@@ -833,7 +860,7 @@ impl QueryRoot {
             .into_iter()
             .map(|r| AdminReviewGql {
                 id: r.id.to_string().into(),
-                game_name: r.game_name,
+                game_name: r.slug,
                 display_name: r.display_name,
                 body: r.body,
                 helpful_votes: r.helpful_votes,
@@ -858,7 +885,7 @@ impl QueryRoot {
             .into_iter()
             .map(|c| AdminCommentGql {
                 id: c.id.to_string().into(),
-                game_name: c.game_name,
+                game_name: c.slug,
                 display_name: c.display_name,
                 body: c.body,
                 created_at: c.created_at,

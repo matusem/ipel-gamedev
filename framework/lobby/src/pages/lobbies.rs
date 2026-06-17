@@ -36,10 +36,10 @@ pub fn LobbiesBrowserPage() -> Element {
                 game_types: Vec<GameTypeInfo>,
                 lobbies: Vec<LobbySummary>,
             }
-            let q = r#"query {
-                gameTypes { name displayName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson }
-                lobbies { id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }
-            }"#;
+            let q = format!(
+                "query {{ gameTypes {{ {} }} lobbies {{ id gameType status seatsFilled seatsTotal ownerDisplayName gameInstanceId createdAt }} }}",
+                crate::models::GAME_TYPES_GQL_FIELDS
+            );
             match graphql_post::<Boot>(q).await {
                 Ok(data) => {
                     game_types.set(data.game_types);

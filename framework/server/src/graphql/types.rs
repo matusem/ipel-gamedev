@@ -212,6 +212,7 @@ pub struct AspectRatingsGql {
 
 #[derive(SimpleObject, Clone)]
 pub struct GameStorefrontGql {
+    pub slug: String,
     pub game_name: String,
     pub short_tagline: Option<String>,
     pub long_description: String,
@@ -304,8 +305,12 @@ pub(crate) fn map_aspect_ratings(a: &AspectRatings) -> AspectRatingsGql {
 
 #[derive(SimpleObject, Clone)]
 pub struct GameTypeGql {
+    /// Live catalog key (URL segment, lobby `gameType`).
+    pub slug: String,
+    /// Manifest `name` (per-owner logical name).
     pub name: String,
     pub display_name: String,
+    pub owner_name: Option<String>,
     pub version: String,
     pub min_players: u32,
     pub max_players: u32,
@@ -357,6 +362,7 @@ pub struct GameDraftGql {
     pub id: async_graphql::types::ID,
     pub upload_id: async_graphql::types::ID,
     pub owner_user_id: async_graphql::types::ID,
+    pub slug: String,
     pub game_name: String,
     pub display_name: String,
     pub version: String,
@@ -400,7 +406,7 @@ pub(crate) fn map_finished_row(
         .map(|reg| {
             reg.game_types()
                 .iter()
-                .find(|gt| gt.manifest.name == r.game_type)
+                .find(|gt| gt.slug == r.game_type)
                 .and_then(|gt| gt.result_ui_path.clone())
         })
         .flatten();
@@ -523,6 +529,7 @@ pub(crate) fn map_draft(d: db::GameDraftRow) -> GameDraftGql {
         id: d.id.to_string().into(),
         upload_id: d.upload_id.to_string().into(),
         owner_user_id: d.owner_user_id.to_string().into(),
+        slug: d.slug,
         game_name: d.game_name,
         display_name: d.display_name,
         version: d.version,
