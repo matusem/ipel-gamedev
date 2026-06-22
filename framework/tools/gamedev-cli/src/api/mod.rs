@@ -187,6 +187,54 @@ pub fn gql_upload_game_zip(server_url: &str, token: &str, zip: &Path) -> Result<
     Ok(parsed.data.context("missing data")?.upload_game_zip)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BotUploadResp {
+    pub data: Option<BotUploadData>,
+    pub errors: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BotUploadData {
+    #[serde(rename = "uploadBotZip")]
+    pub upload_bot_zip: BotUploadResult,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BotUploadResult {
+    #[serde(rename = "botId")]
+    pub bot_id: String,
+    pub slug: String,
+    pub report: ValidationReport,
+}
+
+pub fn gql_upload_bot_zip(
+    server_url: &str,
+    token: &str,
+    zip: &Path,
+) -> Result<BotUploadResult> {
+    let bytes = fs::read(zip)?;
+    let q = r#"mutation($filename: String!, $zipBase64: String!) {
+      uploadBotZip(filename: $filename, zipBase64: $zipBase64) {
+        botId slug
+        report { ok errors warnings infos diagnostics { severity code message } }
+      }
+    }"#;
+    let raw = gql_raw(
+        server_url,
+        token,
+        q,
+        json!({
+            "filename": zip.file_name().unwrap_or_default().to_string_lossy(),
+            "zipBase64": base64::engine::general_purpose::STANDARD.encode(bytes)
+        }),
+    )?;
+    let parsed: BotUploadResp = serde_json::from_str(&raw)?;
+    if let Some(errs) = parsed.errors {
+        bail!("graphql errors: {errs}");
+    }
+    Ok(parsed.data.context("missing data")?.upload_bot_zip)
+}
+
 pub fn gql_simple_mutation(
     server_url: &str,
     token: &str,

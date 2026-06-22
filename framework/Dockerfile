@@ -16,12 +16,15 @@ WORKDIR /app
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY game/ game/
+COPY bot/ bot/
 COPY game-wasm-host/ game-wasm-host/
+COPY bot-wasm-host/ bot-wasm-host/
 COPY server/ server/
 COPY games/tic_tac_toe/rust/ games/tic_tac_toe/rust/
+COPY games/tic_tac_toe_bot/rust/ games/tic_tac_toe_bot/rust/
 COPY tools/gamedev-cli/ tools/gamedev-cli/
 COPY sdk/rust/ sdk/rust/
-COPY test.wit ./
+COPY test.wit bot.wit ./
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
@@ -29,10 +32,14 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY game/Cargo.toml game/Cargo.toml
+COPY bot/Cargo.toml bot/Cargo.toml
 COPY game-wasm-host/Cargo.toml game-wasm-host/Cargo.toml
+COPY bot-wasm-host/Cargo.toml bot-wasm-host/Cargo.toml
 COPY server/Cargo.toml server/Cargo.toml
 COPY games/tic_tac_toe/rust/logic/Cargo.toml games/tic_tac_toe/rust/logic/Cargo.toml
 COPY games/tic_tac_toe/rust/component/Cargo.toml games/tic_tac_toe/rust/component/Cargo.toml
+COPY games/tic_tac_toe_bot/rust/logic/Cargo.toml games/tic_tac_toe_bot/rust/logic/Cargo.toml
+COPY games/tic_tac_toe_bot/rust/component/Cargo.toml games/tic_tac_toe_bot/rust/component/Cargo.toml
 COPY tools/gamedev-cli/Cargo.toml tools/gamedev-cli/Cargo.toml
 COPY sdk/rust/shared-types/Cargo.toml sdk/rust/shared-types/Cargo.toml
 COPY sdk/rust/shared/Cargo.toml sdk/rust/shared/Cargo.toml
@@ -48,12 +55,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo chef cook --release --recipe-path recipe.json -p server
 
 COPY game/ game/
+COPY bot/ bot/
 COPY game-wasm-host/ game-wasm-host/
+COPY bot-wasm-host/ bot-wasm-host/
 COPY server/ server/
 COPY games/tic_tac_toe/rust/ games/tic_tac_toe/rust/
+COPY games/tic_tac_toe_bot/rust/ games/tic_tac_toe_bot/rust/
 COPY tools/gamedev-cli/ tools/gamedev-cli/
 COPY sdk/rust/ sdk/rust/
-COPY test.wit ./
+COPY test.wit bot.wit ./
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
@@ -62,14 +72,27 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 
 # Ship tic-tac-toe as the default game bundle
 COPY games/tic_tac_toe/manifest.json /app/games-tic-src/
+COPY games/tic_tac_toe/contract.json /app/games-tic-src/
 COPY games/tic_tac_toe/client/ /app/games-tic-src/client/
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo component build -p tic_tac_toe_component --release \
     && mkdir -p /app/games-bundle/tic_tac_toe/client \
     && cp /app/games-tic-src/manifest.json /app/games-bundle/tic_tac_toe/ \
+    && cp /app/games-tic-src/contract.json /app/games-bundle/tic_tac_toe/ \
     && cp -r /app/games-tic-src/client/. /app/games-bundle/tic_tac_toe/client/ \
     && cp target/wasm32-wasip1/release/tic_tac_toe_component.wasm /app/games-bundle/tic_tac_toe/logic.wasm
+
+# Ship tic-tac-toe bot as the default bot bundle
+COPY games/tic_tac_toe_bot/manifest.json /app/bots-tic-src/
+COPY games/tic_tac_toe_bot/contract/contract.json /app/bots-tic-src/contract.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    cargo component build -p tic_tac_toe_bot_component --release \
+    && mkdir -p /app/bots-bundle/tic_tac_toe_bot \
+    && cp /app/bots-tic-src/manifest.json /app/bots-bundle/tic_tac_toe_bot/ \
+    && cp /app/bots-tic-src/contract.json /app/bots-bundle/tic_tac_toe_bot/contract.json \
+    && cp target/wasm32-wasip1/release/tic_tac_toe_bot_component.wasm /app/bots-bundle/tic_tac_toe_bot/bot.wasm
 
 COPY packages/game-sdk/ /app/packages/game-sdk/
 WORKDIR /app/packages/game-sdk
@@ -109,7 +132,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-RUN mkdir -p /app/data /app/games
+RUN mkdir -p /app/data /app/games /app/bots
 
 COPY --from=builder /app/server-bin /app/server
 
@@ -118,6 +141,8 @@ COPY --from=builder /app/client-lib/ /app/lib/
 COPY --from=builder /app/lobby-dist/ /app/lobby/
 
 COPY --from=builder /app/games-bundle/tic_tac_toe/ /app/games/tic_tac_toe/
+
+COPY --from=builder /app/bots-bundle/tic_tac_toe_bot/ /app/bots/tic_tac_toe_bot/
 
 COPY platform/ /app/platform/
 COPY tools/gamedev-cli/manifest.json /app/tools/gamedev-cli/manifest.json
@@ -131,6 +156,7 @@ ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV DATABASE_URL=sqlite:///app/data/app.db
 ENV GAMES_DIR=/app/games
+ENV BOTS_DIR=/app/bots
 ENV LOBBY_DIR=/app/lobby
 ENV LIB_DIR=/app/lib
 ENV PLATFORM_MANIFEST_DIR=/app/platform

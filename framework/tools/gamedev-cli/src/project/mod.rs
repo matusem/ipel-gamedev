@@ -18,11 +18,43 @@ pub enum ProjectLayout {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectKind {
+    #[default]
+    Game,
+    Bot,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
+    #[serde(default)]
+    pub kind: ProjectKind,
     pub name: String,
+    #[serde(default = "default_backend")]
     pub backend: BackendKind,
+    #[serde(default = "default_frontend")]
     pub frontend: FrontendKind,
+    #[serde(default)]
+    pub game: Option<String>,
+    #[serde(default)]
+    pub game_version: Option<String>,
+    #[serde(default)]
+    pub contract_hash: Option<String>,
+}
+
+fn default_backend() -> BackendKind {
+    BackendKind::Rust
+}
+
+fn default_frontend() -> FrontendKind {
+    FrontendKind::Js
+}
+
+pub fn is_bot_project(root: &Path) -> bool {
+    load_config(root)
+        .map(|c| c.kind == ProjectKind::Bot)
+        .unwrap_or(false)
 }
 
 pub fn is_game_project(root: &Path) -> bool {

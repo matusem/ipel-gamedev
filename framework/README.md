@@ -150,6 +150,20 @@ cargo run -p gamedev-cli -- build
 cargo run -p gamedev-cli -- deploy --server http://localhost:8080
 ```
 
+## Bots
+
+Three categories share one type contract (`contract.json`) and WebSocket bot protocol:
+
+| Category | Runs on | Auth | How to use |
+|----------|---------|------|------------|
+| **Published** | Platform (Wasmtime) | Upload + seat assign | `gamedev deploy` bot project; host adds via lobby picker |
+| **Dev-local** | Developer's machine | User session token | `gamedev bot-run --lobby <uuid>` |
+| **External** | Anywhere | Bot API key (`gbk_…`) | Register in developer area; [protocol doc](docs/bots-external-protocol.md) |
+
+Bot and game settings use a [schema-driven UI](docs/schema-driven-settings.md) (JSON Schema subset + optional WASM validation).
+
+Non-published bots use a **request → host approve** handshake before connecting with a per-match `connectToken`.
+
 ## Production requirements
 
 See [docs/requirements.md](docs/requirements.md) — single instance, 4 CPU / 8 GB recommended, daily backup of SQLite + games volume.

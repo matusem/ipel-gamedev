@@ -28,13 +28,29 @@ pub fn create_zip(stage_root: &Path, out: &Path) -> Result<()> {
     let file = fs::File::create(out)?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default();
-    for p in ["manifest.json", "logic.wasm"] {
+    for p in ["manifest.json", "logic.wasm", "contract.json"] {
+        let path = stage_root.join(p);
+        if path.is_file() {
+            let bytes = fs::read(&path)?;
+            zip.start_file(p, opts)?;
+            zip.write_all(&bytes)?;
+        }
+    }
+    zip.add_directory("client/", opts)?;
+    zip_client_dir_recursive(stage_root, stage_root.join("client"), &mut zip, opts)?;
+    zip.finish()?;
+    Ok(())
+}
+
+pub fn create_bot_zip(stage_root: &Path, out: &Path) -> Result<()> {
+    let file = fs::File::create(out)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default();
+    for p in ["manifest.json", "bot.wasm"] {
         let bytes = fs::read(stage_root.join(p))?;
         zip.start_file(p, opts)?;
         zip.write_all(&bytes)?;
     }
-    zip.add_directory("client/", opts)?;
-    zip_client_dir_recursive(stage_root, stage_root.join("client"), &mut zip, opts)?;
     zip.finish()?;
     Ok(())
 }

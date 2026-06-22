@@ -12,6 +12,7 @@ mod page_header;
 mod pagination;
 mod segmented_control;
 mod skeleton;
+mod schema_form;
 mod slide_over;
 mod spider_chart;
 mod toast;
@@ -29,6 +30,10 @@ pub use json_console::JsonConsole;
 pub use kpi_card::KpiCard;
 pub use page_header::PageHeader;
 pub use pagination::Pagination;
+pub use schema_form::{
+    coerce_initial_value, default_value_for_spec, parse_schema, validate_value, FieldErrors,
+    FieldSpec, SchemaForm,
+};
 pub use segmented_control::SegmentedControl;
 pub use skeleton::{Skeleton, SkeletonCard, SkeletonHero, SkeletonTableRows};
 pub use slide_over::SlideOver;

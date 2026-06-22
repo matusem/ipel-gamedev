@@ -1,3 +1,5 @@
+use crate::bot_core;
+use crate::component_db::ComponentDb;
 use crate::db::GameInstanceStore;
 use crate::friends;
 use crate::game_core::{self, Buffer, Game, GameCore, NewPlayerState, Player, TakeActionResult};
@@ -75,10 +77,15 @@ pub struct PlayerChannel {
     action_sender: async_channel::Sender<(Player, Buffer)>,
     event_sender: async_channel::Sender<Buffer>,
     event_receiver: async_channel::Receiver<Buffer>,
+    pub full_state: bool,
 }
 
 impl PlayerChannel {
-    pub fn new(player: Player, action_sender: async_channel::Sender<(Player, Buffer)>) -> Self {
+    pub fn new(
+        player: Player,
+        action_sender: async_channel::Sender<(Player, Buffer)>,
+        full_state: bool,
+    ) -> Self {
         let (event_sender, event_receiver) = async_channel::unbounded();
 
         PlayerChannel {
@@ -86,6 +93,7 @@ impl PlayerChannel {
             action_sender,
             event_sender,
             event_receiver,
+            full_state,
         }
     }
 
@@ -121,6 +129,25 @@ impl SpectatorChannel {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct BotSeatBinding {
+    pub bot_slug: String,
+    pub player: Buffer,
+    pub settings: Buffer,
+}
+
+pub fn player_identity_to_buffer(ident: &str) -> Buffer {
+    let t = ident.trim();
+    if t.starts_with('{') || t.starts_with('[') {
+        return t.as_bytes().to_vec();
+    }
+    if t.starts_with('"') && t.ends_with('"') && t.len() >= 2 {
+        return t.as_bytes().to_vec();
+    }
+    serde_json::to_vec(&serde_json::Value::String(t.to_string()))
+        .unwrap_or_else(|_| t.as_bytes().to_vec())
+}
+
 #[derive(Clone)]
 pub struct GameRunPersistence {
     pub game_id: Uuid,
@@ -129,6 +156,8 @@ pub struct GameRunPersistence {
     pub pool: SqlitePool,
     pub game_db: GameDb,
     pub lobby_notify: LobbyListNotify,
+    pub component_db: ComponentDb,
+    pub bot_bindings: Vec<BotSeatBinding>,
 }
 
 fn player_identity_utf8(buf: &[u8]) -> String {
@@ -311,7 +340,27 @@ impl GameInstance {
                             .iter()
                             .find(|new_player_state| {
                                 new_player_state.state.player == other_player_channel.player
-                            })
+                            });
+
+                        if other_player_channel.full_state {
+                            if let Some(nps) = player_events {
+                                let _ = other_player_channel
+                                    .event_sender
+                                    .send(nps.state.state.clone())
+                                    .await;
+                                for event in &nps.events {
+                                    if game_over_from_event_json(event).is_some() {
+                                        let _ = other_player_channel
+                                            .event_sender
+                                            .send(event.clone())
+                                            .await;
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+
+                        let player_events = player_events
                             .map(|new_player_state| new_player_state.events.clone())
                             .unwrap_or_default();
 
@@ -360,6 +409,15 @@ impl GameInstance {
                                                     "player_identity": s.player_identity,
                                                     "claimed_by_user_id": s.claimed_by_user_id.map(|u| u.to_string()),
                                                     "claimed_display_name": s.claimed_display_name,
+                                                    "bot_id": s.bot_id.map(|u| u.to_string()),
+                                                    "bot_display_name": s.bot_display_name,
+                                                    "external_bot": s.external_bot,
+                                                    "external_bot_category": s.external_bot_category,
+                                                    "bot_avatar_seed": s.bot_avatar_seed,
+                                                    "bot_avatar_url": s.bot_avatar_url,
+                                                    "is_bot": s.bot_id.is_some(),
+                                                    "is_transient": s.external_bot
+                                                        && s.external_bot_category.as_deref() == Some("dev_local"),
                                                 })
                                             })
                                             .collect();
@@ -424,6 +482,7 @@ impl GameInstance {
                         if let Err(e) = p.store.update_game_state(p.game_id, &snap).await {
                             tracing::error!(game_id = %p.game_id, error = %e, "game state persist failed");
                         }
+                        drive_bots(p, &player_states).await;
                     }
                 }
                 Err(e) => {
@@ -436,6 +495,7 @@ impl GameInstance {
     pub fn register_player(
         &mut self,
         player: Buffer,
+        full_state: bool,
     ) -> Result<(Buffer, PlayerChannel, Uuid), GameInstanceError> {
         let uuid = Uuid::new_v4();
 
@@ -451,7 +511,8 @@ impl GameInstance {
 
         match player_state {
             Some(player_state) => {
-                let player_channel = PlayerChannel::new(player.clone(), self.action_sender.clone());
+                let player_channel =
+                    PlayerChannel::new(player.clone(), self.action_sender.clone(), full_state);
 
                 self.players
                     .write()
@@ -491,12 +552,126 @@ impl GameInstance {
         Ok((spectator_state, channel, uuid))
     }
 
-    pub fn unregister_spectator(&mut self, spectator_id: Uuid) -> Result<(), GameInstanceError> {
+    pub async fn unregister_spectator(&mut self, spectator_id: Uuid) -> Result<(), GameInstanceError> {
         self.spectators
             .write()
             .map_err(|_| GameInstanceError::LockFailed)?
             .remove(&spectator_id);
         Ok(())
+    }
+
+    pub async fn submit_bot_action(
+        &self,
+        player: Buffer,
+        action: Buffer,
+    ) -> Result<(), async_channel::SendError<(Player, Buffer)>> {
+        self.action_sender.send((player, action)).await
+    }
+
+    pub async fn drive_bots_initial(
+        &self,
+        component_db: &ComponentDb,
+        bindings: &[BotSeatBinding],
+    ) {
+        if bindings.is_empty() {
+            return;
+        }
+        let player_states: Vec<NewPlayerState> = self
+            .game
+            .read()
+            .ok()
+            .map(|g| {
+                g.player_states
+                    .iter()
+                    .map(|ps| NewPlayerState {
+                        state: ps.clone(),
+                        events: vec![],
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let shim = BotDriveShim {
+            component_db: component_db.clone(),
+            bot_bindings: bindings.to_vec(),
+            action_sender: self.action_sender.clone(),
+        };
+        drive_bots_shim(&shim, &player_states).await;
+    }
+}
+
+async fn drive_bots(p: &GameRunPersistence, player_states: &[NewPlayerState]) {
+    if p.bot_bindings.is_empty() {
+        return;
+    }
+    for binding in &p.bot_bindings {
+        let state_buf = player_states
+            .iter()
+            .find(|nps| nps.state.player == binding.player)
+            .map(|nps| nps.state.state.clone())
+            .or_else(|| {
+                // fallback: unchanged player state from snapshot not in this tick
+                None
+            });
+        let Some(state_buf) = state_buf else {
+            continue;
+        };
+        let Ok((bot, mut store)) = p.component_db.create_game_bot(&binding.bot_slug).await else {
+            tracing::warn!(bot = %binding.bot_slug, "bot component not found");
+            continue;
+        };
+        let result = bot
+            .call_decide(
+                &mut store,
+                bot_core::SerializationFormat::Json,
+                &binding.settings,
+                &state_buf,
+            )
+            .await;
+        match result {
+            Ok(Ok(Some(action))) => {
+                tracing::debug!(bot = %binding.bot_slug, "bot submitted action");
+                if let Ok(gi) = p.game_db.get_game(p.game_id) {
+                    let _ = gi
+                        .submit_bot_action(binding.player.clone(), action)
+                        .await;
+                }
+            }
+            Ok(Ok(None)) => {}
+            Ok(Err(e)) => tracing::warn!(bot = %binding.bot_slug, error = ?e, "bot decide error"),
+            Err(e) => tracing::warn!(bot = %binding.bot_slug, error = %e, "bot wasm error"),
+        }
+    }
+}
+
+struct BotDriveShim {
+    component_db: ComponentDb,
+    bot_bindings: Vec<BotSeatBinding>,
+    action_sender: async_channel::Sender<(Player, Buffer)>,
+}
+
+async fn drive_bots_shim(shim: &BotDriveShim, player_states: &[NewPlayerState]) {
+    for binding in &shim.bot_bindings {
+        let Some(state_buf) = player_states
+            .iter()
+            .find(|nps| nps.state.player == binding.player)
+            .map(|nps| nps.state.state.clone())
+        else {
+            continue;
+        };
+        let Ok((bot, mut store)) = shim.component_db.create_game_bot(&binding.bot_slug).await else {
+            continue;
+        };
+        if let Ok(Ok(Some(action))) = bot
+            .call_decide(
+                &mut store,
+                bot_core::SerializationFormat::Json,
+                &binding.settings,
+                &state_buf,
+            )
+            .await
+        {
+            let _ = shim.action_sender.send((binding.player.clone(), action)).await;
+        }
     }
 }
 

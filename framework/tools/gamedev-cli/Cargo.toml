@@ -49,6 +49,10 @@ webbrowser = "1"
 zip = "4"
 semver = "1"
 sha2 = "0.10"
+wasmtime = { version = "37.0.2", default-features = false, features = ["component-model", "cranelift"] }
+wasmtime-wasi = "37.0.2"
+tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"

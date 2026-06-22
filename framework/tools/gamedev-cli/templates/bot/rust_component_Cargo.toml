@@ -1,0 +1,17 @@
+[package]
+name = "__BOT_COMPONENT_NAME__"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bot-wasm-host = { path = "__BOT_HOST_PATH__" }
+__BOT_LOGIC_NAME__ = { path = "../logic" }
+bot = { path = "__BOT_CRATE_PATH__" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "component:wasm"
+
+[package.metadata.component.dependencies]

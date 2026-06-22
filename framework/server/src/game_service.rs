@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::component_db::ComponentDb;
 use crate::db::GameInstanceStore;
 use crate::game_core;
-use crate::game_db::{GameDb, GameInstance, GameRunPersistence, encode_game_snapshot};
+use crate::game_db::{BotSeatBinding, GameDb, GameInstance, GameRunPersistence, encode_game_snapshot, player_identity_to_buffer};
 use crate::lobby_db::LobbyListNotify;
 
 pub fn player_identities_from_game(game: &game_core::Game) -> Vec<String> {
@@ -72,6 +72,7 @@ pub async fn create_and_spawn_game(
     lobby_id: Option<Uuid>,
     pool: SqlitePool,
     lobby_notify: LobbyListNotify,
+    bot_bindings: Vec<BotSeatBinding>,
 ) -> Result<Uuid, String> {
     let engine = component_db.get_engine();
     let (game_core, mut store) = component_db
@@ -96,11 +97,16 @@ pub async fn create_and_spawn_game(
         pool,
         game_db: game_db.clone(),
         lobby_notify,
+        component_db: component_db.clone(),
+        bot_bindings: bot_bindings.clone(),
     });
     game_db.new_game(game_id, GameInstance::new(game, game_core, game_type));
     let gdb = game_db.clone();
+    let cdb = component_db.clone();
+    let bindings = bot_bindings;
     rt::spawn(async move {
         if let Ok(mut gi) = gdb.get_game(game_id) {
+            gi.drive_bots_initial(&cdb, &bindings).await;
             gi.run(&engine, store, persistence).await;
         }
     });

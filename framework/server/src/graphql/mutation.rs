@@ -10,7 +10,7 @@ use crate::auth_password;
 use crate::auth_sessions;
 use crate::component_db::ComponentDb;
 use crate::db::{self, GameInstanceStore};
-use crate::game_db::GameDb;
+use crate::game_db::{self, GameDb, player_identity_to_buffer};
 use crate::game_registry::GameRegistry;
 use crate::game_service;
 use crate::game_storefront::{self, AspectRatings};
@@ -23,10 +23,12 @@ use crate::lobby_db::{self, LobbyListNotify};
 use crate::user_engagement;
 
 use super::{
-    AuthSessionGql, DraftsDir, GameCommentGql, GameDraftGql, GameReviewGql, GamesDir, LobbyGql,
-    LobbyMessageGql, PublishTokenGql, RequestUser, UploadGameZipResultGql, UserGql, lobby_to_gql,
+    AuthSessionGql, BotsDir, DraftsDir, GameCommentGql, GameDraftGql, GameReviewGql, GamesDir, LobbyGql,
+    LobbyMessageGql, PublishTokenGql, RequestUser, UploadBotZipResultGql, UploadGameZipResultGql,
+    UserGql, BotGql, lobby_to_gql, map_bot,
     map_aspect_ratings, map_draft, map_message, map_validation_report, require_developer_user,
-    require_registered_user, require_superadmin_user, is_superadmin,
+    require_registered_user, require_superadmin_user, is_superadmin, RequestPrincipal,
+    BotApiKeyCreatedGql, BotRequestGql, BotSeatRequestResultGql, map_bot_request_detail,
 };
 
 fn draft_slug(draft: &db::GameDraftRow) -> Result<String, Error> {
@@ -834,6 +836,7 @@ impl MutationRoot {
             None,
             pool,
             notify,
+            vec![],
         )
         .await
         .map_err(Error::new)?;
@@ -1103,24 +1106,22 @@ impl MutationRoot {
             ));
         }
         let total = detail.seats.len();
-        let claimed = detail
+        let filled = detail
             .seats
             .iter()
-            .filter(|s| s.claimed_by_user_id.is_some())
+            .filter(|s| s.claimed_by_user_id.is_some() || s.bot_id.is_some())
             .count();
         if total == 0 {
             return Err(Error::new("no seats — set game type and config first"));
         }
-        if claimed != total {
+        if filled != total {
             return Err(Error::new(format!(
-                "all seats must be claimed ({claimed}/{total})"
+                "all seats must be filled ({filled}/{total})"
             )));
         }
-        if detail
-            .seats
-            .iter()
-            .any(|s| s.claimed_by_user_id.is_some() && !s.ready)
-        {
+        if detail.seats.iter().any(|s| {
+            s.claimed_by_user_id.is_some() && !s.ready && s.bot_id.is_none()
+        }) {
             return Err(Error::new(
                 "every seated player must be ready before starting",
             ));
@@ -1131,6 +1132,32 @@ impl MutationRoot {
             .iter()
             .filter_map(|s| s.claimed_by_user_id)
             .collect();
+        let mut bot_bindings = Vec::new();
+        for seat in &detail.seats {
+            if let Some(bot_id) = seat.bot_id {
+                if seat.external_bot {
+                    continue;
+                }
+                let bot = crate::bot_db::get_bot_by_id(pool, bot_id)
+                    .await
+                    .map_err(|e| Error::new(format!("db: {e}")))?
+                    .ok_or_else(|| Error::new("bot not found"))?;
+                let settings = crate::bot_service::resolve_effective_settings_bytes(
+                    component_db,
+                    "published",
+                    Some(&bot.slug),
+                    seat.bot_settings_json.as_deref(),
+                    bot.settings_json.as_deref(),
+                )
+                .await
+                .map_err(Error::new)?;
+                bot_bindings.push(crate::game_db::BotSeatBinding {
+                    bot_slug: bot.slug,
+                    player: player_identity_to_buffer(&seat.player_identity),
+                    settings,
+                });
+            }
+        }
         let config = game_service::resolve_lobby_config(
             component_db,
             &game_type,
@@ -1147,6 +1174,7 @@ impl MutationRoot {
             Some(lid),
             pool.clone(),
             notify.clone(),
+            bot_bindings,
         )
         .await
         .map_err(Error::new)?;
@@ -1658,5 +1686,587 @@ impl MutationRoot {
             .await
             .map_err(|e| Error::new(e.to_string()))?;
         Ok(true)
+    }
+
+    async fn upload_bot_zip(
+        &self,
+        ctx: &Context<'_>,
+        filename: String,
+        zip_base64: String,
+    ) -> Result<UploadBotZipResultGql> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let bots_dir = &ctx.data::<BotsDir>()?.0;
+        let bot_registry = ctx.data::<Arc<RwLock<crate::bot_registry::BotRegistry>>>()?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(zip_base64.as_bytes())
+            .map_err(|e| Error::new(format!("invalid base64: {e}")))?;
+        let drafts_root = bots_dir.join(".drafts");
+        let validation = crate::bot_upload::validate_and_stage_bot_zip_bytes(
+            &bytes,
+            component_db,
+            games_dir.as_path(),
+            &drafts_root,
+        )
+        .await
+        .map_err(Error::new)?;
+        let slug = validation.manifest.name.clone();
+        crate::bot_upload::publish_staged_bot(&validation.staged_dir, bots_dir.as_path(), &slug)
+            .map_err(Error::new)?;
+        if let Ok(wasm) = std::fs::read(validation.staged_dir.join("bot.wasm")) {
+            let _ = component_db.insert_bot_component(&slug, &wasm);
+        }
+        {
+            let mut reg = bot_registry
+                .write()
+                .map_err(|_| Error::new("bot registry lock poisoned"))?;
+            reg.reload(bots_dir.as_path(), component_db);
+        }
+        let settings_schema_json = validation.settings_schema_json.clone();
+        let settings_json = validation.settings_json.clone();
+        let bot_id = Uuid::new_v4();
+        crate::bot_db::insert_bot(
+            pool,
+            bot_id,
+            uid,
+            &slug,
+            &validation.manifest.display_name,
+            &validation.manifest.version,
+            &validation.manifest.game_slug,
+            &validation.manifest.game_version,
+            &validation.manifest.contract_hash,
+            settings_schema_json.as_deref(),
+            settings_json.as_deref(),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(UploadBotZipResultGql {
+            bot_id: bot_id.to_string().into(),
+            slug,
+            report: map_validation_report(validation.report.clone()),
+        })
+    }
+
+    async fn assign_bot_to_seat(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+        #[graphql(name = "seatIndex")] seat_index: i32,
+        #[graphql(name = "botId")] bot_id: async_graphql::types::ID,
+        #[graphql(name = "settingsJson")] settings_json: Option<String>,
+    ) -> Result<LobbyGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let bid = Uuid::parse_str(bot_id.as_str()).map_err(|_| Error::new("invalid bot id"))?;
+        let bot = crate::bot_db::get_bot_by_id(pool, bid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("bot not found"))?;
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        if detail.status != "waiting" && detail.status != "configuring" {
+            return Err(Error::new("cannot assign bot in this lobby state"));
+        }
+        if !detail.game_type.is_empty() && bot.game_slug != detail.game_type {
+            return Err(Error::new("bot is not compatible with this game type"));
+        }
+        let effective = if let Some(ref s) = settings_json {
+            s.clone()
+        } else {
+            crate::bot_service::resolve_effective_settings_json(
+                component_db,
+                "published",
+                Some(&bot.slug),
+                None,
+                bot.settings_json.as_deref(),
+            )
+            .await
+            .map_err(Error::new)?
+        };
+        crate::bot_service::validate_bot_settings(
+            component_db,
+            "published",
+            Some(&bot.slug),
+            bot.settings_schema_json.as_deref(),
+            &effective,
+        )
+        .await
+        .map_err(Error::new)?;
+        let ok = lobby_db::assign_bot_to_seat(
+            pool,
+            lid,
+            seat_index,
+            bid,
+            &bot.display_name,
+            bot.avatar_seed.as_deref(),
+            bot.avatar_url.as_deref(),
+            Some(&effective),
+        )
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        if !ok {
+            return Err(Error::new("cannot assign bot to seat (taken or invalid index)"));
+        }
+        let _ = uid;
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
+    }
+
+    async fn remove_bot_from_seat(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+        #[graphql(name = "seatIndex")] seat_index: i32,
+    ) -> Result<LobbyGql> {
+        let _uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let ok = lobby_db::remove_bot_from_seat(pool, lid, seat_index)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        if !ok {
+            return Err(Error::new("no bot on this seat"));
+        }
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
+    }
+
+    async fn register_external_bot(
+        &self,
+        ctx: &Context<'_>,
+        slug: String,
+        #[graphql(name = "displayName")] display_name: String,
+        #[graphql(name = "gameSlug")] game_slug: String,
+        #[graphql(name = "avatarSeed")] avatar_seed: Option<String>,
+        #[graphql(name = "avatarUrl")] avatar_url: Option<String>,
+        #[graphql(name = "settingsSchemaJson")] settings_schema_json: Option<String>,
+        #[graphql(name = "settingsJson")] settings_json: Option<String>,
+    ) -> Result<BotGql> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let contract = crate::game_contract::load_contract_for_game(games_dir.as_path(), &game_slug)
+            .ok_or_else(|| Error::new("game contract not found"))?;
+        if let (Some(schema), Some(settings)) = (&settings_schema_json, &settings_json) {
+            crate::bot_service::validate_settings_json(schema, settings).map_err(Error::new)?;
+        }
+        if crate::bot_db::get_bot_by_slug(pool, &slug)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .is_some()
+        {
+            return Err(Error::new("bot slug already taken"));
+        }
+        let id = Uuid::new_v4();
+        crate::bot_db::insert_external_bot(
+            pool,
+            id,
+            uid,
+            &slug,
+            &display_name,
+            &game_slug,
+            &contract.contract_hash,
+            avatar_seed.as_deref(),
+            avatar_url.as_deref(),
+            settings_schema_json.as_deref(),
+            settings_json.as_deref(),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
+        let bot = crate::bot_db::get_bot_by_id(pool, id)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("bot not found"))?;
+        Ok(map_bot(bot))
+    }
+
+    async fn create_bot_api_key(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "botId")] bot_id: async_graphql::types::ID,
+    ) -> Result<BotApiKeyCreatedGql> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let bid = Uuid::parse_str(bot_id.as_str()).map_err(|_| Error::new("invalid bot id"))?;
+        let bot = crate::bot_db::get_bot_by_id(pool, bid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("bot not found"))?;
+        if bot.owner_user_id != uid {
+            return Err(Error::new("not your bot"));
+        }
+        if bot.category != "external" {
+            return Err(Error::new("API keys are only for external bots"));
+        }
+        let (key_id, plaintext, prefix) = crate::bot_api_key::issue_key(pool, bid, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(BotApiKeyCreatedGql {
+            id: key_id.to_string().into(),
+            key: plaintext,
+            prefix,
+            created_at: crate::db::GameInstanceStore::now_secs(),
+        })
+    }
+
+    async fn revoke_bot_api_key(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "keyId")] key_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let kid = Uuid::parse_str(key_id.as_str()).map_err(|_| Error::new("invalid key id"))?;
+        crate::bot_api_key::revoke_key(pool, uid, kid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))
+    }
+
+    async fn update_bot_settings(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "botId")] bot_id: async_graphql::types::ID,
+        #[graphql(name = "settingsJson")] settings_json: String,
+        #[graphql(name = "settingsSchemaJson")] settings_schema_json: Option<String>,
+    ) -> Result<BotGql> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let bid = Uuid::parse_str(bot_id.as_str()).map_err(|_| Error::new("invalid bot id"))?;
+        let bot = crate::bot_db::get_bot_by_id(pool, bid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("bot not found"))?;
+        if bot.owner_user_id != uid {
+            return Err(Error::new("not your bot"));
+        }
+        let schema = settings_schema_json
+            .as_deref()
+            .or(bot.settings_schema_json.as_deref());
+        crate::bot_service::validate_bot_settings(
+            component_db,
+            &bot.category,
+            if bot.category == "published" {
+                Some(&bot.slug)
+            } else {
+                None
+            },
+            schema,
+            &settings_json,
+        )
+        .await
+        .map_err(Error::new)?;
+        let ok = crate::bot_db::update_bot_settings(
+            pool,
+            bid,
+            uid,
+            settings_schema_json.as_deref(),
+            &settings_json,
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
+        if !ok {
+            return Err(Error::new("could not update bot settings"));
+        }
+        let bot = crate::bot_db::get_bot_by_id(pool, bid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("bot not found"))?;
+        Ok(map_bot(bot))
+    }
+
+    async fn request_external_bot_seat(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+        category: String,
+        label: String,
+        #[graphql(name = "contractHash")] contract_hash: String,
+        #[graphql(name = "desiredSeatIndex")] desired_seat_index: Option<i32>,
+        #[graphql(name = "avatarSeed")] avatar_seed: Option<String>,
+        #[graphql(name = "settingsJson")] settings_json: Option<String>,
+    ) -> Result<BotSeatRequestResultGql> {
+        let principal = super::require_user_or_bot(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let component_db = ctx.data::<ComponentDb>()?;
+        let games_dir = &ctx.data::<GamesDir>()?.0;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        if detail.status != "waiting" && detail.status != "configuring" {
+            return Err(Error::new("lobby is not accepting bot requests"));
+        }
+        if detail.game_type.is_empty() {
+            return Err(Error::new("lobby has no game type"));
+        }
+        let game_contract =
+            crate::game_contract::load_contract_for_game(games_dir.as_path(), &detail.game_type)
+                .ok_or_else(|| Error::new("game contract not found"))?;
+        if game_contract.contract_hash != contract_hash {
+            return Err(Error::new("contract hash mismatch"));
+        }
+
+        let (requested_by_user_id, requested_by_bot_id, bot_identity_id, label, av_seed, av_url) =
+            match (&category[..], principal) {
+                ("dev_local", RequestPrincipal::User(uid)) => {
+                    let identity = Uuid::new_v4();
+                    let seed = avatar_seed.unwrap_or_else(|| identity.to_string());
+                    (uid, None, identity, label, Some(seed), None)
+                }
+                ("external", RequestPrincipal::Bot(bot)) => {
+                    if bot.game_slug != detail.game_type {
+                        return Err(Error::new("bot game mismatch"));
+                    }
+                    if bot.contract_hash != contract_hash {
+                        return Err(Error::new("bot contract mismatch"));
+                    }
+                    let seed = bot
+                        .avatar_seed
+                        .clone()
+                        .unwrap_or_else(|| bot.bot_id.to_string());
+                    (
+                        bot.owner_user_id,
+                        Some(bot.bot_id),
+                        bot.bot_id,
+                        if label.is_empty() {
+                            bot.display_name
+                        } else {
+                            label
+                        },
+                        Some(seed),
+                        bot.avatar_url,
+                    )
+                }
+                ("external", RequestPrincipal::User(_)) => {
+                    return Err(Error::new("external bot requests require a bot API key"));
+                }
+                ("dev_local", RequestPrincipal::Bot(_)) => {
+                    return Err(Error::new("dev-local bot requests require a user token"));
+                }
+                _ => return Err(Error::new("category must be dev_local or external")),
+            };
+
+        if let Some(ref settings) = settings_json {
+            let (bot_slug, schema_owned, cat) = if category == "external" {
+                let bid = requested_by_bot_id.ok_or_else(|| Error::new("bot id missing"))?;
+                let row = crate::bot_db::get_bot_by_id(pool, bid)
+                    .await
+                    .map_err(|e| Error::new(format!("db: {e}")))?
+                    .ok_or_else(|| Error::new("bot not found"))?;
+                (
+                    Some(row.slug),
+                    row.settings_schema_json,
+                    "external",
+                )
+            } else {
+                (None, None, "dev_local")
+            };
+            crate::bot_service::validate_bot_settings(
+                component_db,
+                cat,
+                bot_slug.as_deref(),
+                schema_owned.as_deref(),
+                settings,
+            )
+            .await
+            .map_err(Error::new)?;
+        }
+
+        let request_id = Uuid::new_v4();
+        let connect_token = format!("bct_{}", Uuid::new_v4());
+        lobby_db::create_bot_request(
+            pool,
+            request_id,
+            lid,
+            &category,
+            requested_by_user_id,
+            requested_by_bot_id,
+            bot_identity_id,
+            &label,
+            av_seed.as_deref(),
+            av_url.as_deref(),
+            &detail.game_type,
+            &contract_hash,
+            desired_seat_index,
+            &connect_token,
+            settings_json.as_deref(),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
+        notify.ping();
+        Ok(BotSeatRequestResultGql {
+            request_id: request_id.to_string().into(),
+            connect_token,
+        })
+    }
+
+    async fn approve_external_bot_seat(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+        #[graphql(name = "requestId")] request_id: async_graphql::types::ID,
+        #[graphql(name = "seatIndex")] seat_index: i32,
+    ) -> Result<LobbyGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let rid = Uuid::parse_str(request_id.as_str()).map_err(|_| Error::new("invalid request id"))?;
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        if detail.owner_user_id != uid && !is_superadmin(pool, uid).await.unwrap_or(false) {
+            return Err(Error::new("only the owner can approve bot requests"));
+        }
+        let req = lobby_db::get_bot_request(pool, rid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("request not found"))?;
+        if req.lobby_id != lid || req.status != "pending" {
+            return Err(Error::new("request not pending for this lobby"));
+        }
+        let ok = lobby_db::assign_external_bot_seat(
+            pool,
+            lid,
+            seat_index,
+            req.bot_identity_id,
+            &req.label,
+            req.avatar_seed.as_deref(),
+            req.avatar_url.as_deref(),
+            &req.connect_token,
+            &req.category,
+            req.settings_json.as_deref(),
+        )
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
+        if !ok {
+            return Err(Error::new("cannot assign seat (taken or invalid index)"));
+        }
+        lobby_db::set_bot_request_status(pool, rid, "approved", Some(seat_index))
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
+    }
+
+    async fn deny_external_bot_seat(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+        #[graphql(name = "requestId")] request_id: async_graphql::types::ID,
+    ) -> Result<LobbyGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let rid = Uuid::parse_str(request_id.as_str()).map_err(|_| Error::new("invalid request id"))?;
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        if detail.owner_user_id != uid && !is_superadmin(pool, uid).await.unwrap_or(false) {
+            return Err(Error::new("only the owner can deny bot requests"));
+        }
+        let req = lobby_db::get_bot_request(pool, rid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("request not found"))?;
+        if req.lobby_id != lid {
+            return Err(Error::new("request not for this lobby"));
+        }
+        lobby_db::set_bot_request_status(pool, rid, "denied", None)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
+    }
+
+    async fn cancel_external_bot_seat(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "requestId")] request_id: async_graphql::types::ID,
+    ) -> Result<bool> {
+        let principal = super::require_user_or_bot(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let rid = Uuid::parse_str(request_id.as_str()).map_err(|_| Error::new("invalid request id"))?;
+        let req = lobby_db::get_bot_request(pool, rid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("request not found"))?;
+        if req.status != "pending" {
+            return Err(Error::new("request is not pending"));
+        }
+        let authorized = match principal {
+            RequestPrincipal::User(uid) => uid == req.requested_by_user_id,
+            RequestPrincipal::Bot(bot) => req.requested_by_bot_id == Some(bot.bot_id),
+        };
+        if !authorized {
+            return Err(Error::new("not authorized to cancel this request"));
+        }
+        let ok = lobby_db::set_bot_request_status(pool, rid, "cancelled", None)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        notify.ping();
+        Ok(ok)
+    }
+
+    async fn release_external_bot_seat(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "lobbyId")] lobby_id: async_graphql::types::ID,
+        #[graphql(name = "seatIndex")] seat_index: i32,
+    ) -> Result<LobbyGql> {
+        let uid = require_registered_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let notify = ctx.data::<LobbyListNotify>()?;
+        let lid = Uuid::parse_str(lobby_id.as_str()).map_err(|_| Error::new("invalid lobby id"))?;
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        if detail.owner_user_id != uid && !is_superadmin(pool, uid).await.unwrap_or(false) {
+            return Err(Error::new("only the owner can release bot seats"));
+        }
+        let ok = lobby_db::release_external_bot_seat(pool, lid, seat_index)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        if !ok {
+            return Err(Error::new("no bot on this seat"));
+        }
+        notify.ping();
+        let detail = lobby_db::get_lobby(pool, lid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .ok_or_else(|| Error::new("lobby not found"))?;
+        lobby_to_gql(pool, detail).await
     }
 }

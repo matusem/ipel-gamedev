@@ -1,0 +1,17 @@
+[package]
+name = "tic_tac_toe_bot_component"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bot-wasm-host = { path = "../../../../bot-wasm-host" }
+tic_tac_toe_bot = { path = "../logic" }
+bot = { path = "../../../../bot" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "component:wasm"
+
+[package.metadata.component.dependencies]

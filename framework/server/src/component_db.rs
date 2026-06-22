@@ -10,6 +10,7 @@ use wasmtime_wasi::{WasiCtxBuilder, p1::WasiP1Ctx};
 pub struct ComponentDb {
     engine: Engine,
     components: Arc<RwLock<HashMap<String, Component>>>,
+    bot_components: Arc<RwLock<HashMap<String, Component>>>,
 }
 
 impl ComponentDb {
@@ -21,6 +22,7 @@ impl ComponentDb {
         Self {
             engine,
             components: Arc::new(RwLock::new(HashMap::new())),
+            bot_components: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -44,6 +46,10 @@ impl ComponentDb {
     /// Remove all loaded components (e.g. before a full registry rescan).
     pub fn clear(&self) {
         self.components.write().unwrap().clear();
+    }
+
+    pub fn clear_bots(&self) {
+        self.bot_components.write().unwrap().clear();
     }
 
     pub fn get(&self, name: &str) -> Option<Component> {
@@ -130,6 +136,53 @@ impl ComponentDb {
             return Err(msg);
         }
 
+        Ok(())
+    }
+
+    pub fn insert_bot_component(&self, name: &str, wasm_bytes: &[u8]) -> Result<(), String> {
+        let component = Component::new(&self.engine, wasm_bytes)
+            .map_err(|e| format!("Failed to create bot component: {e}"))?;
+        self.bot_components
+            .write()
+            .unwrap()
+            .insert(name.to_string(), component);
+        Ok(())
+    }
+
+    pub async fn create_game_bot(
+        &self,
+        name: &str,
+    ) -> Result<(crate::bot_core::GameBot, Store<WasiP1Ctx>), String> {
+        use crate::bot_core::GameBot;
+        let component = self
+            .bot_components
+            .read()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .ok_or_else(|| String::from("Bot component not found"))?;
+
+        let mut linker = wasmtime::component::Linker::new(&self.engine);
+        wasmtime_wasi::p2::add_to_linker_async(&mut linker).unwrap();
+
+        let mut store = Store::new(&self.engine, WasiCtxBuilder::new().build_p1());
+        let bot = GameBot::instantiate_async(&mut store, &component, &linker)
+            .await
+            .map_err(|e| format!("Failed to instantiate bot component: {e}"))?;
+        Ok((bot, store))
+    }
+
+    pub async fn validate_bot_component_instantiable(&self, wasm_bytes: &[u8]) -> Result<(), String> {
+        use crate::bot_core::GameBot;
+        let component = Component::new(&self.engine, wasm_bytes)
+            .map_err(|e| format!("[1/3 parse bot component] {e}"))?;
+        let mut linker = wasmtime::component::Linker::new(&self.engine);
+        wasmtime_wasi::p2::add_to_linker_async(&mut linker)
+            .map_err(|e| format!("[2/3 link WASI] {e}"))?;
+        let mut store = Store::new(&self.engine, WasiCtxBuilder::new().build_p1());
+        GameBot::instantiate_async(&mut store, &component, &linker)
+            .await
+            .map_err(|e| format!("[3/3 instantiate GameBot] {e}"))?;
         Ok(())
     }
 }

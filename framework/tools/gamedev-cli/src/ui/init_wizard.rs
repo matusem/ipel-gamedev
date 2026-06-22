@@ -540,6 +540,10 @@ impl InitWizardState {
         }
         Some(InitWizardOutcome::Submit(InitArgs {
             name: Some(name_trim.to_string()),
+            bot: false,
+            game: None,
+            game_version: None,
+            server_url: crate::defaults::DEFAULT_GRAPHQL_URL.to_string(),
             backend,
             frontend,
             js_template,

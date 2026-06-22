@@ -9,6 +9,7 @@ use std::fmt;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TicTacToe;
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Player {
     X,
@@ -16,6 +17,7 @@ pub enum Player {
 }
 
 /// Authoritative end state: either a winning player or a full board with no winner.
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum GameOutcome {
     Win(Player),
@@ -23,6 +25,7 @@ pub enum GameOutcome {
 }
 
 /// What this player sees when the game ends.
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlayerOutcome {
     Win,
@@ -30,6 +33,7 @@ pub enum PlayerOutcome {
     Draw,
 }
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Position(pub u8, pub u8);
 
@@ -51,6 +55,7 @@ impl Action<TicTacToe> for Position {
     type Error = String;
 }
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Board(pub Vec<Option<Player>>);
@@ -77,6 +82,7 @@ impl Board {
     }
 }
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     pub config: Config,
@@ -84,6 +90,7 @@ pub struct State {
     pub board: Board,
 }
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerState {
     pub player: Player,
@@ -135,6 +142,7 @@ impl GamePlayerState<TicTacToe> for PlayerState {
     }
 }
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlayerEvent {
     pub player: Player,
@@ -178,6 +186,7 @@ fn default_win() -> u8 {
 }
 
 /// Grid is `side_length × side_length`. A player wins with `win_length` marks in a row (horizontal, vertical, or diagonal).
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Config {
     #[serde(default = "default_side")]

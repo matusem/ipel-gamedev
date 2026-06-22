@@ -1,0 +1,48 @@
+package example:game-interface;
+
+
+
+/// game-bot WIT world (v2): settings + stateless decide from player view.
+
+
+
+world game-bot {
+
+  enum serialization-format {
+
+    json,
+
+    message-pack,
+
+  }
+
+
+
+  type buffer = list<u8>;
+
+
+
+  variant bot-error {
+
+    deserialize(string),
+
+    serialize(string),
+
+    processing(string),
+
+    bot-core(buffer),
+
+  }
+
+
+
+  export default-settings: func(format: serialization-format) -> result<buffer, bot-error>;
+
+  export validate-settings: func(format: serialization-format, settings: buffer) -> result<option<buffer>, bot-error>;
+
+  export settings-schema: func() -> string;
+
+  export decide: func(format: serialization-format, settings: buffer, player-state: buffer) -> result<option<buffer>, bot-error>;
+
+}
+

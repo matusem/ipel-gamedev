@@ -319,6 +319,8 @@ pub struct GameTypeGql {
     pub result_ui_path: Option<String>,
     pub about_ui_path: Option<String>,
     pub config_schema_json: Option<String>,
+    #[graphql(name = "configUiMode")]
+    pub config_ui_mode: String,
     pub cover_image_url: Option<String>,
     pub active_players: i32,
     pub featured: bool,
@@ -429,6 +431,39 @@ pub struct LobbySeatGql {
     pub claimed_by_user_id: Option<async_graphql::types::ID>,
     pub claimed_display_name: Option<String>,
     pub ready: bool,
+    pub bot_id: Option<async_graphql::types::ID>,
+    pub bot_display_name: Option<String>,
+    #[graphql(name = "externalBot")]
+    pub external_bot: bool,
+    #[graphql(name = "externalBotCategory")]
+    pub external_bot_category: Option<String>,
+    #[graphql(name = "botAvatarSeed")]
+    pub bot_avatar_seed: Option<String>,
+    #[graphql(name = "botAvatarUrl")]
+    pub bot_avatar_url: Option<String>,
+    #[graphql(name = "botSettingsJson")]
+    pub bot_settings_json: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct LobbyBotRequestGql {
+    pub id: async_graphql::types::ID,
+    pub category: String,
+    pub label: String,
+    #[graphql(name = "avatarSeed")]
+    pub avatar_seed: Option<String>,
+    #[graphql(name = "gameSlug")]
+    pub game_slug: String,
+    #[graphql(name = "contractHash")]
+    pub contract_hash: String,
+    #[graphql(name = "desiredSeatIndex")]
+    pub desired_seat_index: Option<i32>,
+    pub status: String,
+    #[graphql(name = "seatIndex")]
+    pub seat_index: Option<i32>,
+    #[graphql(name = "settingsJson")]
+    pub settings_json: Option<String>,
+    pub created_at: i64,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -464,6 +499,8 @@ pub struct LobbyGql {
     pub created_at: i64,
     pub updated_at: i64,
     pub seats: Vec<LobbySeatGql>,
+    #[graphql(name = "botRequests")]
+    pub bot_requests: Vec<LobbyBotRequestGql>,
     pub messages: Vec<LobbyMessageGql>,
 }
 
@@ -474,6 +511,29 @@ pub(crate) fn map_seat(s: LobbySeat) -> LobbySeatGql {
         claimed_by_user_id: s.claimed_by_user_id.map(|u| u.to_string().into()),
         claimed_display_name: s.claimed_display_name,
         ready: s.ready,
+        bot_id: s.bot_id.map(|u| u.to_string().into()),
+        bot_display_name: s.bot_display_name,
+        external_bot: s.external_bot,
+        external_bot_category: s.external_bot_category,
+        bot_avatar_seed: s.bot_avatar_seed,
+        bot_avatar_url: s.bot_avatar_url,
+        bot_settings_json: s.bot_settings_json,
+    }
+}
+
+pub(crate) fn map_bot_request(r: crate::lobby_db::LobbyBotRequest) -> LobbyBotRequestGql {
+    LobbyBotRequestGql {
+        id: r.id.to_string().into(),
+        category: r.category,
+        label: r.label,
+        avatar_seed: r.avatar_seed,
+        game_slug: r.game_slug,
+        contract_hash: r.contract_hash,
+        desired_seat_index: r.desired_seat_index,
+        status: r.status,
+        seat_index: r.seat_index,
+        settings_json: r.settings_json,
+        created_at: r.created_at,
     }
 }
 
@@ -547,7 +607,11 @@ pub(crate) async fn lobby_to_gql(pool: &SqlitePool, d: LobbyDetail) -> Result<Lo
     let msgs = lobby_db::list_lobby_messages(pool, d.id, 100)
         .await
         .map_err(|e| Error::new(format!("db: {e}")))?;
+    let bot_reqs = lobby_db::list_bot_requests(pool, d.id, Some("pending"))
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?;
     let seats = d.seats.into_iter().map(map_seat).collect();
+    let bot_requests = bot_reqs.into_iter().map(map_bot_request).collect();
     let messages = msgs.into_iter().map(map_message).collect();
     Ok(LobbyGql {
         id: d.id.to_string().into(),
@@ -560,6 +624,7 @@ pub(crate) async fn lobby_to_gql(pool: &SqlitePool, d: LobbyDetail) -> Result<Lo
         created_at: d.created_at,
         updated_at: d.updated_at,
         seats,
+        bot_requests,
         messages,
     })
 }
@@ -574,4 +639,137 @@ pub(crate) fn map_game_entries(db: &GameDb) -> Vec<GameInstanceGql> {
             connected_players: e.connected_players,
         })
         .collect()
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct BotGql {
+    pub id: async_graphql::types::ID,
+    pub slug: String,
+    pub display_name: String,
+    pub version: String,
+    pub game_slug: String,
+    pub game_version: String,
+    pub contract_hash: String,
+    pub category: String,
+    #[graphql(name = "avatarSeed")]
+    pub avatar_seed: Option<String>,
+    #[graphql(name = "avatarUrl")]
+    pub avatar_url: Option<String>,
+    #[graphql(name = "apiKeys")]
+    pub api_keys: Option<Vec<BotApiKeyGql>>,
+    #[graphql(name = "settingsSchemaJson")]
+    pub settings_schema_json: Option<String>,
+    #[graphql(name = "settingsJson")]
+    pub settings_json: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct BotApiKeyGql {
+    pub id: async_graphql::types::ID,
+    pub prefix: String,
+    #[graphql(name = "maskedKey")]
+    pub masked_key: String,
+    pub created_at: i64,
+    #[graphql(name = "lastUsedAt")]
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct BotApiKeyCreatedGql {
+    pub id: async_graphql::types::ID,
+    pub key: String,
+    pub prefix: String,
+    pub created_at: i64,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct BotSeatRequestResultGql {
+    #[graphql(name = "requestId")]
+    pub request_id: async_graphql::types::ID,
+    #[graphql(name = "connectToken")]
+    pub connect_token: String,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct BotRequestGql {
+    pub id: async_graphql::types::ID,
+    pub category: String,
+    pub label: String,
+    pub status: String,
+    #[graphql(name = "seatIndex")]
+    pub seat_index: Option<i32>,
+    #[graphql(name = "connectToken")]
+    pub connect_token: String,
+    #[graphql(name = "lobbyId")]
+    pub lobby_id: async_graphql::types::ID,
+    #[graphql(name = "settingsJson")]
+    pub settings_json: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct UploadBotZipResultGql {
+    pub bot_id: async_graphql::types::ID,
+    pub slug: String,
+    pub report: ValidationReportGql,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct GameContractGql {
+    pub game: String,
+    pub version: String,
+    pub wit_version: String,
+    pub contract_hash: String,
+    pub schema_json: String,
+}
+
+pub(crate) fn map_bot(r: crate::bot_db::BotRecord) -> BotGql {
+    BotGql {
+        id: r.id.to_string().into(),
+        slug: r.slug,
+        display_name: r.display_name,
+        version: r.version,
+        game_slug: r.game_slug,
+        game_version: r.game_version,
+        contract_hash: r.contract_hash,
+        category: r.category,
+        avatar_seed: r.avatar_seed,
+        avatar_url: r.avatar_url,
+        api_keys: None,
+        settings_schema_json: r.settings_schema_json,
+        settings_json: r.settings_json,
+    }
+}
+
+pub(crate) fn map_bot_with_keys(
+    r: crate::bot_db::BotRecord,
+    keys: Vec<crate::bot_api_key::BotApiKeySummary>,
+) -> BotGql {
+    let mut b = map_bot(r);
+    if b.category == "external" {
+        b.api_keys = Some(
+            keys.into_iter()
+                .map(|k| BotApiKeyGql {
+                    id: k.id.to_string().into(),
+                    prefix: k.prefix.clone(),
+                    masked_key: crate::bot_api_key::mask_bot_key_prefix(&k.prefix),
+                    created_at: k.created_at,
+                    last_used_at: k.last_used_at,
+                })
+                .collect(),
+        );
+    }
+    b
+}
+
+pub(crate) fn map_bot_request_detail(r: crate::lobby_db::LobbyBotRequest) -> BotRequestGql {
+    BotRequestGql {
+        id: r.id.to_string().into(),
+        category: r.category,
+        label: r.label,
+        status: r.status,
+        seat_index: r.seat_index,
+        connect_token: r.connect_token,
+        lobby_id: r.lobby_id.to_string().into(),
+        settings_json: r.settings_json,
+    }
 }

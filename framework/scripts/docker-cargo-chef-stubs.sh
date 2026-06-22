@@ -7,10 +7,14 @@ cd "$ROOT"
 
 WORKSPACE_MEMBERS=(
   game
+  bot
+  bot-wasm-host
   game-wasm-host
   server
   games/tic_tac_toe/rust/logic
   games/tic_tac_toe/rust/component
+  games/tic_tac_toe_bot/rust/logic
+  games/tic_tac_toe_bot/rust/component
   tools/gamedev-cli
   sdk/rust/shared-types
   sdk/rust/shared

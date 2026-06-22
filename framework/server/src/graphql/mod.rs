@@ -15,15 +15,18 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::auth_sessions;
+use crate::bot_api_key::{self, BotPrincipal};
 use crate::db;
 
-/// Authenticated principal from `Authorization: Bearer <session_token|publish_token>`.
+/// Authenticated principal from `Authorization: Bearer <session_token|publish_token|bot_api_key>`.
 #[derive(Clone, Debug)]
 pub struct RequestUser(pub Option<String>);
 #[derive(Clone)]
 pub struct GamesDir(pub PathBuf);
 #[derive(Clone)]
 pub struct DraftsDir(pub PathBuf);
+
+pub struct BotsDir(pub PathBuf);
 
 pub(crate) async fn require_user(ctx: &Context<'_>) -> Result<Uuid> {
     let RequestUser(raw) = ctx.data::<RequestUser>()?;
@@ -122,6 +125,57 @@ pub(crate) async fn require_developer_user(ctx: &Context<'_>) -> Result<Uuid> {
         return Ok(uid);
     }
     Err(Error::new("developer permission required"))
+}
+
+#[derive(Clone, Debug)]
+pub enum RequestPrincipal {
+    User(Uuid),
+    Bot(BotPrincipal),
+}
+
+pub(crate) async fn require_bot_principal(ctx: &Context<'_>) -> Result<BotPrincipal> {
+    let RequestUser(raw) = ctx.data::<RequestUser>()?;
+    let Some(raw) = raw.as_ref() else {
+        return Err(Error::new("bot API key required: Authorization: Bearer <gbk_...>"));
+    };
+    let pool = ctx.data::<SqlitePool>()?;
+    bot_api_key::resolve_bot_key(pool, raw)
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?
+        .ok_or_else(|| Error::new("invalid or revoked bot API key"))
+}
+
+pub(crate) async fn require_user_or_bot(ctx: &Context<'_>) -> Result<RequestPrincipal> {
+    let RequestUser(raw) = ctx.data::<RequestUser>()?;
+    let Some(raw) = raw.as_ref() else {
+        return Err(Error::new("authentication required"));
+    };
+    let pool = ctx.data::<SqlitePool>()?;
+    if let Some(uid) = auth_sessions::resolve_session(pool, raw)
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?
+    {
+        if db::get_user(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?
+            .is_some()
+        {
+            return Ok(RequestPrincipal::User(uid));
+        }
+    }
+    if let Some(tok) = db::resolve_publish_token(pool, raw)
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?
+    {
+        return Ok(RequestPrincipal::User(tok.user_id));
+    }
+    if let Some(bot) = bot_api_key::resolve_bot_key(pool, raw)
+        .await
+        .map_err(|e| Error::new(format!("db: {e}")))?
+    {
+        return Ok(RequestPrincipal::Bot(bot));
+    }
+    Err(Error::new("invalid or expired bearer token"))
 }
 
 pub type AppSchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;

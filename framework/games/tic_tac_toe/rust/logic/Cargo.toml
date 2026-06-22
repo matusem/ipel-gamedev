@@ -3,9 +3,23 @@ name = "tic_tac_toe"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+schemars = ["dep:schemars", "dep:serde_json", "dep:upjs-gdd-shared-types"]
+
 [dependencies]
 game = { path = "../../../../game" }
 serde = { version = "1.0.219", features = ["derive"] }
+schemars = { version = "0.8", optional = true }
+serde_json = { version = "1.0", optional = true }
+upjs-gdd-shared-types = { path = "../../../../sdk/rust/shared-types", optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"
+
+[[bin]]
+name = "export_schema"
+path = "src/bin/export_schema.rs"
+required-features = ["schemars"]
+
+[package.metadata.cargo-all-features]
+denylist = ["schemars"]

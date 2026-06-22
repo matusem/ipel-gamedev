@@ -1,6 +1,6 @@
 ﻿use crate::api::*;
 use crate::components::dev::{
-    DeveloperDraftRow, spawn_read_zip_file, upload_diag_badge_class, upload_diag_panel_class,
+    BotSettingsEditor, DeveloperDraftRow, spawn_read_zip_file, upload_diag_badge_class, upload_diag_panel_class,
     upload_file_check_class,
 };
 use crate::components::ui::*;
@@ -10,6 +10,7 @@ use dioxus::html::HasFileData;
 use dioxus::prelude::*;
 use gloo_events::{EventListener, EventListenerOptions};
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -103,6 +104,16 @@ pub fn DeveloperUploadsPage() -> Element {
     let mut zip_drag_over = use_signal(|| false);
     let deployments: Signal<Vec<DeploymentRow>> = use_signal(Vec::new);
     let platform_stats: Signal<Option<PlatformStats>> = use_signal(|| None);
+    let mut bots: Signal<Vec<Value>> = use_signal(Vec::new);
+    let mut ext_slug = use_signal(String::new);
+    let mut ext_name = use_signal(String::new);
+    let mut ext_game = use_signal(String::new);
+    let mut ext_settings_schema = use_signal(String::new);
+    let mut ext_settings_json = use_signal(String::new);
+    let mut settings_bot_id = use_signal(|| None::<String>);
+    let mut settings_bot_name = use_signal(String::new);
+    let mut settings_schema_open = use_signal(|| None::<String>);
+    let mut settings_json_open = use_signal(|| None::<String>);
     let toast = use_toast();
 
     let _global_file_drag_guard: Rc<(EventListener, EventListener)> = use_hook(move || {
@@ -140,6 +151,7 @@ pub fn DeveloperUploadsPage() -> Element {
         let mut err = err;
         let mut deployments = deployments;
         let mut platform_stats = platform_stats;
+        let mut bots = bots;
         spawn(async move {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
@@ -172,6 +184,12 @@ pub fn DeveloperUploadsPage() -> Element {
             .await
             {
                 platform_stats.set(Some(s.platform_stats));
+            }
+            let q = r#"query { myBots { id slug displayName category gameSlug contractHash settingsSchemaJson settingsJson apiKeys { id prefix maskedKey createdAt lastUsedAt } } }"#;
+            if let Ok(v) = graphql_exec::<Value>(q, None).await {
+                if let Some(arr) = v.get("myBots").and_then(|x| x.as_array()) {
+                    bots.set(arr.clone());
+                }
             }
         });
         refresh_drafts();
@@ -508,6 +526,166 @@ pub fn DeveloperUploadsPage() -> Element {
                 section { class: "section-card",
                     div { class: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6",
                         SectionHeader {
+                            title: "My bots".to_string(),
+                            subtitle: Some("Published WASM bots and external bot registrations.".to_string()),
+                        }
+                        GhostButton {
+                            label: "Refresh".to_string(),
+                            onclick: move |_| {
+                                spawn(async move {
+                                    let q = r#"query { myBots { id slug displayName category gameSlug contractHash settingsSchemaJson settingsJson apiKeys { id prefix maskedKey createdAt lastUsedAt } } }"#;
+                                    if let Ok(v) = graphql_exec::<Value>(q, None).await {
+                                        if let Some(arr) = v.get("myBots").and_then(|x| x.as_array()) {
+                                            bots.set(arr.clone());
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    if bots().is_empty() {
+                        EmptyState {
+                            icon: "smart_toy",
+                            title: "No bots yet".to_string(),
+                            description: "Publish a bot with gamedev deploy from a bot project, or register an external bot below.".to_string(),
+                            cta_label: None,
+                            on_cta: None,
+                        }
+                    } else {
+                        div { class: "space-y-3",
+                            for bot in bots().iter().cloned() {
+                                {
+                                    let id = bot.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let name = bot.get("displayName").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let cat = bot.get("category").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let game = bot.get("gameSlug").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let schema = bot.get("settingsSchemaJson").and_then(|x| x.as_str()).map(str::to_string);
+                                    let settings = bot.get("settingsJson").and_then(|x| x.as_str()).map(str::to_string);
+                                    let id_for_edit = id.clone();
+                                    let id_for_api = id.clone();
+                                    rsx! {
+                                        div { class: "section-card p-4",
+                                            key: "{id}",
+                                            div { class: "flex flex-wrap items-center justify-between gap-2",
+                                                div {
+                                                    p { class: "font-medium text-on-surface", "{name}" }
+                                                    p { class: "text-body-sm text-on-surface-variant", "{cat} · {game}" }
+                                                }
+                                                div { class: "flex gap-2",
+                                                    button {
+                                                        class: "btn-ghost text-sm",
+                                                        onclick: {
+                                                            let id_for_edit = id_for_edit.clone();
+                                                            let name_for_edit = name.clone();
+                                                            let schema_for_edit = schema.clone();
+                                                            let settings_for_edit = settings.clone();
+                                                            move |_| {
+                                                                settings_bot_id.set(Some(id_for_edit.clone()));
+                                                                settings_bot_name.set(name_for_edit.clone());
+                                                                settings_schema_open.set(schema_for_edit.clone());
+                                                                settings_json_open.set(settings_for_edit.clone());
+                                                            }
+                                                        },
+                                                        "Edit settings"
+                                                    }
+                                                    if cat == "external" {
+                                                        button {
+                                                            class: "btn-secondary text-sm",
+                                                            onclick: move |_| {
+                                                                let bid = id_for_api.clone();
+                                                                let toast = toast;
+                                                                spawn(async move {
+                                                                    let q = r#"mutation K($botId: ID!) { createBotApiKey(botId: $botId) { key prefix } }"#;
+                                                                    let vars = serde_json::json!({ "botId": bid });
+                                                                    match graphql_exec::<Value>(q, Some(vars)).await {
+                                                                        Ok(v) => {
+                                                                            let key = v.pointer("/createBotApiKey/key").and_then(|x| x.as_str()).unwrap_or("");
+                                                                            push_toast(toast.show, format!("API key (copy now): {key}"), ToastKind::Success);
+                                                                        }
+                                                                        Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                                                    }
+                                                                });
+                                                            },
+                                                            "Create API key"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    div { class: "mt-6 p-4 rounded-lg border border-outline-variant/30 space-y-3",
+                        p { class: "font-manrope font-semibold text-on-surface text-sm", "Register external bot" }
+                        input {
+                            class: "input-field w-full",
+                            placeholder: "slug",
+                            value: "{ext_slug()}",
+                            oninput: move |e| ext_slug.set(e.value()),
+                        }
+                        input {
+                            class: "input-field w-full",
+                            placeholder: "Display name",
+                            value: "{ext_name()}",
+                            oninput: move |e| ext_name.set(e.value()),
+                        }
+                        input {
+                            class: "input-field w-full",
+                            placeholder: "Target game slug",
+                            value: "{ext_game()}",
+                            oninput: move |e| ext_game.set(e.value()),
+                        }
+                        textarea {
+                            class: "input-field w-full font-mono-code min-h-[6rem]",
+                            placeholder: "Settings schema JSON (optional)",
+                            value: "{ext_settings_schema()}",
+                            oninput: move |e| ext_settings_schema.set(e.value()),
+                        }
+                        textarea {
+                            class: "input-field w-full font-mono-code min-h-[4rem]",
+                            placeholder: "Default settings JSON (optional)",
+                            value: "{ext_settings_json()}",
+                            oninput: move |e| ext_settings_json.set(e.value()),
+                        }
+                        button {
+                            class: "btn-primary",
+                            onclick: move |_| {
+                                let slug = ext_slug();
+                                let name = ext_name();
+                                let game = ext_game();
+                                let schema = ext_settings_schema();
+                                let settings = ext_settings_json();
+                                let toast = toast;
+                                spawn(async move {
+                                    let q = r#"mutation R($slug: String!, $name: String!, $game: String!, $schema: String, $settings: String) {
+                                      registerExternalBot(slug: $slug, displayName: $name, gameSlug: $game, settingsSchemaJson: $schema, settingsJson: $settings) { id }
+                                    }"#;
+                                    let vars = serde_json::json!({
+                                        "slug": slug,
+                                        "name": name,
+                                        "game": game,
+                                        "schema": if schema.trim().is_empty() { Value::Null } else { Value::String(schema) },
+                                        "settings": if settings.trim().is_empty() { Value::Null } else { Value::String(settings) },
+                                    });
+                                    match graphql_exec::<Value>(q, Some(vars)).await {
+                                        Ok(_) => push_toast(toast.show, "External bot registered", ToastKind::Success),
+                                        Err(e) => push_toast(toast.show, e, ToastKind::Error),
+                                    }
+                                });
+                            },
+                            "Register"
+                        }
+                        p { class: "text-body-sm text-on-surface-variant",
+                            "External bots use API keys to request seats. See docs/bots-external-protocol.md."
+                        }
+                    }
+                }
+
+                section { class: "section-card",
+                    div { class: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6",
+                        SectionHeader {
                             title: "My drafts".to_string(),
                             subtitle: Some("Publish to go live in the lobby game list.".to_string()),
                         }
@@ -571,6 +749,26 @@ pub fn DeveloperUploadsPage() -> Element {
                         }
                     }
                 }
+            }
+        }
+        if let Some(bot_id) = settings_bot_id() {
+            BotSettingsEditor {
+                open: true,
+                on_close: EventHandler::new(move |_| settings_bot_id.set(None)),
+                bot_id: bot_id.clone(),
+                bot_name: settings_bot_name(),
+                settings_schema_json: settings_schema_open(),
+                settings_json: settings_json_open(),
+                on_saved: EventHandler::new(move |_| {
+                    spawn(async move {
+                        let q = r#"query { myBots { id slug displayName category gameSlug contractHash settingsSchemaJson settingsJson apiKeys { id prefix maskedKey createdAt lastUsedAt } } }"#;
+                        if let Ok(v) = graphql_exec::<Value>(q, None).await {
+                            if let Some(arr) = v.get("myBots").and_then(|x| x.as_array()) {
+                                bots.set(arr.clone());
+                            }
+                        }
+                    });
+                }),
             }
         }
     }

@@ -17,7 +17,7 @@ use crate::config;
 use crate::doctor::{self, has_failures, print_report};
 use crate::project::{
     game_cargo_command, load_config, resolve_java_backend_dir, resolve_rust_logic_wasm_path,
-    resolve_test_dir,
+    resolve_test_dir, ProjectKind,
 };
 use crate::reporter::{self, LoggedCommand, SpinnerFinish};
 
@@ -125,11 +125,31 @@ pub fn run_deploy(args: DeployArgs) -> Result<()> {
         out: None,
         strict: false,
     })?;
-    let zip_path = root.join("dist/game.zip");
+    let cfg = load_config(&root)?;
+    let zip_path = if cfg.kind == ProjectKind::Bot {
+        root.join("dist/bot.zip")
+    } else {
+        root.join("dist/game.zip")
+    };
     let tok = auth::load_token(&server_url)?;
     let zip_len = fs::metadata(&zip_path)
         .map(|m| m.len())
         .unwrap_or(0);
+    if cfg.kind == ProjectKind::Bot {
+        let resp = if zip_len > 0 {
+            let upload_pb = reporter::progress_bytes("Uploading bot package", zip_len);
+            let resp = api::gql_upload_bot_zip(&server_url, &tok.token, &zip_path)?;
+            upload_pb.finish_and_clear();
+            resp
+        } else {
+            let upload_pb = reporter::spinner("Uploading bot package...");
+            let resp = api::gql_upload_bot_zip(&server_url, &tok.token, &zip_path)?;
+            upload_pb.finish_ok("package sent to server");
+            resp
+        };
+        reporter::status("bot", &format!("published bot {} ({})", resp.slug, resp.bot_id));
+        return Ok(());
+    }
     let resp = if zip_len > 0 {
         let upload_pb = reporter::progress_bytes("Uploading game package", zip_len);
         let resp = api::gql_upload_game_zip(&server_url, &tok.token, &zip_path)?;

@@ -4,10 +4,15 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use crate::cli::{BackendKind, FrontendKind, InitArgs, JsTemplate};
+use crate::config;
+use crate::contract;
 use crate::pack::copy_dir_recursive;
-use crate::project::{self, ProjectConfig, ProjectLayout};
+use crate::project::{self, ProjectConfig, ProjectKind, ProjectLayout};
 
 pub fn cmd_init(args: InitArgs) -> Result<()> {
+    if args.bot {
+        return cmd_init_bot(args);
+    }
     let root = match args.name {
         Some(name) => std::env::current_dir()?.join(name),
         None => std::env::current_dir()?,
@@ -21,9 +26,13 @@ pub fn cmd_init(args: InitArgs) -> Result<()> {
     let backend = args.backend.unwrap_or(BackendKind::Rust);
     let frontend = args.frontend.unwrap_or(FrontendKind::Js);
     let cfg = ProjectConfig {
+        kind: ProjectKind::Game,
         name: name.clone(),
         backend: backend.clone(),
         frontend: frontend.clone(),
+        game: None,
+        game_version: None,
+        contract_hash: None,
     };
     if !backend.is_implemented() {
         anyhow::bail!("backend {backend:?} is not implemented; choose rust or java");
@@ -603,4 +612,131 @@ fn wire_sdk_js_package_json(pkg: &str, web_dir: &Path, root: &Path) -> Result<St
         );
     }
     Ok(serde_json::to_string_pretty(&value)?)
+}
+
+pub fn cmd_init_bot(args: InitArgs) -> Result<()> {
+    let game_slug = args
+        .game
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .context("--game <slug> is required for bot projects")?;
+    let game_version = args
+        .game_version
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .context("--game-version is required for bot projects")?;
+    let backend = args.backend.unwrap_or(BackendKind::Rust);
+    if backend != BackendKind::Rust {
+        anyhow::bail!("bot projects currently support rust backend only");
+    }
+
+    let root = match args.name {
+        Some(name) => std::env::current_dir()?.join(name),
+        None => std::env::current_dir()?,
+    };
+    fs::create_dir_all(&root)?;
+    let name = root
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let platform_base = config::resolve_platform_base(None, &args.server_url)?;
+    let (contract, _path) = contract::fetch_contract_from_server(&platform_base, game_slug)?;
+    let contract_hash = contract
+        .get("contract_hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if contract_hash.is_empty() {
+        anyhow::bail!("contract.json missing contract_hash");
+    }
+
+    let cfg = ProjectConfig {
+        kind: ProjectKind::Bot,
+        name: name.clone(),
+        backend,
+        frontend: FrontendKind::Js,
+        game: Some(game_slug.to_string()),
+        game_version: Some(game_version.to_string()),
+        contract_hash: Some(contract_hash.clone()),
+    };
+    fs::write(root.join("gamedev.toml"), toml::to_string_pretty(&cfg)?)?;
+    fs::write(
+        root.join("manifest.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "name": name.replace('-', "_"),
+            "display_name": name,
+            "version": "0.1.0",
+            "game_slug": game_slug,
+            "game_version": game_version,
+            "contract_hash": contract_hash,
+        }))?,
+    )?;
+    fs::create_dir_all(root.join("contract"))?;
+    fs::write(
+        root.join("contract/contract.json"),
+        serde_json::to_string_pretty(&contract)?,
+    )?;
+
+    let fw = project::find_framework_root(&root).context(
+        "bot scaffold: run from within the framework tree so bot-wasm-host and bot crates resolve",
+    )?;
+    let logic_dir = root.join("backend/rust/logic");
+    let component_dir = root.join("backend/rust/component");
+    fs::create_dir_all(logic_dir.join("src"))?;
+    fs::create_dir_all(component_dir.join("src"))?;
+
+    let crate_name = name.replace('-', "_");
+    let logic_name = format!("{crate_name}_bot_logic");
+    let component_name = format!("{crate_name}_bot_component");
+    let bot_crate_path = pathdiff::diff_paths(fw.join("bot"), &logic_dir)
+        .unwrap_or_else(|| PathBuf::from("../../../../bot"));
+    let host_path = pathdiff::diff_paths(fw.join("bot-wasm-host"), &component_dir)
+        .unwrap_or_else(|| PathBuf::from("../../../../bot-wasm-host"));
+
+    let logic_cargo = include_str!("../../templates/bot/rust_logic_Cargo.toml")
+        .replace("__BOT_LOGIC_NAME__", &logic_name)
+        .replace(
+            "__BOT_CRATE_PATH__",
+            &bot_crate_path.to_string_lossy().replace('\\', "/"),
+        );
+    fs::write(logic_dir.join("Cargo.toml"), logic_cargo)?;
+    let logic_lib = include_str!("../../templates/bot/rust_logic_lib.rs")
+        .replace("__BOT_LOGIC_NAME__", &logic_name);
+    fs::write(logic_dir.join("src/lib.rs"), logic_lib)?;
+
+    let component_cargo = include_str!("../../templates/bot/rust_component_Cargo.toml")
+        .replace("__BOT_COMPONENT_NAME__", &component_name)
+        .replace("__BOT_LOGIC_NAME__", &logic_name)
+        .replace(
+            "__BOT_HOST_PATH__",
+            &host_path.to_string_lossy().replace('\\', "/"),
+        )
+        .replace(
+            "__BOT_CRATE_PATH__",
+            &bot_crate_path.to_string_lossy().replace('\\', "/"),
+        );
+    fs::write(component_dir.join("Cargo.toml"), component_cargo)?;
+    let component_lib = include_str!("../../templates/bot/rust_component_lib.rs")
+        .replace("__BOT_LOGIC_NAME__", &logic_name);
+    fs::write(component_dir.join("src/lib.rs"), component_lib)?;
+
+    fs::copy(fw.join("bot.wit"), component_dir.join("bot.wit"))?;
+
+    fs::write(
+        root.join("Cargo.toml"),
+        include_str!("../../templates/bot/Cargo_workspace.toml"),
+    )?;
+    fs::write(
+        root.join("README.md"),
+        format!(
+            "# {name} bot\n\nTarget game: `{game_slug}` v{game_version}\nContract hash: `{contract_hash}`\n\n```bash\ngamedev build\ngamedev deploy --server {platform_base}\n```\n"
+        ),
+    )?;
+    crate::reporter::status(
+        "init",
+        &format!("Bot project at {} (game {game_slug})", root.display()),
+    );
+    Ok(())
 }

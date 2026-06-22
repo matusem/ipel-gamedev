@@ -34,11 +34,25 @@ pub enum Commands {
     Codegen(CodegenArgs),
     /// Download and install the platform-matching CLI release
     Update(UpdateArgs),
+    /// Run a local dev bot against a lobby (requests seat, waits for approval, plays via WS)
+    BotRun(BotRunArgs),
 }
 
 #[derive(Args)]
 pub struct InitArgs {
     pub name: Option<String>,
+    /// Scaffold a bot project instead of a game.
+    #[arg(long)]
+    pub bot: bool,
+    /// Target game slug (required for --bot).
+    #[arg(long)]
+    pub game: Option<String>,
+    /// Published game version (required for --bot).
+    #[arg(long)]
+    pub game_version: Option<String>,
+    /// Platform URL to fetch contract.json from (bot init).
+    #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
+    pub server_url: String,
     #[arg(long, value_enum)]
     pub backend: Option<BackendKind>,
     #[arg(long, value_enum)]
@@ -197,6 +211,31 @@ pub struct UpdateArgs {
 }
 
 #[derive(Args)]
+pub struct BotRunArgs {
+    /// Lobby UUID to join as a dev-local bot.
+    #[arg(long)]
+    pub lobby: String,
+    /// Desired seat index (hint for the host; approval picks the final seat).
+    #[arg(long)]
+    pub seat: Option<i32>,
+    /// Display label shown in the lobby (defaults to bot project name).
+    #[arg(long)]
+    pub label: Option<String>,
+    #[arg(long)]
+    pub project_dir: Option<PathBuf>,
+    #[arg(long, default_value = DEFAULT_GRAPHQL_URL)]
+    pub server_url: String,
+    #[arg(long)]
+    pub profile: Option<String>,
+    /// Build dist/bot.wasm before connecting if missing.
+    #[arg(long)]
+    pub build: bool,
+    /// Seconds to wait for host approval and game start.
+    #[arg(long, default_value = "600")]
+    pub timeout_secs: u64,
+}
+
+#[derive(Args)]
 pub struct ValidateArgs {
     #[arg(long)]
     pub project_dir: Option<PathBuf>,
@@ -205,7 +244,7 @@ pub struct ValidateArgs {
     pub logic_wasm: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ValueEnum, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum BackendKind {
     Rust,

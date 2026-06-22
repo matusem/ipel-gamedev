@@ -11,9 +11,9 @@ use async_graphql_actix_web::{GraphQLRequest, GraphQLResponse, GraphQLSubscripti
 use server::game_core::Buffer;
 use server::game_db::GameDb;
 use server::game_registry::GameRegistry;
-use server::graphql::{AppSchema, DraftsDir, GamesDir, RequestUser};
+use server::graphql::{AppSchema, BotsDir, DraftsDir, GamesDir, RequestUser};
 use server::friends::{FriendsListNotify, OnlineTracker};
-use server::lobby_db::LobbyListNotify;
+use server::lobby_db::{self, LobbyListNotify};
 use server::{component_db::ComponentDb, db};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -36,7 +36,11 @@ fn player_identity_from_query_param(param: &str) -> Buffer {
 }
 
 enum GameWsMode {
-    Player(Buffer),
+    Player {
+        player: Buffer,
+        full_state: bool,
+        connect_token: Option<String>,
+    },
     Spectator,
 }
 
@@ -79,9 +83,28 @@ impl GameRequestParams {
 
         let player: Buffer = player_identity_from_query_param(player);
 
+        let bot_mode = params
+            .get("mode")
+            .map(|v| v == "bot")
+            .unwrap_or(false)
+            || params
+                .get("fullstate")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+        let connect_token = params.get("token").cloned();
+        if bot_mode && connect_token.is_none() {
+            return Err(actix_web::error::ErrorBadRequest(
+                "bot mode requires 'token' query parameter",
+            ));
+        }
+
         Ok(Self {
             game_id,
-            mode: GameWsMode::Player(player),
+            mode: GameWsMode::Player {
+                player,
+                full_state: bot_mode,
+                connect_token,
+            },
         })
     }
 }
@@ -90,6 +113,7 @@ async fn game(
     request: HttpRequest,
     body: web::Payload,
     game_db: web::Data<GameDb>,
+    pool: web::Data<SqlitePool>,
 ) -> Result<HttpResponse, Error> {
     let params = GameRequestParams::parse(&request)?;
     let GameRequestParams { game_id, mode } = params;
@@ -100,10 +124,40 @@ async fn game(
         .max_continuation_size(2_usize.pow(20));
 
     match mode {
-        GameWsMode::Player(player) => {
+        GameWsMode::Player {
+            player,
+            full_state,
+            connect_token,
+        } => {
+            if full_state {
+                let token = connect_token.ok_or_else(|| {
+                    actix_web::error::ErrorBadRequest("bot mode requires token")
+                })?;
+                let lobby_id = lobby_db::lobby_id_for_game_instance(pool.get_ref(), game_id)
+                    .await
+                    .map_err(actix_web::error::ErrorInternalServerError)?
+                    .ok_or_else(|| actix_web::error::ErrorForbidden("game not linked to a lobby"))?;
+                let ident = serde_json::from_slice::<String>(&player)
+                    .unwrap_or_else(|_| String::from_utf8_lossy(&player).into_owned());
+                let ok = lobby_db::validate_external_bot_token(
+                    pool.get_ref(),
+                    lobby_id,
+                    &ident,
+                    &token,
+                )
+                .await
+                .map_err(actix_web::error::ErrorInternalServerError)?;
+                if !ok {
+                    return Err(actix_web::error::ErrorForbidden(
+                        "invalid bot connect token",
+                    )
+                    .into());
+                }
+            }
+
             let player_state = {
                 let mut game_instance = game_db.get_game(game_id)?;
-                game_instance.register_player(player.clone())?
+                game_instance.register_player(player.clone(), full_state)?
             };
 
             game_db.notify_game_list_changed();
@@ -473,6 +527,7 @@ async fn main() -> std::io::Result<()> {
         .expect("database connect/migrate");
 
     let games_dir = PathBuf::from(std::env::var("GAMES_DIR").unwrap_or_else(|_| "./games".into()));
+    let bots_dir = PathBuf::from(std::env::var("BOTS_DIR").unwrap_or_else(|_| "./bots".into()));
     let drafts_dir =
         PathBuf::from(std::env::var("DRAFTS_DIR").unwrap_or_else(|_| "./drafts".into()));
     let lobby_dir = PathBuf::from(std::env::var("LOBBY_DIR").unwrap_or_else(|_| "./lobby".into()));
@@ -480,6 +535,7 @@ async fn main() -> std::io::Result<()> {
     let tools_dir = PathBuf::from(std::env::var("TOOLS_DIR").unwrap_or_else(|_| "./tools".into()));
     let _ = server::platform_manifest::load_manifest();
     let _ = std::fs::create_dir_all(&drafts_dir);
+    let _ = std::fs::create_dir_all(&bots_dir);
     cleanup_old_drafts(&drafts_dir);
 
     let (list_tx, _list_rx) = broadcast::channel::<()>(256);
@@ -494,10 +550,13 @@ async fn main() -> std::io::Result<()> {
     let component_db = ComponentDb::new();
     let registry = GameRegistry::load(&games_dir, &component_db);
     let registry = web::Data::new(Arc::new(RwLock::new(registry)));
+    let bot_registry = server::bot_registry::BotRegistry::load(&bots_dir, &component_db);
+    let bot_registry = web::Data::new(Arc::new(RwLock::new(bot_registry)));
     let component_db = web::Data::new(component_db.clone());
 
     let pool_data = web::Data::new(pool.clone());
     let games_dir_data = web::Data::new(GamesDir(games_dir.clone()));
+    let bots_dir_data = web::Data::new(BotsDir(bots_dir.clone()));
     let drafts_dir_data = web::Data::new(DraftsDir(drafts_dir.clone()));
     let schema = web::Data::new(server::graphql::build_schema());
 
@@ -511,6 +570,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(registry.clone())
             .app_data(pool_data.clone())
             .app_data(games_dir_data.clone())
+            .app_data(bots_dir_data.clone())
+            .app_data(bot_registry.clone())
             .app_data(drafts_dir_data.clone())
             .app_data(game_store.clone())
             .app_data(lobby_notify.clone())

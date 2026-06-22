@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tic Tac Toe — New game</title>
+    <script type="module" crossorigin src="/games/tic_tac_toe/assets/config-BYVH8laz.js"></script>
+    <link rel="modulepreload" crossorigin href="/games/tic_tac_toe/assets/game-sdk-BBglYGMI.js">
+    <link rel="stylesheet" crossorigin href="/games/tic_tac_toe/assets/game-sdk-Cn80q3qZ.css">
+  </head>
+  <body class="bg-gray-950 text-gray-100 p-4 text-sm">
+    <p class="text-gray-400 mb-4 max-w-prose leading-relaxed">
+      Choose board size and how many marks in a row win (2–20 cells per side; win length cannot exceed the
+      side). Changes are sent to the lobby as <strong class="text-gray-300">preview JSON</strong>; the host
+      applies them with <strong class="text-gray-300">Apply configuration</strong> in the lobby UI.
+    </p>
+    <label for="side" class="block mb-1 text-gray-300 font-medium">Side length (N×N)</label>
+    <input type="number" id="side" min="2" max="20" value="3" class="config-input" />
+    <label for="win" class="block mb-1 mt-3 text-gray-300 font-medium">Win length</label>
+    <input type="number" id="win" min="2" max="20" value="3" class="config-input" />
+    <div id="err" class="text-red-400 min-h-[1.25em] my-3" aria-live="polite"></div>
+    <button type="button" id="apply" class="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-500 font-semibold text-white">
+      Send preview to lobby
+    </button>
+  </body>
+</html>

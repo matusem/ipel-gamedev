@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value;
 
-pub const LOBBY_DETAIL_FIELDS: &str = r#"id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt }"#;
+pub const LOBBY_DETAIL_FIELDS: &str = r#"id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready botId botDisplayName externalBot externalBotCategory botAvatarSeed botAvatarUrl botSettingsJson } botRequests { id category label avatarSeed gameSlug contractHash desiredSeatIndex status seatIndex createdAt settingsJson } messages { id userId displayName body createdAt }"#;
 
 pub fn graphql_error_message(err: &str) -> String {
     format_errors_from_str(err).unwrap_or_else(|| err.trim().to_string())

@@ -123,7 +123,7 @@ fn codegen_java_backend(root: &Path) -> Result<()> {
     }
 }
 
-fn find_shared_types_crate(root: &Path) -> Result<PathBuf> {
+pub fn find_shared_types_crate(root: &Path) -> Result<PathBuf> {
     let nested = root.join("backend").join("rust").join("shared-types");
     if nested.join("Cargo.toml").is_file() {
         return Ok(nested);

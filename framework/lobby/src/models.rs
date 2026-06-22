@@ -13,7 +13,7 @@ pub const LOBBIES_QUERY: &str =
 
 /// GraphQL field list for `gameTypes` catalog queries.
 pub const GAME_TYPES_GQL_FIELDS: &str =
-    "slug name displayName ownerName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson coverImageUrl activePlayers featured tags creatorDisplayName avgSessionMins";
+    "slug name displayName ownerName version minPlayers maxPlayers description configUiPath aboutUiPath configSchemaJson configUiMode coverImageUrl activePlayers featured tags creatorDisplayName avgSessionMins";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +35,8 @@ pub struct GameTypeInfo {
     pub about_ui_path: Option<String>,
     #[serde(default)]
     pub config_schema_json: Option<String>,
+    #[serde(default = "default_config_ui_mode")]
+    pub config_ui_mode: String,
     #[serde(default)]
     pub cover_image_url: Option<String>,
     #[serde(default)]
@@ -47,6 +49,10 @@ pub struct GameTypeInfo {
     pub creator_display_name: Option<String>,
     #[serde(default)]
     pub avg_session_mins: i32,
+}
+
+fn default_config_ui_mode() -> String {
+    "generated".into()
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -164,10 +170,16 @@ pub fn seat_identity_display_map(seats_json: &str) -> std::collections::HashMap<
             .unwrap_or("")
             .to_string();
         let name = seat
-            .get("claimed_display_name")
-            .or_else(|| seat.get("claimedDisplayName"))
+            .get("bot_display_name")
+            .or_else(|| seat.get("botDisplayName"))
             .and_then(|x| x.as_str())
             .filter(|s| !s.is_empty())
+            .or_else(|| {
+                seat.get("claimed_display_name")
+                    .or_else(|| seat.get("claimedDisplayName"))
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
+            })
             .unwrap_or(&identity)
             .to_string();
         if !identity.is_empty() {
@@ -293,6 +305,26 @@ pub struct LobbySummary {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LobbyBotRequest {
+    pub id: String,
+    pub category: String,
+    pub label: String,
+    #[serde(default)]
+    pub avatar_seed: Option<String>,
+    pub game_slug: String,
+    pub contract_hash: String,
+    #[serde(default)]
+    pub desired_seat_index: Option<i32>,
+    pub status: String,
+    #[serde(default)]
+    pub seat_index: Option<i32>,
+    #[serde(default)]
+    pub settings_json: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LobbySeat {
     pub seat_index: i32,
     pub player_identity: String,
@@ -302,6 +334,20 @@ pub struct LobbySeat {
     pub claimed_display_name: Option<String>,
     #[serde(default)]
     pub ready: bool,
+    #[serde(default)]
+    pub bot_id: Option<String>,
+    #[serde(default)]
+    pub bot_display_name: Option<String>,
+    #[serde(default)]
+    pub external_bot: bool,
+    #[serde(default)]
+    pub external_bot_category: Option<String>,
+    #[serde(default)]
+    pub bot_avatar_seed: Option<String>,
+    #[serde(default)]
+    pub bot_avatar_url: Option<String>,
+    #[serde(default)]
+    pub bot_settings_json: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -329,6 +375,8 @@ pub struct LobbyDetail {
     pub created_at: i64,
     pub updated_at: i64,
     pub seats: Vec<LobbySeat>,
+    #[serde(default)]
+    pub bot_requests: Vec<LobbyBotRequest>,
     #[serde(default)]
     pub messages: Vec<LobbyMessage>,
 }

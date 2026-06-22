@@ -1,0 +1,12 @@
+[package]
+name = "tic_tac_toe_bot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bot = { path = "../../../../bot" }
+tic_tac_toe = { path = "../../../tic_tac_toe/rust/logic" }
+serde = { version = "1", features = ["derive"] }
+
+[lib]
+path = "src/lib.rs"

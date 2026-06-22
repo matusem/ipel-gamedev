@@ -3,6 +3,7 @@
 pub mod api;
 pub mod auth;
 pub mod auth_web;
+pub mod bot_local;
 pub mod build;
 pub mod cli;
 pub mod codegen;
@@ -10,6 +11,7 @@ pub mod commands;
 pub mod config;
 pub mod defaults;
 pub mod doctor;
+pub mod contract;
 pub mod pack;
 pub mod platform;
 pub mod project;
@@ -43,6 +45,7 @@ pub fn run_cli() -> Result<()> {
             Commands::Validate(args) => commands::run_validate(args),
             Commands::Codegen(args) => commands::run_codegen(args),
             Commands::Update(args) => commands::run_update(args),
+            Commands::BotRun(args) => bot_local::run(args),
         };
     }
     ui::run_interactive()?;

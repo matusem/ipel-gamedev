@@ -2,10 +2,15 @@
 resolver = "3"
 members = [
     "game",
+    "bot",
     "server",
     "game-wasm-host",
+    "bot-wasm-host",
     "games/tic_tac_toe/rust/logic",
-    "games/tic_tac_toe/rust/component", "tools/gamedev-cli",
+    "games/tic_tac_toe/rust/component",
+    "games/tic_tac_toe_bot/rust/logic",
+    "games/tic_tac_toe_bot/rust/component",
+    "tools/gamedev-cli",
     "sdk/rust/shared-types",
     "sdk/rust/shared",
     "sdk/rust/bevy",

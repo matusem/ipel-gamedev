@@ -20,6 +20,7 @@ async fn register_spectator_returns_initial_public_state() {
         None,
         env.pool.clone(),
         env.lobby_notify.clone(),
+        vec![],
     )
     .await
     .expect("spawn tic_tac_toe");

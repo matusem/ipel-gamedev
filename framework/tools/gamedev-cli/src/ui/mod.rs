@@ -123,6 +123,10 @@ fn run_fallback() -> Result<UiCommand> {
                 } else {
                     Some(n.trim().to_string())
                 },
+                bot: false,
+                game: None,
+                game_version: None,
+                server_url: crate::defaults::DEFAULT_GRAPHQL_URL.to_string(),
                 backend: Some(backend),
                 frontend: Some(frontend),
                 js_template,

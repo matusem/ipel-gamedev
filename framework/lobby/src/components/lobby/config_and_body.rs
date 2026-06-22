@@ -1,8 +1,9 @@
 ﻿use crate::api::*;
 use crate::components::lobby::{
-    LobbyFloatingChat, LobbyGameModal, LobbyGameRulesModal, LobbyPlayerCard, LobbyRoomHeader,
+    LobbyBotRequestCards, LobbyFloatingChat, LobbyGameModal, LobbyGameRulesModal, LobbyPlayerCard,
+    LobbyRoomHeader,
 };
-use crate::components::ui::{push_toast, status_variant_from_lobby, Icon, JsonConsole, StatusBadge, use_confirm, use_toast, ToastKind};
+use crate::components::ui::{push_toast, status_variant_from_lobby, Icon, JsonConsole, SchemaForm, StatusBadge, coerce_initial_value, default_value_for_spec, parse_schema, use_confirm, use_toast, ToastKind};
 use crate::models::*;
 use crate::stub::game_media;
 use crate::LobbyRoute;
@@ -71,13 +72,92 @@ impl LobbyConfigListenBridge {
 pub fn LobbyConfigPanel(
     lobby_id: String,
     game_type: String,
-    iframe_src: String,
+    iframe_src: Option<String>,
     schema_json: Option<String>,
+    use_generated_ui: bool,
     read_only: bool,
     server_config_json: Option<String>,
 ) -> Element {
     let toast = use_toast();
     let confirm = use_confirm();
+    let init_cfg = server_config_json
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "null".to_string());
+
+    if use_generated_ui {
+        let schema_val = schema_json
+            .as_ref()
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .unwrap_or(Value::Null);
+        let spec = parse_schema(&schema_val);
+        let init_value = serde_json::from_str::<Value>(&init_cfg)
+            .unwrap_or_else(|_| default_value_for_spec(&spec));
+        let mut form_value = use_signal(move || coerce_initial_value(&spec, &init_value));
+        let mut preview = use_signal(move || init_cfg.clone());
+        let lobby_id_apply = lobby_id.clone();
+        use_effect(move || {
+            preview.set(
+                serde_json::to_string_pretty(&form_value())
+                    .unwrap_or_else(|_| "null".into()),
+            );
+        });
+        return rsx! {
+            div { class: "lobby-config-generated space-y-3",
+                SchemaForm {
+                    schema: schema_val,
+                    value: form_value,
+                    read_only,
+                    show_preview: false,
+                }
+                details { class: "lobby-config-preview mt-3",
+                    summary { class: "lobby-config-preview-toggle",
+                        Icon { name: "data_object", filled: false }
+                        "Live config preview"
+                    }
+                    div { class: "mt-2",
+                        JsonConsole { content: preview(), max_height: Some("max-h-40") }
+                    }
+                }
+                if !read_only {
+                    button {
+                        class: "btn-primary lobby-config-apply mt-4 w-full sm:w-auto",
+                        onclick: move |_| {
+                            let cfg = serde_json::to_string(&form_value()).unwrap_or_else(|_| "null".into());
+                            let lid = lobby_id_apply.clone();
+                            let toast = toast;
+                            let confirm = confirm;
+                            spawn(async move {
+                                let q = "mutation U($id: ID!, $c: String!, $f: Boolean!) { updateLobbyConfig(lobbyId: $id, configJson: $c, force: $f) { id } }";
+                                let vars = serde_json::json!({ "id": lid, "c": cfg, "f": false });
+                                let r = graphql_exec::<Value>(q, Some(vars)).await;
+                                if r.is_ok() {
+                                    push_toast(toast.show, "Configuration applied", ToastKind::Success);
+                                } else if let Err(_) = r {
+                                    let force = confirm
+                                        .confirm(
+                                            "Config change needs resetting seats. Apply and reset claims?",
+                                        )
+                                        .await;
+                                    if force {
+                                        let vars2 = serde_json::json!({ "id": lid, "c": cfg, "f": true });
+                                        if graphql_exec::<Value>(q, Some(vars2)).await.is_ok() {
+                                            push_toast(toast.show, "Configuration applied (seats reset)", ToastKind::Success);
+                                        }
+                                    }
+                                }
+                            });
+                        },
+                        "Apply configuration"
+                    }
+                }
+            }
+        };
+    }
+
+    let iframe_src = iframe_src.unwrap_or_default();
     let init_cfg = server_config_json
         .as_deref()
         .map(str::trim)
@@ -219,6 +299,7 @@ pub fn LobbyConfigModal(
     game_type: String,
     iframe_src: Option<String>,
     schema_json: Option<String>,
+    use_generated_ui: bool,
     read_only: bool,
     server_config_json: Option<String>,
     config_panel_key: String,
@@ -251,14 +332,15 @@ pub fn LobbyConfigModal(
                     }
                 }
                 div { class: "lobby-config-modal-body",
-                    if let Some(src) = iframe_src {
+                    if use_generated_ui || iframe_src.is_some() {
                         div { class: "lobby-config-shell",
                             LobbyConfigPanel {
                                 key: "{config_panel_key}",
                                 lobby_id: lobby_id.clone(),
                                 game_type: game_type.clone(),
-                                iframe_src: src,
+                                iframe_src: iframe_src.clone(),
                                 schema_json: schema_json.clone(),
+                                use_generated_ui,
                                 read_only,
                                 server_config_json: server_config_json.clone(),
                             }
@@ -396,14 +478,21 @@ pub fn LobbyRoomBody(
         .iter()
         .find(|g| g.slug == lobby_for_cols.game_type)
         .cloned();
-    let iframe_src = selected_gt.as_ref().and_then(|g| {
-        g.config_ui_path
-            .as_ref()
-            .map(|p| format!("/games/{}/{}", g.slug, p))
-    });
     let schema_json = selected_gt
         .as_ref()
         .and_then(|g| g.config_schema_json.clone());
+    let use_generated_ui = selected_gt.as_ref().map_or(false, |g| {
+        g.config_ui_mode != "custom" && g.config_schema_json.is_some()
+    });
+    let iframe_src = if use_generated_ui {
+        None
+    } else {
+        selected_gt.as_ref().and_then(|g| {
+            g.config_ui_path
+                .as_ref()
+                .map(|p| format!("/games/{}/{}", g.slug, p))
+        })
+    };
     let read_only = !is_owner;
     let config_panel_key = format!(
         "{}|{}|{}",
@@ -446,7 +535,7 @@ pub fn LobbyRoomBody(
     let mut games_open = use_signal(|| false);
     let mut config_open = use_signal(|| false);
     let mut rules_open = use_signal(|| false);
-    let has_config = !no_game_yet && (iframe_src.is_some() || is_owner);
+    let has_config = !no_game_yet && (use_generated_ui || iframe_src.is_some() || is_owner);
     let about_url = selected_gt.as_ref().and_then(game_type_about_url);
     let show_rules = !no_game_yet && about_url.is_some();
     let config_title = game_type_display_title(&gt_list, &game_name);
@@ -470,6 +559,32 @@ pub fn LobbyRoomBody(
     } else {
         (Vec::new(), None, Vec::new())
     };
+
+    let pending_bot_requests = lobby_for_cols
+        .bot_requests
+        .iter()
+        .filter(|r| r.status == "pending")
+        .count();
+    let mut contract_hash: Signal<Option<String>> = use_signal(|| None);
+    let gt_contract = lobby_for_cols.game_type.clone();
+    use_effect(move || {
+        if gt_contract.is_empty() {
+            return;
+        }
+        let gt = gt_contract.clone();
+        let mut contract_hash = contract_hash;
+        spawn(async move {
+            let q = r#"query C($slug: String!) { gameContract(slug: $slug) { contractHash } }"#;
+            let vars = serde_json::json!({ "slug": gt });
+            if let Ok(v) = graphql_exec::<Value>(q, Some(vars)).await {
+                let h = v
+                    .pointer("/gameContract/contractHash")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+                contract_hash.set(h);
+            }
+        });
+    });
 
     rsx! {
         div { class: "lobby-room-body",
@@ -510,6 +625,7 @@ pub fn LobbyRoomBody(
                 game_type: lobby_for_cols.game_type.clone(),
                 iframe_src: iframe_src.clone(),
                 schema_json: schema_json.clone(),
+                use_generated_ui,
                 read_only,
                 server_config_json: lobby_for_cols.config_json.clone(),
                 config_panel_key: config_panel_key.clone(),
@@ -527,6 +643,17 @@ pub fn LobbyRoomBody(
             }
 
             div { class: "lobby-stage-main",
+                if pending_bot_requests > 0 && is_owner && in_staging {
+                    LobbyBotRequestCards {
+                        lobby_id: lobby_for_cols.id.clone(),
+                        game_type: lobby_for_cols.game_type.clone(),
+                        contract_hash: contract_hash(),
+                        requests: lobby_for_cols.bot_requests.clone(),
+                        is_owner,
+                        seats: lobby_for_cols.seats.clone(),
+                        on_detail_updated,
+                    }
+                }
                 div { class: "lobby-panel-middle",
                     if !no_game_yet {
                         div { class: "lobby-squad-ambient bg-gradient-to-b {media.accent_gradient}" }
@@ -564,6 +691,7 @@ pub fn LobbyRoomBody(
                                         key: "{seat.seat_index}",
                                         seat: seat,
                                         lobby_id: lobby_for_cols.id.clone(),
+                                        game_type: lobby_for_cols.game_type.clone(),
                                         owner_user_id: lobby_for_cols.owner_user_id.clone(),
                                         my_user_id: uid.clone(),
                                         viewer_is_owner: is_owner,
@@ -577,6 +705,7 @@ pub fn LobbyRoomBody(
                                     key: "{me_seat.seat_index}",
                                     seat: me_seat,
                                     lobby_id: lobby_for_cols.id.clone(),
+                                    game_type: lobby_for_cols.game_type.clone(),
                                     owner_user_id: lobby_for_cols.owner_user_id.clone(),
                                     my_user_id: uid.clone(),
                                     viewer_is_owner: is_owner,
@@ -590,6 +719,7 @@ pub fn LobbyRoomBody(
                                         key: "{seat.seat_index}",
                                         seat: seat,
                                         lobby_id: lobby_for_cols.id.clone(),
+                                        game_type: lobby_for_cols.game_type.clone(),
                                         owner_user_id: lobby_for_cols.owner_user_id.clone(),
                                         my_user_id: uid.clone(),
                                         viewer_is_owner: is_owner,
@@ -606,6 +736,7 @@ pub fn LobbyRoomBody(
                                     key: "{seat.seat_index}",
                                     seat: seat,
                                     lobby_id: lobby_for_cols.id.clone(),
+                                    game_type: lobby_for_cols.game_type.clone(),
                                     owner_user_id: lobby_for_cols.owner_user_id.clone(),
                                     my_user_id: uid.clone(),
                                     viewer_is_owner: is_owner,

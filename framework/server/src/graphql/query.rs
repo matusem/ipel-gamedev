@@ -15,12 +15,13 @@ use crate::user_engagement;
 
 use super::{
     ActivityEventGql, AdminCommentGql, AdminPlatformOverviewGql, AdminReviewGql, AdminUserGql,
-    BadgeGql, CliReleaseGql, DeploymentGql, FinishedGameGql, FriendActivityGql, FriendGql,
+    BadgeGql, BotGql, CliReleaseGql, DeploymentGql, FinishedGameGql, FriendActivityGql, FriendGql,
     FriendRequestGql, GameCommentGql,
-    GameDraftGql, GameInstanceGql, GamePatchNoteGql, GameReviewGql, GameScreenshotGql,
+    GameContractGql, GameDraftGql, GameInstanceGql, GamePatchNoteGql, GameReviewGql, GameScreenshotGql,
     GameSessionGql, GameStorefrontGql, GameTypeGql, LeaderboardEntryGql, LobbyGql, LobbySummaryGql,
     NotificationGql, PlatformManifestGql, PlatformStatsGql, PlayTimeLeaderboardEntryGql,
-    PublishTokenSummaryGql, UserGql, UserProfileGql, UserSearchResultGql, lobby_to_gql, map_aspect_ratings, map_draft,
+    PublishTokenSummaryGql, UserGql, UserProfileGql, UserSearchResultGql, BotRequestGql,
+    lobby_to_gql, map_aspect_ratings, map_bot, map_bot_with_keys, map_bot_request_detail, map_draft,
     map_finished_row, map_game_entries,     map_summary, require_developer_user,
     require_registered_user, require_superadmin_user, is_superadmin,
 };
@@ -82,6 +83,7 @@ impl QueryRoot {
                     .config_schema
                     .as_ref()
                     .and_then(|v| serde_json::to_string(v).ok()),
+                config_ui_mode: gt.config_ui_mode.clone(),
                 cover_image_url: cover,
                 active_players: *live_players.get(&slug).unwrap_or(&0),
                 featured,
@@ -1008,5 +1010,80 @@ impl QueryRoot {
                 timestamp: a.timestamp,
             })
             .collect())
+    }
+
+    async fn game_contract(
+        &self,
+        ctx: &Context<'_>,
+        slug: String,
+    ) -> Result<Option<GameContractGql>> {
+        let games_dir = &ctx.data::<super::GamesDir>()?.0;
+        let contract = crate::game_contract::load_contract_for_game(games_dir.as_path(), &slug);
+        Ok(contract.map(|c| GameContractGql {
+            game: c.game,
+            version: c.version,
+            wit_version: c.wit_version,
+            contract_hash: c.contract_hash,
+            schema_json: serde_json::to_string(&c.schema).unwrap_or_else(|_| "{}".into()),
+        }))
+    }
+
+    async fn my_bots(&self, ctx: &Context<'_>) -> Result<Vec<BotGql>> {
+        let uid = require_developer_user(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rows = crate::bot_db::list_bots_by_owner(pool, uid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let mut out = Vec::new();
+        for bot in rows {
+            let keys = if bot.category == "external" {
+                crate::bot_api_key::list_keys_for_bot(pool, bot.id, uid)
+                    .await
+                    .map_err(|e| Error::new(format!("db: {e}")))?
+            } else {
+                vec![]
+            };
+            out.push(map_bot_with_keys(bot, keys));
+        }
+        Ok(out)
+    }
+
+    async fn bot_request(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "requestId")] request_id: async_graphql::types::ID,
+    ) -> Result<Option<BotRequestGql>> {
+        let principal = super::require_user_or_bot(ctx).await?;
+        let pool = ctx.data::<SqlitePool>()?;
+        let rid = Uuid::parse_str(request_id.as_str()).map_err(|_| Error::new("invalid request id"))?;
+        let req = lobby_db::get_bot_request(pool, rid)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        let Some(req) = req else {
+            return Ok(None);
+        };
+        let authorized = match principal {
+            super::RequestPrincipal::User(uid) => uid == req.requested_by_user_id,
+            super::RequestPrincipal::Bot(bot) => req.requested_by_bot_id == Some(bot.bot_id),
+        };
+        if !authorized {
+            return Err(Error::new("not authorized to view this request"));
+        }
+        Ok(Some(map_bot_request_detail(req)))
+    }
+
+    async fn compatible_bots(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(name = "gameSlug")] game_slug: String,
+    ) -> Result<Vec<BotGql>> {
+        let pool = ctx.data::<SqlitePool>()?;
+        let games_dir = &ctx.data::<super::GamesDir>()?.0;
+        let contract = crate::game_contract::load_contract_for_game(games_dir.as_path(), &game_slug)
+            .ok_or_else(|| Error::new("game contract not found — publish game with contract.json first"))?;
+        let rows = crate::bot_db::list_compatible_bots(pool, &game_slug, &contract.contract_hash)
+            .await
+            .map_err(|e| Error::new(format!("db: {e}")))?;
+        Ok(rows.into_iter().map(map_bot).collect())
     }
 }

@@ -1,0 +1,279 @@
+{
+  "game": "tic_tac_toe",
+  "version": "1.0.0",
+  "wit_version": "game-core-v2",
+  "contract_hash": "99b0a730c31c87b3acb9412f0f8344f44c17b5023051bf4e9dd70684c7547a77",
+  "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "Action": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "items": [
+          {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        ],
+        "maxItems": 2,
+        "minItems": 2,
+        "title": "Position",
+        "type": "array"
+      },
+      "Config": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Grid is `side_length × side_length`. A player wins with `win_length` marks in a row (horizontal, vertical, or diagonal).",
+        "properties": {
+          "side_length": {
+            "default": 3,
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "win_length": {
+            "default": 3,
+            "format": "uint8",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "title": "Config",
+        "type": "object"
+      },
+      "GameResult": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {
+          "Player": {
+            "enum": [
+              "X",
+              "O"
+            ],
+            "type": "string"
+          }
+        },
+        "description": "Authoritative end state: either a winning player or a full board with no winner.",
+        "oneOf": [
+          {
+            "enum": [
+              "Draw"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Win": {
+                "$ref": "#/definitions/Player"
+              }
+            },
+            "required": [
+              "Win"
+            ],
+            "type": "object"
+          }
+        ],
+        "title": "GameOutcome"
+      },
+      "Player": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "enum": [
+          "X",
+          "O"
+        ],
+        "title": "Player",
+        "type": "string"
+      },
+      "PlayerEvent": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {
+          "Player": {
+            "enum": [
+              "X",
+              "O"
+            ],
+            "type": "string"
+          },
+          "Position": {
+            "items": [
+              {
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          }
+        },
+        "properties": {
+          "action": {
+            "$ref": "#/definitions/Position"
+          },
+          "player": {
+            "$ref": "#/definitions/Player"
+          }
+        },
+        "required": [
+          "action",
+          "player"
+        ],
+        "title": "PlayerEvent",
+        "type": "object"
+      },
+      "PlayerResult": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "What this player sees when the game ends.",
+        "enum": [
+          "Win",
+          "Loss",
+          "Draw"
+        ],
+        "title": "PlayerOutcome",
+        "type": "string"
+      },
+      "PlayerState": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {
+          "Config": {
+            "description": "Grid is `side_length × side_length`. A player wins with `win_length` marks in a row (horizontal, vertical, or diagonal).",
+            "properties": {
+              "side_length": {
+                "default": 3,
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "win_length": {
+                "default": 3,
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "Player": {
+            "enum": [
+              "X",
+              "O"
+            ],
+            "type": "string"
+          },
+          "State": {
+            "properties": {
+              "board": {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/Player"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              "config": {
+                "$ref": "#/definitions/Config"
+              },
+              "current_player": {
+                "$ref": "#/definitions/Player"
+              }
+            },
+            "required": [
+              "board",
+              "config",
+              "current_player"
+            ],
+            "type": "object"
+          }
+        },
+        "properties": {
+          "player": {
+            "$ref": "#/definitions/Player"
+          },
+          "state": {
+            "$ref": "#/definitions/State"
+          }
+        },
+        "required": [
+          "player",
+          "state"
+        ],
+        "title": "PlayerState",
+        "type": "object"
+      },
+      "State": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {
+          "Config": {
+            "description": "Grid is `side_length × side_length`. A player wins with `win_length` marks in a row (horizontal, vertical, or diagonal).",
+            "properties": {
+              "side_length": {
+                "default": 3,
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "win_length": {
+                "default": 3,
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "Player": {
+            "enum": [
+              "X",
+              "O"
+            ],
+            "type": "string"
+          }
+        },
+        "properties": {
+          "board": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Player"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "config": {
+            "$ref": "#/definitions/Config"
+          },
+          "current_player": {
+            "$ref": "#/definitions/Player"
+          }
+        },
+        "required": [
+          "board",
+          "config",
+          "current_player"
+        ],
+        "title": "State",
+        "type": "object"
+      }
+    },
+    "title": "GameTypeContract"
+  }
+}

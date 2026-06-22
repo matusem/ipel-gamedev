@@ -12,11 +12,11 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 
 use crate::cli::{BackendKind, BuildArgs, FrontendKind};
-use crate::pack::{copy_dir_recursive, create_zip};
+use crate::pack::{copy_dir_recursive, create_bot_zip, create_zip};
 use crate::project::{
     cargo_target_roots, find_built_component_wasm, find_built_java_logic_wasm, game_cargo_command,
     load_config, read_package_name, resolve_bevy_dir, resolve_component_dir, resolve_dioxus_dir,
-    resolve_java_backend_dir,
+    resolve_java_backend_dir, ProjectKind,
 };
 use crate::reporter::{self, LoggedCommand};
 
@@ -26,8 +26,11 @@ pub use validate::{
 };
 
 pub fn run(args: BuildArgs) -> Result<()> {
-    let root = args.project_dir.unwrap_or(std::env::current_dir()?);
+    let root = args.project_dir.clone().unwrap_or(std::env::current_dir()?);
     let cfg = load_config(&root)?;
+    if cfg.kind == ProjectKind::Bot {
+        return run_bot_build(args, &root);
+    }
     if !cfg.backend.is_implemented() {
         bail!(
             "backend {:?} is not implemented yet; use rust or java",
@@ -152,6 +155,7 @@ pub fn run(args: BuildArgs) -> Result<()> {
     }
 
     validate_staged_pack(&cfg, stage.path())?;
+    crate::contract::emit_contract_to_stage(&root, stage.path())?;
 
     let out = args.out.unwrap_or(root.join("dist/game.zip"));
     if let Some(p) = out.parent() {
@@ -159,6 +163,32 @@ pub fn run(args: BuildArgs) -> Result<()> {
     }
     create_zip(stage.path(), &out)?;
     reporter::status("build", &format!("Built package: {}", out.display()));
+    Ok(())
+}
+
+fn run_bot_build(args: BuildArgs, root: &Path) -> Result<()> {
+    let stage = tempfile::tempdir()?;
+    fs::copy(root.join("manifest.json"), stage.path().join("manifest.json"))?;
+    let component_dir = resolve_component_dir(root);
+    let status = game_cargo_command()
+        .arg("component")
+        .arg("build")
+        .arg("--release")
+        .current_dir(&component_dir)
+        .status_logged()
+        .context("cargo component build --release")?;
+    if !status.success() {
+        bail!("bot component build failed");
+    }
+    let built_wasm = find_built_component_wasm(root, &component_dir)?;
+    fs::copy(built_wasm, stage.path().join("bot.wasm"))?;
+    validate_logic_wasm_file(&stage.path().join("bot.wasm"))?;
+    let out = args.out.unwrap_or(root.join("dist/bot.zip"));
+    if let Some(p) = out.parent() {
+        fs::create_dir_all(p)?;
+    }
+    create_bot_zip(stage.path(), &out)?;
+    reporter::status("build", &format!("Built bot package: {}", out.display()));
     Ok(())
 }
 

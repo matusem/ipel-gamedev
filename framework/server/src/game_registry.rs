@@ -24,6 +24,9 @@ pub struct GameManifest {
     /// JSON Schema for the `config` string posted by the lobby config UI (JSON instance).
     #[serde(default)]
     pub config_schema: Option<Value>,
+    /// `generated` (default when schema present) or `custom` (use config_entry iframe).
+    #[serde(default = "default_config_ui_mode")]
+    pub config_ui_mode: String,
     /// When false, lobby hides the spectate action for in-game rooms.
     #[serde(default = "default_supports_spectators")]
     pub supports_spectators: bool,
@@ -31,6 +34,10 @@ pub struct GameManifest {
 
 fn default_supports_spectators() -> bool {
     true
+}
+
+fn default_config_ui_mode() -> String {
+    "generated".into()
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +52,8 @@ pub struct GameType {
     pub result_ui_path: Option<String>,
     /// Relative path under `client/` for `/games/{slug}/{path}` about/info screen when present.
     pub about_ui_path: Option<String>,
+    /// `generated` or `custom` config UI mode.
+    pub config_ui_mode: String,
 }
 
 #[derive(Clone)]
@@ -170,11 +179,12 @@ impl GameRegistry {
 
             game_types.push(GameType {
                 slug,
-                manifest,
+                manifest: manifest.clone(),
                 client_dir,
                 config_ui_path,
                 result_ui_path,
                 about_ui_path,
+                config_ui_mode: manifest.config_ui_mode.clone(),
             });
         }
 

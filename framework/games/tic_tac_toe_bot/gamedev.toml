@@ -1,0 +1,7 @@
+kind = "bot"
+name = "tic_tac_toe_bot"
+backend = "rust"
+frontend = "js"
+game = "tic_tac_toe"
+game_version = "1.0.0"
+contract_hash = "99b0a730c31c87b3acb9412f0f8344f44c17b5023051bf4e9dd70684c7547a77"

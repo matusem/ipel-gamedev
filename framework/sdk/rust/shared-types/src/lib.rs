@@ -1,3 +1,10 @@
+pub mod contract;
+
+pub use contract::{
+    GameContract, CONTRACT_SLOTS, CONTRACT_WIT_VERSION, compute_contract_hash,
+    recompute_contract_hash,
+};
+
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "typegen")]

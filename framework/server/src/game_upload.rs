@@ -37,7 +37,7 @@ pub struct UploadValidationResult {
     pub staged_dir: PathBuf,
 }
 
-fn diag(
+pub(crate) fn diag(
     severity: &str,
     code: &str,
     message: impl Into<String>,
@@ -53,7 +53,7 @@ fn diag(
     }
 }
 
-fn summarize(
+pub(crate) fn summarize(
     diagnostics: Vec<ValidationDiagnostic>,
     req_index: bool,
     req_config: bool,
@@ -89,7 +89,7 @@ fn ensure_within_base(base: &Path, candidate: &Path) -> bool {
     candidate_canon.starts_with(base_canon)
 }
 
-fn copy_dir_recursive(from: &Path, to: &Path) -> Result<(), String> {
+pub(crate) fn copy_dir_recursive(from: &Path, to: &Path) -> Result<(), String> {
     if !to.exists() {
         fs::create_dir_all(to).map_err(|e| format!("create dir '{}': {e}", to.display()))?;
     }
@@ -237,6 +237,7 @@ pub async fn validate_and_stage_zip_bytes(
 
     let manifest_path = extract_root.join("manifest.json");
     let logic_path = extract_root.join("logic.wasm");
+    let contract_path = extract_root.join("contract.json");
     let client_dir = extract_root.join("client");
     let index_path = client_dir.join("index.html");
     let config_path = client_dir.join("config.html");
@@ -258,6 +259,15 @@ pub async fn validate_and_stage_zip_bytes(
             "E_LOGIC_WASM_MISSING",
             "logic.wasm is required",
             Some("logic.wasm"),
+            None,
+        ));
+    }
+    if !contract_path.is_file() {
+        diagnostics.push(diag(
+            "error",
+            "E_CONTRACT_MISSING",
+            "contract.json is required (run gamedev build to emit type contract)",
+            Some("contract.json"),
             None,
         ));
     }
@@ -416,6 +426,62 @@ pub async fn validate_and_stage_zip_bytes(
                 "E_LOGIC_WASM_READ_FAILED",
                 format!("cannot read logic.wasm: {e}"),
                 Some("logic.wasm"),
+                None,
+            )),
+        }
+    }
+
+    if contract_path.is_file() {
+        match std::fs::read_to_string(&contract_path) {
+            Ok(raw) => match crate::game_contract::validate_contract_json(&raw) {
+                Ok(contract) => {
+                    if let Some(ref m) = manifest {
+                        if contract.game != m.name {
+                            diagnostics.push(diag(
+                                "warning",
+                                "W_CONTRACT_GAME_NAME",
+                                format!(
+                                    "contract.game {:?} differs from manifest.name {:?}",
+                                    contract.game, m.name
+                                ),
+                                Some("contract.json"),
+                                None,
+                            ));
+                        }
+                        if contract.version != m.version {
+                            diagnostics.push(diag(
+                                "warning",
+                                "W_CONTRACT_VERSION",
+                                format!(
+                                    "contract.version {:?} differs from manifest.version {:?}",
+                                    contract.version, m.version
+                                ),
+                                Some("contract.json"),
+                                None,
+                            ));
+                        }
+                    }
+                    diagnostics.push(diag(
+                        "info",
+                        "I_CONTRACT_VALID",
+                        format!("type contract valid (hash {})", &contract.contract_hash[..12.min(contract.contract_hash.len())]),
+                        Some("contract.json"),
+                        None,
+                    ));
+                }
+                Err(e) => diagnostics.push(diag(
+                    "error",
+                    "E_CONTRACT_INVALID",
+                    e,
+                    Some("contract.json"),
+                    Some("Run `gamedev codegen` and rebuild so contract.json includes all required type slots."),
+                )),
+            },
+            Err(e) => diagnostics.push(diag(
+                "error",
+                "E_CONTRACT_READ_FAILED",
+                format!("cannot read contract.json: {e}"),
+                Some("contract.json"),
                 None,
             )),
         }

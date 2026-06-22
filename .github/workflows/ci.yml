@@ -72,6 +72,9 @@ jobs:
       - name: Stage tic_tac_toe test fixture
         run: bash sdk/scripts/stage-tic-tac-toe-fixture.sh
 
+      - name: Build tic_tac_toe bot component
+        run: cargo component build -p tic_tac_toe_bot_component --release
+
       - name: Test workspace
         run: cargo test --workspace
 
