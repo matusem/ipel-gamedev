@@ -507,6 +507,49 @@ fn cleanup_old_drafts(drafts_dir: &std::path::Path) {
     }
 }
 
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy each built-in entry from the read-only seed dir (baked into the image) into the
+/// runtime dir, overwriting bundled files while leaving user-uploaded entries untouched.
+/// No-op when the `seed_env` variable is unset or the seed dir is missing.
+fn seed_builtin_dir(seed_env: &str, target: &std::path::Path) {
+    let Ok(seed) = std::env::var(seed_env) else {
+        return;
+    };
+    let seed_dir = PathBuf::from(seed);
+    let Ok(entries) = std::fs::read_dir(&seed_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let src = entry.path();
+        if !src.is_dir() {
+            continue;
+        }
+        let dest = target.join(entry.file_name());
+        match copy_dir_recursive(&src, &dest) {
+            Ok(()) => {
+                tracing::info!(name = ?entry.file_name(), dest = %dest.display(), "seeded built-in")
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, src = %src.display(), "failed to seed built-in")
+            }
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let _ = dotenvy::dotenv();
@@ -535,7 +578,13 @@ async fn main() -> std::io::Result<()> {
     let tools_dir = PathBuf::from(std::env::var("TOOLS_DIR").unwrap_or_else(|_| "./tools".into()));
     let _ = server::platform_manifest::load_manifest();
     let _ = std::fs::create_dir_all(&drafts_dir);
+    let _ = std::fs::create_dir_all(&games_dir);
     let _ = std::fs::create_dir_all(&bots_dir);
+    // Refresh platform built-ins from the image-baked seed dirs. GAMES_DIR/BOTS_DIR are
+    // backed by persistent volumes in production, so without this the bundled game/bot
+    // wasm would stay frozen at the version present when the volume was first created.
+    seed_builtin_dir("GAMES_SEED_DIR", &games_dir);
+    seed_builtin_dir("BOTS_SEED_DIR", &bots_dir);
     cleanup_old_drafts(&drafts_dir);
 
     let (list_tx, _list_rx) = broadcast::channel::<()>(256);

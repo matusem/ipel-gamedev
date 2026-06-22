@@ -140,9 +140,11 @@ COPY --from=builder /app/client-lib/ /app/lib/
 
 COPY --from=builder /app/lobby-dist/ /app/lobby/
 
-COPY --from=builder /app/games-bundle/tic_tac_toe/ /app/games/tic_tac_toe/
+# Built-ins live in read-only seed dirs; the server copies them into the (volume-backed)
+# GAMES_DIR/BOTS_DIR on startup so deploys refresh the bundled game/bot wasm.
+COPY --from=builder /app/games-bundle/tic_tac_toe/ /app/games-seed/tic_tac_toe/
 
-COPY --from=builder /app/bots-bundle/tic_tac_toe_bot/ /app/bots/tic_tac_toe_bot/
+COPY --from=builder /app/bots-bundle/tic_tac_toe_bot/ /app/bots-seed/tic_tac_toe_bot/
 
 COPY platform/ /app/platform/
 COPY tools/gamedev-cli/manifest.json /app/tools/gamedev-cli/manifest.json
@@ -157,6 +159,8 @@ ENV PORT=8080
 ENV DATABASE_URL=sqlite:///app/data/app.db
 ENV GAMES_DIR=/app/games
 ENV BOTS_DIR=/app/bots
+ENV GAMES_SEED_DIR=/app/games-seed
+ENV BOTS_SEED_DIR=/app/bots-seed
 ENV LOBBY_DIR=/app/lobby
 ENV LIB_DIR=/app/lib
 ENV PLATFORM_MANIFEST_DIR=/app/platform
