@@ -7,6 +7,20 @@ use serde_json::Value;
 
 pub const LOBBY_DETAIL_FIELDS: &str = r#"id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready botId botDisplayName externalBot externalBotCategory botAvatarSeed botAvatarUrl botSettingsJson } botRequests { id category label avatarSeed gameSlug contractHash desiredSeatIndex status seatIndex createdAt settingsJson } messages { id userId displayName body createdAt }"#;
 
+pub fn lobby_room_query() -> String {
+    format!(
+        "query L($id: ID!) {{ lobby(id: $id) {{ {} }} }}",
+        LOBBY_DETAIL_FIELDS
+    )
+}
+
+pub fn lobby_room_subscription() -> String {
+    format!(
+        "subscription L($id: ID!) {{ lobbyUpdated(id: $id) {{ {} }} }}",
+        LOBBY_DETAIL_FIELDS
+    )
+}
+
 pub fn graphql_error_message(err: &str) -> String {
     format_errors_from_str(err).unwrap_or_else(|| err.trim().to_string())
 }
@@ -213,17 +227,27 @@ async fn parse_graphql_response<T: DeserializeOwned>(resp: Response) -> Result<T
     serde_json::from_value(data).map_err(|e| format!("{e}"))
 }
 
+/// When the lobby is served from a local `dx serve` port, GraphQL/game WebSockets should hit the
+/// Actix backend directly (`:8081`). The dev-server HTTP proxy is fine, but its WS proxy is unreliable.
+fn local_dev_backend_host(hostname: &str, port: &str) -> Option<&'static str> {
+    let is_local = matches!(hostname, "localhost" | "127.0.0.1" | "[::1]");
+    if is_local && port != "8081" {
+        Some("127.0.0.1:8081")
+    } else {
+        None
+    }
+}
+
 /// Host for browser WebSocket connections.
-/// `dx serve` on :8080 proxies HTTP to the Actix server on :8081, but its WS proxy is unreliable,
-/// so in local dev we connect WebSockets directly to the backend port.
 fn ws_host() -> String {
     let Some(window) = web_sys::window() else {
         return "localhost".to_string();
     };
     let location = window.location();
+    let hostname = location.hostname().unwrap_or_default();
     let port = location.port().unwrap_or_default();
-    if port == "8080" {
-        return "127.0.0.1:8081".to_string();
+    if let Some(backend) = local_dev_backend_host(&hostname, &port) {
+        return backend.to_string();
     }
     location.host().unwrap_or_else(|_| "localhost".to_string())
 }
@@ -392,6 +416,20 @@ pub fn get_ws_base() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_dev_ws_uses_backend_port() {
+        assert_eq!(
+            local_dev_backend_host("localhost", "8080"),
+            Some("127.0.0.1:8081")
+        );
+        assert_eq!(
+            local_dev_backend_host("localhost", "8888"),
+            Some("127.0.0.1:8081")
+        );
+        assert_eq!(local_dev_backend_host("127.0.0.1", "8081"), None);
+        assert_eq!(local_dev_backend_host("gamedev.example.com", "443"), None);
+    }
 
     #[test]
     fn parses_graphql_error_array_json() {

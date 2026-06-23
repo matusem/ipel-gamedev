@@ -61,6 +61,7 @@ pub fn layout_label(layout: ProjectLayout) -> &'static str {
     match layout {
         ProjectLayout::FlatRustBevy => "flat rust+bevy",
         ProjectLayout::NestedRust => "nested rust",
+        ProjectLayout::RustSubdir => "rust subdir",
         ProjectLayout::NestedJava => "nested java",
         ProjectLayout::Unknown => "unknown",
     }

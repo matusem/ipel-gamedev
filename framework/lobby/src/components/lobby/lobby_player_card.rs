@@ -259,7 +259,7 @@ pub fn LobbyPlayerCard(
                     }
                 }
             } else if in_staging {
-                div { class: "lobby-player-card-open-actions",
+                div { class: "lobby-player-card lobby-player-card-open",
                     button {
                         class: "lobby-player-card-join",
                         onclick: move |_| {
@@ -282,15 +282,18 @@ pub fn LobbyPlayerCard(
                             p { class: "lobby-player-card-name lobby-player-card-join-label", "JOIN" }
                             p { class: "lobby-player-card-playing-kicker", "playing as" }
                             p { class: "lobby-player-card-slot", "{seat.player_identity}" }
+                            div { class: "lobby-player-card-transfer-row" }
                         }
                     }
                     if !game_type.is_empty() && viewer_is_owner {
-                        button {
-                            class: "lobby-player-card-bot",
-                            title: "Add a published bot to this seat",
-                            onclick: move |_| picker_open.set(true),
-                            Icon { name: "smart_toy", filled: false }
-                            "Add bot"
+                        div { class: "lobby-player-card-open-footer",
+                            button {
+                                class: "lobby-player-card-add-bot",
+                                title: "Add a published bot to this seat",
+                                onclick: move |_| picker_open.set(true),
+                                Icon { name: "smart_toy", filled: false }
+                                "Add bot"
+                            }
                         }
                     }
                 }

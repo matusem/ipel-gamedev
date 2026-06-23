@@ -68,31 +68,39 @@ pub fn LobbyBotPicker(
                 class: "lobby-game-modal-backdrop",
                 onclick: move |_| on_close_back.call(()),
             }
-            div { class: "lobby-game-modal panel-card max-w-lg w-full",
-                div { class: "flex items-start justify-between gap-3 mb-4",
+            div {
+                class: "lobby-game-modal",
+                role: "dialog",
+                aria_modal: "true",
+                div { class: "lobby-game-modal-head",
                     div {
-                        h2 { class: "font-manrope font-semibold text-on-surface", "Add a bot" }
+                        p { class: "lobby-section-kicker", "ADD BOT" }
+                        h2 { class: "lobby-section-title", "Published bots" }
                         p { class: "text-body-sm text-on-surface-variant mt-1",
                             "Seat {seat_index + 1} — playing as {player_identity}"
                         }
                     }
                     button {
-                        class: "btn-ghost p-2",
+                        class: "lobby-game-modal-close",
+                        title: "Close",
                         onclick: move |_| on_close.call(()),
                         Icon { name: "close", filled: false }
                     }
                 }
-
-                SearchInput {
-                    placeholder: "Search published bots…",
-                    value: filter(),
-                    oninput: EventHandler::new(move |v| filter.set(v)),
-                    width_class: "w-full",
+                div { class: "px-4 sm:px-5 pt-4 pb-2 shrink-0",
+                    SearchInput {
+                        placeholder: "Search published bots…",
+                        value: filter(),
+                        oninput: EventHandler::new(move |v| filter.set(v)),
+                        width_class: "w-full",
+                    }
                 }
-
-                div { class: "mt-3 max-h-64 overflow-y-auto space-y-2",
+                div { class: "lobby-game-modal-list",
                     if loading() {
-                        p { class: "text-body-sm text-on-surface-variant p-4 text-center", "Loading bots…" }
+                        p { class: "lobby-game-modal-wait",
+                            Icon { name: "hourglass_top", filled: false }
+                            "Loading bots…"
+                        }
                     } else if filtered.is_empty() {
                         EmptyState {
                             icon: "smart_toy",
@@ -117,17 +125,17 @@ pub fn LobbyBotPicker(
                                 let on_detail_updated = on_detail_updated;
                                 let on_close = on_close;
                                 rsx! {
-                                    div { class: "flex items-center gap-3 p-3 rounded-lg border border-outline-variant/30",
+                                    div { class: "lobby-game-modal-item",
                                         Avatar { seed: seed.clone(), size: AvatarSize::Md, image_url: None }
-                                        div { class: "flex-1 min-w-0",
-                                            p { class: "font-medium text-on-surface truncate", "{name}" }
-                                            div { class: "flex gap-2 mt-1",
+                                        div { class: "lobby-game-modal-meta min-w-0",
+                                            p { class: "lobby-game-modal-name truncate", "{name}" }
+                                            div { class: "flex flex-wrap gap-2 mt-1",
                                                 Chip { label: version.clone(), muted: true }
                                                 Chip { label: "PUBLISHED".to_string(), muted: false }
                                             }
                                         }
                                         button {
-                                            class: "btn-secondary shrink-0",
+                                            class: "btn-secondary shrink-0 text-sm",
                                             onclick: move |_| {
                                                 let lid = lid.clone();
                                                 let bid = bid.clone();
@@ -173,10 +181,11 @@ pub fn LobbyBotPicker(
                         }
                     }
                 }
-
-                div { class: "mt-4 p-3 rounded-lg bg-surface-container-low text-body-sm text-on-surface-variant",
-                    p { class: "font-medium text-on-surface mb-1", "Dev-local or external bots" }
-                    p { "Run gamedev bot-run --lobby {lobby_id} from your bot project, or connect an external bot with an API key. The host approves incoming seat requests below." }
+                div { class: "shrink-0 p-4 sm:p-5 border-t border-outline-variant/30",
+                    p { class: "font-medium text-on-surface text-sm mb-1", "Dev-local or external bots" }
+                    p { class: "text-body-sm text-on-surface-variant",
+                        "Run gamedev bot-run --lobby {lobby_id} from your bot project, or connect an external bot with an API key. Use the Bot requests panel to approve incoming seats."
+                    }
                 }
             }
         }

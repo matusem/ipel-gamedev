@@ -651,6 +651,67 @@
     @apply shrink-0 p-3 border-t border-outline-variant/30 space-y-2;
   }
 
+  .lobby-bot-fab {
+    @apply fixed z-50 flex items-center gap-2 max-w-[14rem] pl-3 pr-4 py-2.5 rounded-2xl
+      border border-outline-variant/40 bg-surface-container/95 backdrop-blur-md shadow-xl
+      text-on-surface hover:border-primary-container/50 transition-all cursor-pointer;
+    left: 1rem;
+    bottom: 5.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .lobby-bot-fab {
+      left: 17rem;
+    }
+  }
+
+  .lobby-bot-fab-label {
+    @apply font-label-caps uppercase text-[10px] tracking-wider text-secondary;
+  }
+
+  .lobby-bot-fab-badge {
+    @apply inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full
+      bg-primary-container text-[10px] font-bold text-on-primary-container px-1;
+  }
+
+  .lobby-bot-panel {
+    @apply fixed z-50 flex flex-col w-[min(100vw-2rem,24rem)] max-h-[min(70vh,28rem)]
+      rounded-2xl border border-outline-variant/40 bg-surface-container-lowest/95
+      backdrop-blur-xl shadow-2xl overflow-hidden;
+    left: 1rem;
+    bottom: 5.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .lobby-bot-panel {
+      left: 17rem;
+    }
+  }
+
+  .lobby-bot-panel-head {
+    @apply flex items-center justify-between gap-2 px-4 py-3 border-b border-outline-variant/30 shrink-0;
+  }
+
+  .lobby-bot-panel-body {
+    @apply flex-1 overflow-y-auto p-3 flex flex-col gap-2;
+  }
+
+  .lobby-bot-request-card {
+    @apply rounded-xl border border-outline-variant/30 bg-surface-container-low p-3 space-y-2;
+  }
+
+  .lobby-bot-request-actions {
+    @apply flex flex-col gap-2 pt-1;
+  }
+
+  .lobby-bot-request-seat-row {
+    @apply flex flex-col gap-1 text-body-sm;
+  }
+
+  .lobby-bot-request-buttons {
+    @apply flex gap-2;
+  }
+
   .lobby-finished-banner {
     @apply flex flex-wrap items-center gap-4 p-4 rounded-2xl
       border border-secondary-container/40 bg-secondary-container/10;
@@ -854,6 +915,22 @@
   .lobby-player-card-open {
     @apply border-dashed border-outline-variant/45 bg-transparent
       hover:border-primary-container/50 hover:bg-primary-container/5;
+  }
+
+  .lobby-player-card-open .lobby-player-card-join {
+    @apply border-0 rounded-none bg-transparent shadow-none
+      hover:border-0 hover:bg-transparent flex-1 min-h-0;
+  }
+
+  .lobby-player-card-open-footer {
+    @apply w-full shrink-0 px-3 pb-3;
+  }
+
+  .lobby-player-card-add-bot {
+    @apply inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary-container/35
+      bg-primary-container/10 px-2 py-1.5 text-[9px] font-label-caps uppercase tracking-wider
+      text-primary transition-colors hover:bg-primary-container/20 hover:border-primary-container/55
+      cursor-pointer;
   }
 
   .lobby-player-card-join {
@@ -1063,11 +1140,11 @@
   @keyframes toastIn {
     from {
       opacity: 0;
-      transform: translateX(1rem);
+      transform: translateY(-0.5rem);
     }
     to {
       opacity: 1;
-      transform: translateX(0);
+      transform: translateY(0);
     }
   }
 

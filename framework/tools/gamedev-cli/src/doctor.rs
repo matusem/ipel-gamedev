@@ -98,6 +98,10 @@ pub fn run(root: &Path) -> Result<Vec<CheckResult>> {
                 });
             }
         }
+        ProjectLayout::RustSubdir => {
+            checks.push(dir_ok("rust/logic", root.join("rust/logic")));
+            checks.push(dir_ok("rust/component", root.join("rust/component")));
+        }
         ProjectLayout::NestedJava => {
             checks.push(dir_ok("backend/java", root.join("backend/java")));
         }

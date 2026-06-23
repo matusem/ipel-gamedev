@@ -181,8 +181,13 @@ fn run_bot_build(args: BuildArgs, root: &Path) -> Result<()> {
         bail!("bot component build failed");
     }
     let built_wasm = find_built_component_wasm(root, &component_dir)?;
-    fs::copy(built_wasm, stage.path().join("bot.wasm"))?;
+    fs::copy(&built_wasm, stage.path().join("bot.wasm"))?;
     validate_logic_wasm_file(&stage.path().join("bot.wasm"))?;
+    let dist_wasm = root.join("dist").join("bot.wasm");
+    if let Some(p) = dist_wasm.parent() {
+        fs::create_dir_all(p)?;
+    }
+    fs::copy(&built_wasm, &dist_wasm)?;
     let out = args.out.unwrap_or(root.join("dist/bot.zip"));
     if let Some(p) = out.parent() {
         fs::create_dir_all(p)?;

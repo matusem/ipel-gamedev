@@ -13,6 +13,14 @@ use gloo_timers::future::TimeoutFuture;
 use serde_json::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
+
+fn seat_occupied(s: &LobbySeat) -> bool {
+    s.claimed_by_user_id.is_some() || s.bot_id.is_some() || s.external_bot
+}
+
+fn seat_ready_for_start(s: &LobbySeat) -> bool {
+    (s.claimed_by_user_id.is_some() && s.ready) || s.bot_id.is_some() || s.external_bot
+}
 use wasm_bindgen::JsCast;
 #[derive(Clone)]
 struct LobbyConfigListenBridge(Rc<LobbyConfigListenInner>);
@@ -372,7 +380,7 @@ pub fn LobbyConfigModal(
 fn LobbySquadFooter(
     lobby_id: String,
     ready_count: usize,
-    claimed: usize,
+    filled: usize,
     total: usize,
     my_user_id: Option<String>,
     seats: Vec<LobbySeat>,
@@ -393,7 +401,7 @@ fn LobbySquadFooter(
     let lobby_id_ready = lobby_id.clone();
     let lobby_id_leave = lobby_id.clone();
 
-    let ready_denominator = if claimed > 0 { claimed } else { total };
+    let ready_denominator = if filled > 0 { filled } else { total };
 
     rsx! {
         footer { class: "lobby-squad-footer",
@@ -454,7 +462,7 @@ fn LobbySquadFooter(
             }
             span { class: "lobby-squad-footer-stat",
                 Icon { name: "groups", filled: false }
-                "{claimed} / {total} filled"
+                "{filled} / {total} filled"
             }
         }
     }
@@ -501,20 +509,20 @@ pub fn LobbyRoomBody(
         lobby_for_cols.config_json.as_deref().unwrap_or("null")
     );
     let total = lobby_for_cols.seats.len();
-    let claimed = lobby_for_cols
+    let filled = lobby_for_cols
         .seats
         .iter()
-        .filter(|s| s.claimed_by_user_id.is_some())
+        .filter(|s| seat_occupied(s))
         .count();
     let ready_count = lobby_for_cols
         .seats
         .iter()
-        .filter(|s| s.claimed_by_user_id.is_some() && s.ready)
+        .filter(|s| seat_ready_for_start(s))
         .count();
-    let all_ready = total > 0 && claimed == total && ready_count == claimed;
+    let all_ready = total > 0 && filled == total && ready_count == filled;
     let can_start = is_owner
         && total > 0
-        && claimed == total
+        && filled == total
         && all_ready
         && (lobby_for_cols.status == "waiting" || lobby_for_cols.status == "configuring");
     let in_staging = lobby_for_cols.status == "waiting"
@@ -529,12 +537,13 @@ pub fn LobbyRoomBody(
     let media = game_media(&game_name);
     let status_variant = status_variant_from_lobby(
         &lobby_for_cols.status,
-        claimed as i32,
+        filled as i32,
         total as i32,
     );
     let mut games_open = use_signal(|| false);
     let mut config_open = use_signal(|| false);
     let mut rules_open = use_signal(|| false);
+    let mut bot_requests_open = use_signal(|| false);
     let has_config = !no_game_yet && (use_generated_ui || iframe_src.is_some() || is_owner);
     let about_url = selected_gt.as_ref().and_then(game_type_about_url);
     let show_rules = !no_game_yet && about_url.is_some();
@@ -643,17 +652,6 @@ pub fn LobbyRoomBody(
             }
 
             div { class: "lobby-stage-main",
-                if pending_bot_requests > 0 && is_owner && in_staging {
-                    LobbyBotRequestCards {
-                        lobby_id: lobby_for_cols.id.clone(),
-                        game_type: lobby_for_cols.game_type.clone(),
-                        contract_hash: contract_hash(),
-                        requests: lobby_for_cols.bot_requests.clone(),
-                        is_owner,
-                        seats: lobby_for_cols.seats.clone(),
-                        on_detail_updated,
-                    }
-                }
                 div { class: "lobby-panel-middle",
                     if !no_game_yet {
                         div { class: "lobby-squad-ambient bg-gradient-to-b {media.accent_gradient}" }
@@ -751,7 +749,7 @@ pub fn LobbyRoomBody(
                 LobbySquadFooter {
                     lobby_id: lobby_for_cols.id.clone(),
                     ready_count,
-                    claimed,
+                    filled,
                     total,
                     my_user_id: uid.clone(),
                     seats: lobby_for_cols.seats.clone(),
@@ -766,12 +764,33 @@ pub fn LobbyRoomBody(
             }
         }
 
+        if pending_bot_requests > 0 && in_staging {
+            LobbyBotRequestCards {
+                lobby_id: lobby_for_cols.id.clone(),
+                game_type: lobby_for_cols.game_type.clone(),
+                contract_hash: contract_hash(),
+                requests: lobby_for_cols.bot_requests.clone(),
+                is_owner,
+                seats: lobby_for_cols.seats.clone(),
+                panel_open: bot_requests_open,
+                on_detail_updated,
+            }
+        }
+
         if in_staging {
             div { class: "lobby-bottom-bar",
                 div { class: "flex items-center gap-3",
                     StatusBadge { label: lobby_for_cols.status.clone(), variant: status_variant }
                     span { class: "text-body-sm text-on-surface-variant hidden sm:inline",
                         "Est. {est_match}"
+                    }
+                    if pending_bot_requests > 0 {
+                        button {
+                            class: "btn-secondary text-sm py-1.5 px-3",
+                            onclick: move |_| bot_requests_open.set(true),
+                            Icon { name: "smart_toy", filled: false }
+                            "Bot requests ({pending_bot_requests})"
+                        }
                     }
                 }
                 div { class: "flex flex-wrap items-center gap-2",

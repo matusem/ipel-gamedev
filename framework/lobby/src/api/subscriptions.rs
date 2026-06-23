@@ -1,10 +1,12 @@
-use crate::api::graphql::{graphql_exec, graphql_ws_url, reload_lobbies};
+use crate::api::graphql::{
+    fetch_lobby_detail, graphql_ws_url, lobby_room_subscription, reload_lobbies,
+};
 use crate::models::{GameInfo, LobbyDetail, LobbySummary};
 use dioxus::prelude::*;
 use futures_util::{SinkExt, StreamExt};
 use gloo_net::websocket::futures::WebSocket;
 use gloo_net::websocket::Message;
-use serde::Deserialize;
+use gloo_timers::future::TimeoutFuture;
 use serde_json::Value;
 
 /// `graphql-ws` in browsers maps to Apollo **subscriptions-transport-ws**, which uses `type: "data"`.
@@ -160,6 +162,36 @@ pub fn start_lobbies_subscription(
     });
 }
 
+fn refetch_lobby_room(
+    lobby_id: &str,
+    mut detail: Signal<Option<LobbyDetail>>,
+    mut err: Signal<Option<String>>,
+) {
+    let lid = lobby_id.to_string();
+    spawn(async move {
+        match fetch_lobby_detail(&lid).await {
+            Ok(d) => detail.set(d),
+            Err(msg) => err.set(Some(msg)),
+        }
+    });
+}
+
+fn spawn_lobby_room_poll(
+    lobby_id: String,
+    mut detail: Signal<Option<LobbyDetail>>,
+    mut err: Signal<Option<String>>,
+) {
+    spawn(async move {
+        loop {
+            match fetch_lobby_detail(&lobby_id).await {
+                Ok(d) => detail.set(d),
+                Err(msg) => err.set(Some(msg)),
+            }
+            TimeoutFuture::new(4_000).await;
+        }
+    });
+}
+
 pub fn start_lobby_room_subscription(
     lobby_id: String,
     mut detail: Signal<Option<LobbyDetail>>,
@@ -168,64 +200,54 @@ pub fn start_lobby_room_subscription(
     if crate::stub::demo_mode::is_demo_mode() {
         return;
     }
+    // Keep lobby state fresh when WS is down (e.g. dx on a non-8080 port) or events are missed.
+    spawn_lobby_room_poll(lobby_id.clone(), detail, err);
     spawn(async move {
-        let Some(mut ws) = connect_graphql_ws().await else {
-            return;
-        };
-        let q = r#"subscription L($id: ID!) { lobbyUpdated(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt } } }"#;
-        let sub = serde_json::json!({
-            "type": "start",
-            "id": "room1",
-            "payload": {
-                "query": q,
-                "variables": { "id": lobby_id }
-            }
-        });
-        if ws.send(Message::Text(sub.to_string())).await.is_err() {
-            return;
-        }
-        while let Some(msg) = ws.next().await {
-            let Ok(msg) = msg else { break };
-            let text = match msg {
-                Message::Text(t) => t,
-                _ => continue,
-            };
-            let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
-            if !gql_ws_is_subscription_result(v.get("type").and_then(|x| x.as_str())) {
+        loop {
+            let Some(mut ws) = connect_graphql_ws().await else {
+                refetch_lobby_room(&lobby_id, detail, err);
+                TimeoutFuture::new(5_000).await;
                 continue;
-            }
-            let fetch_room = {
-                let lid = lobby_id.clone();
-                let mut d = detail;
-                let mut e = err;
-                move || {
-                    spawn(async move {
-                        let q = r#"query L($id: ID!) { lobby(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt } } }"#;
-                        let vars = serde_json::json!({ "id": lid });
-                        #[derive(Deserialize)]
-                        #[serde(rename_all = "camelCase")]
-                        struct Ld {
-                            lobby: Option<LobbyDetail>,
-                        }
-                        match graphql_exec::<Ld>(q, Some(vars)).await {
-                            Ok(x) => d.set(x.lobby),
-                            Err(msg) => e.set(Some(msg)),
-                        }
-                    });
+            };
+            let q = lobby_room_subscription();
+            let sub = serde_json::json!({
+                "type": "start",
+                "id": "room1",
+                "payload": {
+                    "query": q,
+                    "variables": { "id": lobby_id }
                 }
-            };
-            let Some(data) = gql_ws_payload_data(&v) else {
-                fetch_room();
+            });
+            if ws.send(Message::Text(sub.to_string())).await.is_err() {
+                refetch_lobby_room(&lobby_id, detail, err);
+                TimeoutFuture::new(5_000).await;
                 continue;
-            };
-            let Some(raw) = data.get("lobbyUpdated").cloned() else {
-                fetch_room();
-                continue;
-            };
-            match serde_json::from_value::<LobbyDetail>(raw) {
-                Ok(d) => detail.set(Some(d)),
-                Err(_) => fetch_room(),
             }
+            while let Some(msg) = ws.next().await {
+                let Ok(msg) = msg else { break };
+                let text = match msg {
+                    Message::Text(t) => t,
+                    _ => continue,
+                };
+                let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+                if !gql_ws_is_subscription_result(v.get("type").and_then(|x| x.as_str())) {
+                    continue;
+                }
+                let Some(data) = gql_ws_payload_data(&v) else {
+                    refetch_lobby_room(&lobby_id, detail, err);
+                    continue;
+                };
+                let Some(raw) = data.get("lobbyUpdated").cloned() else {
+                    refetch_lobby_room(&lobby_id, detail, err);
+                    continue;
+                };
+                match serde_json::from_value::<LobbyDetail>(raw) {
+                    Ok(d) => detail.set(Some(d)),
+                    Err(_) => refetch_lobby_room(&lobby_id, detail, err),
+                }
+            }
+            refetch_lobby_room(&lobby_id, detail, err);
+            TimeoutFuture::new(2_000).await;
         }
     });
 }

@@ -42,12 +42,12 @@ pub fn LobbyRoomPage(
             if let Ok(g) = graphql_post::<Gt>(&gt_q).await {
                 game_types_f.set(g.game_types);
             }
-            let q = r#"query L($id: ID!) { lobby(id: $id) { id ownerUserId ownerDisplayName gameType configJson status gameInstanceId createdAt updatedAt seats { seatIndex playerIdentity claimedByUserId claimedDisplayName ready } messages { id userId displayName body createdAt } } }"#;
+            let q = crate::api::graphql::lobby_room_query();
             let vars = serde_json::json!({ "id": lid_fetch });
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]
             struct Ld { lobby: Option<LobbyDetail> }
-            match graphql_exec::<Ld>(q, Some(vars)).await {
+            match graphql_exec::<Ld>(&q, Some(vars)).await {
                 Ok(d) => detail_f.set(d.lobby),
                 Err(e) => error_msg_f.set(Some(e)),
             }

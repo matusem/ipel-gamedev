@@ -14,6 +14,8 @@ use crate::cli::{BackendKind, FrontendKind};
 pub enum ProjectLayout {
     FlatRustBevy,
     NestedRust,
+    /// `rust/logic` + `rust/component` (framework repo games, e.g. `games/tic_tac_toe_bot`).
+    RustSubdir,
     NestedJava,
     Unknown,
 }
@@ -82,6 +84,9 @@ pub fn detect_layout(root: &Path) -> ProjectLayout {
     {
         return ProjectLayout::NestedRust;
     }
+    if root.join("rust").join("logic").join("Cargo.toml").is_file() {
+        return ProjectLayout::RustSubdir;
+    }
     if root
         .join("backend")
         .join("java")
@@ -103,19 +108,23 @@ pub fn resolve_test_dir(root: &Path) -> PathBuf {
 }
 
 pub fn resolve_component_dir(root: &Path) -> PathBuf {
-    let flat = root.join("component");
-    if flat.exists() {
-        return flat;
+    for rel in ["component", "rust/component", "backend/rust/component"] {
+        let dir = root.join(rel);
+        if dir.join("Cargo.toml").is_file() {
+            return dir;
+        }
     }
-    root.join("backend").join("rust").join("component")
+    root.join("rust/component")
 }
 
 pub fn resolve_logic_dir(root: &Path) -> PathBuf {
-    let flat = root.join("logic");
-    if flat.exists() {
-        return flat;
+    for rel in ["logic", "rust/logic", "backend/rust/logic"] {
+        let dir = root.join(rel);
+        if dir.join("Cargo.toml").is_file() {
+            return dir;
+        }
     }
-    root.join("backend").join("rust").join("logic")
+    root.join("rust/logic")
 }
 
 pub fn resolve_bevy_dir(root: &Path) -> Option<PathBuf> {
@@ -222,6 +231,9 @@ pub fn cargo_target_roots(root: &Path, member_dir: &Path) -> Vec<PathBuf> {
     if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
         let p = PathBuf::from(dir);
         roots.push(if p.is_absolute() { p } else { root.join(p) });
+    }
+    if let Some(fw) = find_framework_root(root) {
+        roots.push(fw.join("target"));
     }
     roots.push(root.join("target"));
     roots.push(member_dir.join("target"));
